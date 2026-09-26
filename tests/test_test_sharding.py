@@ -472,10 +472,10 @@ class ResultSpec:
     failures: tuple[str, ...] = ()
 
 
-class AggregateTests(unittest.TestCase):
-    """aggregate.py reconciles each configured platform/version lane."""
+class AggregateFixture(unittest.TestCase):
+    """One 2-shard plan plus a green result for every shard of every lane."""
 
-    LANES = ("linux-3.11", "linux-3.12", "windows-3.12")
+    LANES: tuple[str, ...] = ()
 
     def setUp(self) -> None:
         # addCleanup (not tearDown): registered immediately so a later
@@ -528,6 +528,12 @@ class AggregateTests(unittest.TestCase):
             str(self.quarantine_path), "--results-dir", str(self.results),
             "--lanes", ",".join(self.LANES),
         )
+
+
+class AggregateTests(AggregateFixture):
+    """aggregate.py reconciles each configured platform/version lane."""
+
+    LANES = ("linux-3.11", "linux-3.12", "windows-3.12")
 
     def test_three_lane_results_pass_with_compact_report(self) -> None:
         result = self.aggregate()
@@ -738,6 +744,80 @@ class LanePlanAggregateTests(unittest.TestCase):
         for lane_plans in ((self.windows_plan(), self.windows_plan()), ("windows-3.12",), (f"={self.windows_plan_path}",)):
             with self.subTest(lane_plans=lane_plans):
                 self.assertNotEqual(self.aggregate(*lane_plans).returncode, 0)
+
+
+class EventLaneAggregateTests(AggregateFixture):
+    """--event requires exactly the lanes that event's workflow run starts."""
+
+    LANES = aggregate_mod.MAIN_LANES
+
+    def aggregate_event(self, event: str) -> subprocess.CompletedProcess[str]:
+        return run_tool(
+            AGGREGATE_PY, "--plan", str(self.plan_path), "--quarantine",
+            str(self.quarantine_path), "--results-dir", str(self.results),
+            "--event", event,
+        )
+
+    def test_main_push_reconciles_the_main_lane_set(self) -> None:
+        for event in ("push", "workflow_dispatch"):
+            with self.subTest(event=event):
+                result = self.aggregate_event(event)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn("linux-3.13 (2 shards)", result.stdout)
+
+    def test_main_push_without_the_313_lane_fails(self) -> None:
+        # The lane only main runs is the one a matrix edit could drop without
+        # any pull request noticing; its absence must be red, not a smaller gate.
+        for name in ("s0.json", "s1.json", "q.json"):
+            (self.results / f"linux-3.13-{name}").unlink()
+        result = self.aggregate_event("push")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("missing result for linux-3.13 shard 0", result.stderr)
+
+    def test_pull_request_passes_on_its_own_lanes_and_refuses_extra_ones(self) -> None:
+        result = self.aggregate_event("pull_request")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("unexpected result lane: linux-3.13", result.stderr)
+        for name in ("s0.json", "s1.json", "q.json"):
+            (self.results / f"linux-3.13-{name}").unlink()
+        result = self.aggregate_event("pull_request")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("reconciled 3 tests in 2 lanes", result.stdout)
+
+    def test_unknown_event_fails_closed(self) -> None:
+        result = self.aggregate_event("schedule")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("no expected lane set for event: schedule", result.stderr)
+
+    def test_lanes_and_event_are_exclusive(self) -> None:
+        result = run_tool(
+            AGGREGATE_PY, "--plan", str(self.plan_path), "--quarantine",
+            str(self.quarantine_path), "--results-dir", str(self.results),
+            "--event", "push", "--lanes", ",".join(self.LANES),
+        )
+        self.assertNotEqual(result.returncode, 0)
+
+    def test_workflow_matrix_and_triggers_match_the_expected_lanes(self) -> None:
+        workflow = (REPO_ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+        header = workflow.split("\n\n")[1]
+        self.assertTrue(header.startswith("on:\n"), header)
+        triggers = {line.strip().rstrip(":") for line in header.splitlines()[1:] if line.startswith("  ") and not line.startswith(("   ", "  #"))}
+        self.assertEqual(triggers, set(aggregate_mod.EXPECTED_LANES))
+
+        def linux(event: str) -> str:
+            versions = [lane.removeprefix("linux-") for lane in aggregate_mod.EXPECTED_LANES[event] if lane.startswith("linux-")]
+            return json.dumps(versions)
+
+        self.assertEqual(aggregate_mod.EXPECTED_LANES["push"], aggregate_mod.EXPECTED_LANES["workflow_dispatch"])
+        self.assertIn(
+            "python-version: ${{ github.event_name == 'pull_request' && "
+            f"fromJSON('{linux('pull_request')}') || fromJSON('{linux('push')}') }}}}",
+            workflow,
+        )
+        windows = {lane for lanes in aggregate_mod.EXPECTED_LANES.values() for lane in lanes if lane.startswith("windows-")}
+        self.assertEqual(windows, {"windows-3.12"})
+        self.assertIn("--lane windows-3.12 --shard", workflow)
+        self.assertIn("--event ${{ github.event_name }}", workflow)
 
 
 if __name__ == "__main__":

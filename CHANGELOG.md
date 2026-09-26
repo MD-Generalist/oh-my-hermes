@@ -71,6 +71,17 @@ All notable changes will be documented here.
   shard instead of in three separate `test-quarantine` jobs, which queued for
   10 to 17 minutes under the 20-concurrent-job cap. A run now has 12 jobs
   (was 13 before this change).
+  A new main push now cancels the main run it supersedes, as a new pull
+  request push already did: in the 7 days to 2026-09-26, 32 of 86 main runs
+  were superseded before they finished, at ~140 job-minutes each. A red main
+  is then attributed to a range of merges; the tip run still tests all of
+  them. The Linux `test` lane runs Python 3.11 only on a pull request, and
+  3.11 plus 3.13 (in place of 3.12) on a main push or a `workflow_dispatch`,
+  which the workflow now accepts; Windows stays on 3.12. No failed run in
+  those 7 days was red only on Linux 3.12, while a 3.13-only defect had
+  merged green (fixed by 13696e5d). `aggregate.py --event` requires exactly
+  the lanes that event runs and fails when one is missing. A pull request run
+  has 10 jobs, a main run 12.
 
 - **Hermes turns name the skills a work request may fit.** On a turn whose
   request reads as work, the plugin adds one line naming up to three

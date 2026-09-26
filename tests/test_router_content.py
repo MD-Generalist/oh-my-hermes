@@ -4195,7 +4195,7 @@ class RouterContentTests(unittest.TestCase):
         self.assertIn("--lane linux-${{ matrix.python-version }} --quarantine", ci)
         self.assertIn("--lane windows-3.12 --quarantine", ci)
         self.assertIn("python tools/test_sharding/aggregate.py --plan shard-plan/plan.json", ci)
-        self.assertIn("--lanes linux-3.11,linux-3.12,windows-3.12", ci)
+        self.assertIn("--event ${{ github.event_name }}", ci)
         self.assertNotIn("python -m unittest discover -s tests", ci)
         self.assertIn("python -m compileall src", ci)
         self.assertIn("docs workflows --check", ci)

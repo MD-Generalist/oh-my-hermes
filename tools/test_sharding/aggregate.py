@@ -2,8 +2,9 @@
 # ─── How to run ───
 # python tools/test_sharding/aggregate.py --plan plan.json \
 #   --quarantine tools/test_sharding/quarantine.json --results-dir results/ \
-#   --lanes linux-3.11,linux-3.12,windows-3.12 \
+#   --event pull_request \
 #   --lane-plan windows-3.12=plan-windows.json
+# (--lanes linux-3.11,windows-3.12 names the lanes directly instead of --event)
 """Fail-closed, lane-aware reconciliation for deterministic unittest shards."""
 
 from __future__ import annotations
@@ -25,6 +26,15 @@ from tools.test_sharding.plan import MAX_DURATION_SECONDS, load_quarantine
 MAX_TIMING_ENTRIES: Final = 50_000
 TOP_SLOWEST: Final = 10
 QUARANTINE_KEY: Final = -1
+# The lanes each triggering event runs. ci.yml's `test` matrix spells the same
+# Linux versions per event; tests pin the two together, so a lane the workflow
+# stops running is a missing result here, never a silently smaller gate.
+MAIN_LANES: Final = ("linux-3.11", "linux-3.13", "windows-3.12")
+EXPECTED_LANES: Final[dict[str, tuple[str, ...]]] = {
+    "pull_request": ("linux-3.11", "windows-3.12"),
+    "push": MAIN_LANES,
+    "workflow_dispatch": MAIN_LANES,
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -161,6 +171,15 @@ def parse_lanes(raw: str) -> tuple[str, ...]:
     return lanes
 
 
+def event_lanes(event: str) -> tuple[str, ...]:
+    """Return the lanes a triggering event must report, refusing an unknown event."""
+
+    lanes = EXPECTED_LANES.get(event)
+    if lanes is None:
+        raise ShardingError(f"no expected lane set for event: {event}")
+    return lanes
+
+
 def lane_plans(default: dict[int, tuple[str, ...]], lanes: tuple[str, ...], overrides: dict[str, dict[int, tuple[str, ...]]]) -> dict[str, dict[int, tuple[str, ...]]]:
     """Bind each lane to the plan it ran, and prove every plan covers one suite.
 
@@ -259,7 +278,9 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--plan", type=Path, required=True)
     parser.add_argument("--quarantine", type=Path, required=True)
     parser.add_argument("--results-dir", type=Path, required=True)
-    parser.add_argument("--lanes", required=True)
+    lanes = parser.add_mutually_exclusive_group(required=True)
+    lanes.add_argument("--lanes", help="comma-separated lanes that must report")
+    lanes.add_argument("--event", help="GitHub event name; requires that event's EXPECTED_LANES")
     parser.add_argument("--lane-plan", action="append", default=[], help="LANE=PATH: a lane that ran its own plan (repeatable)")
     parser.add_argument("--timings-out", type=Path)
     return parser
@@ -277,7 +298,8 @@ def main(argv: list[str] | None = None) -> int:
             if lane in overrides:
                 raise ShardingError(f"duplicate lane plan for {lane}")
             overrides[lane] = load_plan(path)
-        plans = lane_plans(load_plan(args.plan), parse_lanes(args.lanes), overrides)
+        lanes = parse_lanes(args.lanes) if args.lanes is not None else event_lanes(args.event)
+        plans = lane_plans(load_plan(args.plan), lanes, overrides)
         paths = sorted(args.results_dir.glob("*.json"))
         if not paths:
             raise ShardingError(f"no shard results found in {args.results_dir}")

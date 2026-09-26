@@ -4,14 +4,25 @@ on:
   pull_request:
   push:
     branches: [main]
+  # Runs the main-push lane set on any branch, so a lane that only main runs
+  # (Linux 3.13) can be observed green before the change that adds it merges.
+  workflow_dispatch:
 
-# One run per pull request: a new push cancels the run for the commit it
-# superseded, which nobody will merge and which otherwise holds the runners the
-# current commit is waiting for (#1752: 14 of 25 active runs were stale). A push
-# to main groups by commit, so a main run is never cancelled by a later merge.
+# One run per pull request, and one per pushed or dispatched ref: a new push
+# cancels the run it superseded. On a pull request nobody merges the superseded
+# commit, and its run holds runners the current commit is waiting for (#1752:
+# 14 of 25 active runs were stale). On main the same holds for a burst of
+# merges: in the 7 days to 2026-09-26, 32 of 86 main runs were superseded by a
+# later main push before they finished, at ~140 job-minutes each, and one
+# 5-push burst at 03:48 on 09-26 left test jobs queued for 13 to 17 minutes.
+# The tradeoff: a red main is attributed to a range of merges rather than one
+# commit, and bisecting it takes a dispatch. The tip run still covers every
+# merged commit, because it tests the tree that contains them all. Timing
+# history is saved only by a green main run, so a cancelled run saves nothing
+# and the next plan restores the newest entry the burst's tip run saved.
 concurrency:
-  group: ci-${{ github.event_name }}-${{ github.event.pull_request.number || github.sha }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ci-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   # Shard planner (issue #1294). Static source discovery never imports test
@@ -73,7 +84,15 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.11", "3.12"]
+        # A pull request runs the 3.11 floor only; a main push (and a dispatch)
+        # adds 3.13, the newest supported interpreter, where 3.12 used to run.
+        # Windows keeps 3.12 on every event. In the 7 days to 2026-09-26, 0 of
+        # 40 failed runs were red only on Linux 3.12, while a defect only 3.13
+        # shows (Path.resolve on a symlink loop, fixed by 13696e5d) had merged
+        # with every lane green. aggregate.py's
+        # EXPECTED_LANES spells the same sets per event and fails closed when
+        # one of them is missing; the tests pin the two together.
+        python-version: ${{ github.event_name == 'pull_request' && fromJSON('["3.11"]') || fromJSON('["3.11", "3.13"]') }}
         shard: [0, 1]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -458,7 +477,7 @@ jobs:
           python tools/test_sharding/aggregate.py --plan shard-plan/plan.json
           --quarantine tools/test_sharding/quarantine.json
           --results-dir results
-          --lanes linux-3.11,linux-3.12,windows-3.12
+          --event ${{ github.event_name }}
           --lane-plan windows-3.12=shard-plan/plan-windows.json
           --timings-out timings-merged/timings.json
       # Timing history is performance data only. Successful main runs save a

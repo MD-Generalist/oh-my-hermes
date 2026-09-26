@@ -61,9 +61,9 @@ lane is observed in pull-request CI, from the same plan, and nowhere earlier.
 The Windows lane runs the same suite more than twice as slowly as the Linux
 lanes, so it gets its own plan. The `plan` job writes two files into the
 `shard-plan` artifact from the same inventory, timing history, and quarantine:
-`plan.json` with 2 shards for `linux-3.11` and `linux-3.12`, and
-`plan-windows.json` with 4 shards for `windows-3.12`. Both are deterministic,
-so identical inputs give byte-identical plans.
+`plan.json` with 2 shards for each Linux lane, and `plan-windows.json` with
+4 shards for `windows-3.12`. Both are deterministic, so identical inputs give
+byte-identical plans.
 
 `aggregate.py` binds each lane to the plan it ran (`--lane-plan
 windows-3.12=shard-plan/plan-windows.json`; every other lane uses `--plan`).
@@ -93,6 +93,62 @@ so the LPT partition accounts for them:
   3 jobs per run: at 0.5 to 0.9 minutes each they were cheap to execute, but
   under the account's 20-concurrent-job cap they queued for 10 to 17 minutes
   in bursts.
+
+## Lanes Per Event
+
+Which Linux lanes run depends on the event that started the workflow:
+
+| event | lanes | jobs per run |
+| --- | --- | --- |
+| `pull_request` | `linux-3.11` (2 shards), `windows-3.12` (4 shards) | 10 |
+| `push` to `main`, `workflow_dispatch` | `linux-3.11`, `linux-3.13` (2 shards each), `windows-3.12` (4 shards) | 12 |
+
+A pull request runs the supported floor, 3.11, on Linux. A main push adds
+3.13, the newest supported interpreter, where 3.12 used to run; Windows
+keeps 3.12 on every event. The evidence behind the change, from the 7 days
+to 2026-09-26: 0 of 40 failed runs were red only on Linux 3.12, while a
+defect only CPython 3.13 shows (`Path.resolve` on a symlink loop, fixed by
+13696e5d) had merged with every lane green.
+
+`aggregate.py --event ${{ github.event_name }}` looks the lane set up in
+`EXPECTED_LANES`, refuses an event it does not know, and requires every shard
+and the quarantine of each expected lane. So a main run that lost its 3.13
+lane is red with `missing result for linux-3.13 shard 0`, and a pull request
+run that reported a lane it should not have is red too.
+`tests/test_test_sharding.py` pins the `test` matrix expression and the
+workflow's triggers to that table.
+
+A 3.13-only failure is first seen on main, not on the pull request. To see
+the main lane set before merging, dispatch the workflow on the branch:
+`gh workflow run ci.yml --ref <branch>`.
+
+## Superseded Runs Are Cancelled
+
+`concurrency` groups a pull request run by its number and every other run by
+its ref, and cancels the run in progress when a newer one starts. On main this
+trades per-commit attribution for runner time: in the 7 days to 2026-09-26, 32
+of 86 main runs were superseded by a later main push before they finished, at
+~140 job-minutes each, and one 5-push burst left test jobs queued for 13 to 17
+minutes. A red main is now attributed to the range of merges since the last
+completed run. The tip run still tests every merged commit, because its tree
+contains them all.
+
+Nothing depends on every main run completing:
+
+- **Timing history.** Only a green main run's `aggregate` saves a cache entry,
+  keyed by run id. A cancelled run saves nothing, and the next `plan` restores
+  the newest `test-sharding-timings-` entry, which the burst's tip run wrote.
+  History would stall only if main never went quiet for one full run; the
+  committed `timings.json` fallback covers the time before any entry exists.
+- **Pages** and **Cut Release** are separate workflows with their own triggers
+  and concurrency groups; neither reads a CI run's result. Cut Release runs
+  its own full suite on the tree it tags.
+- **The rollout metric** below already counts only successful push runs, so
+  cancelled runs drop out of both corpora on their own.
+
+`aggregate` keeps `if: always()`, so it still starts in a cancelled run and
+goes red at its first step. That costs one short job, and it keeps a skipped
+`aggregate` from ever standing in for a green one.
 
 ## Repository Settings
 

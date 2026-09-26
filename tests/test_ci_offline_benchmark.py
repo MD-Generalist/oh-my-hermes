@@ -68,7 +68,7 @@ class CiOfflineBenchmarkTests(unittest.TestCase):
     def test_every_main_suite_lane_consumes_the_shared_exact_once_plan(self) -> None:
         workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
 
-        self.assertIn('python-version: ["3.11", "3.12"]', workflow)
+        self.assertIn("fromJSON('[\"3.11\"]') || fromJSON('[\"3.11\", \"3.13\"]')", workflow)
         self.assertIn("--lane windows-3.12 --shard", workflow)
         self.assertIn("python tools/test_sharding/plan.py --shards 2", workflow)
         # Each lane runs its shard list and, in its last shard's job, the
