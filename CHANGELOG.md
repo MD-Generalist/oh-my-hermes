@@ -55,6 +55,15 @@ All notable changes will be documented here.
   (81.2/90.0) against 71.9% on main (72.5/71.2); 0 of 40 everyday Korean and
   0 of 20 everyday English messages loaded an OMH skill on either side (one
   run); English work stayed at 81.2% on both sides (80.0/82.5).
+- **CI runs the Windows unit tests in four shards.** Each of the two
+  `test-windows` shards ran about 7,200 tests in roughly 35 minutes, against
+  about 13 minutes for a Linux shard, so Windows set the wall clock of every
+  run. The `plan` job now also writes `plan-windows.json`, a 4-shard plan over
+  the same inventory, timing history and quarantine; the Linux lanes keep their
+  2-shard `plan.json`, so the run needs only two more jobs. `aggregate.py`
+  takes `--lane-plan LANE=PATH`, checks each lane against the plan that lane
+  ran, and fails when a lane plan covers different tests or a different
+  quarantine, or when any shard of a lane's own plan is missing.
 
 - **Hermes turns name the skills a work request may fit.** On a turn whose
   request reads as work, the plugin adds one line naming up to three
