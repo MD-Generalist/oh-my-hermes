@@ -116,7 +116,7 @@ def make_quarantine(path: Path, match: str = "test_gamma") -> None:
     )
 
 
-def plan_fixture(root: Path, out: Path, match: str = "test_gamma") -> subprocess.CompletedProcess[str]:
+def plan_fixture(root: Path, out: Path, match: str = "test_gamma", shards: int = 2) -> subprocess.CompletedProcess[str]:
     """Run plan.py against the fixture directory."""
 
     quarantine = root / "quarantine.json"
@@ -126,7 +126,7 @@ def plan_fixture(root: Path, out: Path, match: str = "test_gamma") -> subprocess
     return run_tool(
         PLAN_PY,
         "--shards",
-        "2",
+        str(shards),
         "--durations",
         str(timings),
         "--quarantine",
@@ -145,12 +145,16 @@ class PlanDeterminismTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             make_fixture(root)
-            first = root / "plan-a.json"
-            second = root / "plan-b.json"
-            for out in (first, second):
-                result = plan_fixture(root, out)
-                self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertEqual(first.read_bytes(), second.read_bytes())
+            # CI plans the Linux lanes at 2 shards and Windows at 4.
+            for shards in (2, 4):
+                with self.subTest(shards=shards):
+                    first = root / f"plan-{shards}-a.json"
+                    second = root / f"plan-{shards}-b.json"
+                    for out in (first, second):
+                        result = plan_fixture(root, out, shards=shards)
+                        self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertEqual(first.read_bytes(), second.read_bytes())
+                    self.assertEqual(json.loads(first.read_text(encoding="utf-8"))["shard_count"], shards)
 
     def test_unknown_tests_get_stable_fallback_assignment(self) -> None:
         ids = tuple(f"mod{i:02d}.TestCase.test_x" for i in range(20))
@@ -160,6 +164,27 @@ class PlanDeterminismTests(unittest.TestCase):
         self.assertEqual(plan_a.shards, plan_b.shards)
         for shard in plan_a.shards:
             self.assertEqual(list(shard), sorted(shard))
+
+    def test_shard0_offset_and_quarantine_seed_shift_load_deterministically(self) -> None:
+        ids = tuple(f"mod{i:02d}.TestCase.test_x" for i in range(12))
+        durations = {test_id: 10.0 for test_id in ids}
+        quarantine = (plan_mod.QuarantineEntry("mod11", "@rlaope", "fixture shared state", "2026-01-01"),)
+        inputs = plan_mod.PlanningInputs(ids, durations, quarantine)
+
+        def loads(plan: plan_mod.Plan) -> list[float]:
+            return [sum(durations[test_id] for test_id in shard) for shard in plan.shards]
+
+        # No declared offset: only the 10 s quarantine is seeded, onto the
+        # last shard, so that shard gets one fewer parallel test.
+        self.assertEqual(loads(plan_mod.build_plan(inputs, 4)), [30.0, 30.0, 30.0, 20.0])
+        # A 20 s shard-0 offset takes two tests (20 s) off shard 0; with the
+        # seeds counted every shard carries 40 or 30 s.
+        offset = plan_mod.build_plan(inputs, 4, shard0_offset=20.0)
+        self.assertEqual(loads(offset), [20.0, 40.0, 30.0, 20.0])
+        self.assertEqual(offset, plan_mod.build_plan(inputs, 4, shard0_offset=20.0))
+        for bad in (-1.0, float("nan"), float("inf")):
+            with self.subTest(offset=bad), self.assertRaises(plan_mod.ShardingError):
+                plan_mod.build_plan(inputs, 4, shard0_offset=bad)
 
     def test_duplicate_inventory_fails_closed(self) -> None:
         duplicate = ("module.Case.test_one", "module.Case.test_one")
@@ -447,10 +472,10 @@ class ResultSpec:
     failures: tuple[str, ...] = ()
 
 
-class AggregateTests(unittest.TestCase):
-    """aggregate.py reconciles each configured platform/version lane."""
+class AggregateFixture(unittest.TestCase):
+    """One 2-shard plan plus a green result for every shard of every lane."""
 
-    LANES = ("linux-3.11", "linux-3.12", "windows-3.12")
+    LANES: tuple[str, ...] = ()
 
     def setUp(self) -> None:
         # addCleanup (not tearDown): registered immediately so a later
@@ -503,6 +528,12 @@ class AggregateTests(unittest.TestCase):
             str(self.quarantine_path), "--results-dir", str(self.results),
             "--lanes", ",".join(self.LANES),
         )
+
+
+class AggregateTests(AggregateFixture):
+    """aggregate.py reconciles each configured platform/version lane."""
+
+    LANES = ("linux-3.11", "linux-3.12", "windows-3.12")
 
     def test_three_lane_results_pass_with_compact_report(self) -> None:
         result = self.aggregate()
@@ -577,6 +608,216 @@ class AggregateTests(unittest.TestCase):
             {"version": 1, "entries": [{"match": "a", "owner": "", "reason": "", "added": "x"}]},
         )
         self.assertNotEqual(self.aggregate().returncode, 0)
+
+
+class LanePlanAggregateTests(unittest.TestCase):
+    """A lane with its own shard count is reconciled against its own plan."""
+
+    LINUX = ("linux-3.11", "linux-3.12")
+    WINDOWS = "windows-3.12"
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        root = Path(self._tmp.name)
+        self.plan_path = root / "plan.json"
+        self.windows_plan_path = root / "plan-windows.json"
+        self._write_plan(self.plan_path, {"0": ["a.A.t1", "a.A.t2"], "1": ["a.A.t3", "a.A.t4"]})
+        self._write_plan(
+            self.windows_plan_path,
+            {"0": ["a.A.t1"], "1": ["a.A.t2"], "2": ["a.A.t3"], "3": ["a.A.t4"]},
+        )
+        self.quarantine_path = root / "quarantine.json"
+        make_quarantine(self.quarantine_path, match="a")
+        self.results = root / "results"
+        self.results.mkdir()
+        for lane in self.LINUX:
+            self._write_result(lane, 0, ("a.A.t1", "a.A.t2"))
+            self._write_result(lane, 1, ("a.A.t3", "a.A.t4"))
+            self._write_result(lane, None, ("a.A.t5",))
+        for shard, test_id in enumerate(("a.A.t1", "a.A.t2", "a.A.t3", "a.A.t4")):
+            self._write_result(self.WINDOWS, shard, (test_id,))
+        self._write_result(self.WINDOWS, None, ("a.A.t5",))
+
+    @staticmethod
+    def _write_plan(path: Path, shards: dict[str, list[str]], quarantine: tuple[str, ...] = ("a.A.t5",)) -> None:
+        sharded = sum(len(tests) for tests in shards.values())
+        write_json(
+            path,
+            {
+                "version": 1,
+                "shard_count": len(shards),
+                "shards": shards,
+                "quarantine": list(quarantine),
+                "counts": {"discovered": sharded + len(quarantine), "sharded": sharded, "quarantined": len(quarantine)},
+            },
+        )
+
+    def _write_result(self, lane: str, shard: int | None, tests: tuple[str, ...]) -> None:
+        kind = "quarantine" if shard is None else "shard"
+        write_json(
+            self.results / f"{lane}-{kind}-{shard}.json",
+            {
+                "version": 1,
+                "lane": lane,
+                "kind": kind,
+                "shard": shard,
+                "planned": list(tests),
+                "executed": list(tests),
+                "skipped": [],
+                "failures": [],
+                "errors": [],
+                "durations": {test_id: 0.1 for test_id in tests},
+            },
+        )
+
+    def aggregate(self, *lane_plans: str) -> subprocess.CompletedProcess[str]:
+        extra = [argument for lane_plan in lane_plans for argument in ("--lane-plan", lane_plan)]
+        return run_tool(
+            AGGREGATE_PY, "--plan", str(self.plan_path), "--quarantine",
+            str(self.quarantine_path), "--results-dir", str(self.results),
+            "--lanes", ",".join((*self.LINUX, self.WINDOWS)), *extra,
+        )
+
+    def windows_plan(self) -> str:
+        return f"{self.WINDOWS}={self.windows_plan_path}"
+
+    def test_four_shard_lane_reconciles_against_its_own_plan(self) -> None:
+        result = self.aggregate(self.windows_plan())
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("windows-3.12 (4 shards): 5 executed", result.stdout)
+        self.assertIn("linux-3.11 (2 shards): 5 executed", result.stdout)
+
+    def test_four_shard_results_fail_against_the_default_plan(self) -> None:
+        result = self.aggregate()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("windows-3.12", result.stderr)
+
+    def test_missing_windows_shard_fails_aggregation(self) -> None:
+        (self.results / f"{self.WINDOWS}-shard-3.json").unlink()
+        result = self.aggregate(self.windows_plan())
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("missing result for windows-3.12 shard 3", result.stderr)
+
+    def test_missing_quarantine_result_fails_aggregation(self) -> None:
+        # The quarantine now runs inside each lane's last shard job; losing
+        # that step's result must still be red, not an empty quarantine.
+        (self.results / f"{self.WINDOWS}-quarantine-None.json").unlink()
+        result = self.aggregate(self.windows_plan())
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("missing result for windows-3.12 quarantine", result.stderr)
+
+    def test_quarantine_result_missing_a_test_fails_aggregation(self) -> None:
+        self._write_result("linux-3.11", None, ())
+        result = self.aggregate(self.windows_plan())
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("linux-3.11 quarantine", result.stderr)
+
+    def test_linux_lane_still_needs_every_default_shard(self) -> None:
+        (self.results / "linux-3.12-shard-1.json").unlink()
+        result = self.aggregate(self.windows_plan())
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("missing result for linux-3.12 shard 1", result.stderr)
+
+    def test_lane_plan_over_a_different_suite_fails(self) -> None:
+        self._write_plan(self.windows_plan_path, {"0": ["a.A.t1"], "1": ["a.A.t2"], "2": ["a.A.t3"], "3": []})
+        result = self.aggregate(self.windows_plan())
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("does not cover the same tests", result.stderr)
+
+    def test_lane_plan_with_a_different_quarantine_fails(self) -> None:
+        self._write_plan(
+            self.windows_plan_path,
+            {"0": ["a.A.t1"], "1": ["a.A.t2"], "2": ["a.A.t3"], "3": ["a.A.t5"]},
+            quarantine=("a.A.t4",),
+        )
+        result = self.aggregate(self.windows_plan())
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("does not cover the same tests", result.stderr)
+
+    def test_lane_plan_for_an_unrequired_lane_fails(self) -> None:
+        result = self.aggregate(self.windows_plan(), f"macos-3.12={self.windows_plan_path}")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("macos-3.12", result.stderr)
+
+    def test_duplicate_or_malformed_lane_plan_fails(self) -> None:
+        for lane_plans in ((self.windows_plan(), self.windows_plan()), ("windows-3.12",), (f"={self.windows_plan_path}",)):
+            with self.subTest(lane_plans=lane_plans):
+                self.assertNotEqual(self.aggregate(*lane_plans).returncode, 0)
+
+
+class EventLaneAggregateTests(AggregateFixture):
+    """--event requires exactly the lanes that event's workflow run starts."""
+
+    LANES = aggregate_mod.MAIN_LANES
+
+    def aggregate_event(self, event: str) -> subprocess.CompletedProcess[str]:
+        return run_tool(
+            AGGREGATE_PY, "--plan", str(self.plan_path), "--quarantine",
+            str(self.quarantine_path), "--results-dir", str(self.results),
+            "--event", event,
+        )
+
+    def test_main_push_reconciles_the_main_lane_set(self) -> None:
+        for event in ("push", "workflow_dispatch"):
+            with self.subTest(event=event):
+                result = self.aggregate_event(event)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn("linux-3.13 (2 shards)", result.stdout)
+
+    def test_main_push_without_the_313_lane_fails(self) -> None:
+        # The lane only main runs is the one a matrix edit could drop without
+        # any pull request noticing; its absence must be red, not a smaller gate.
+        for name in ("s0.json", "s1.json", "q.json"):
+            (self.results / f"linux-3.13-{name}").unlink()
+        result = self.aggregate_event("push")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("missing result for linux-3.13 shard 0", result.stderr)
+
+    def test_pull_request_passes_on_its_own_lanes_and_refuses_extra_ones(self) -> None:
+        result = self.aggregate_event("pull_request")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("unexpected result lane: linux-3.13", result.stderr)
+        for name in ("s0.json", "s1.json", "q.json"):
+            (self.results / f"linux-3.13-{name}").unlink()
+        result = self.aggregate_event("pull_request")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("reconciled 3 tests in 2 lanes", result.stdout)
+
+    def test_unknown_event_fails_closed(self) -> None:
+        result = self.aggregate_event("schedule")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("no expected lane set for event: schedule", result.stderr)
+
+    def test_lanes_and_event_are_exclusive(self) -> None:
+        result = run_tool(
+            AGGREGATE_PY, "--plan", str(self.plan_path), "--quarantine",
+            str(self.quarantine_path), "--results-dir", str(self.results),
+            "--event", "push", "--lanes", ",".join(self.LANES),
+        )
+        self.assertNotEqual(result.returncode, 0)
+
+    def test_workflow_matrix_and_triggers_match_the_expected_lanes(self) -> None:
+        workflow = (REPO_ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+        header = workflow.split("\n\n")[1]
+        self.assertTrue(header.startswith("on:\n"), header)
+        triggers = {line.strip().rstrip(":") for line in header.splitlines()[1:] if line.startswith("  ") and not line.startswith(("   ", "  #"))}
+        self.assertEqual(triggers, set(aggregate_mod.EXPECTED_LANES))
+
+        def linux(event: str) -> str:
+            versions = [lane.removeprefix("linux-") for lane in aggregate_mod.EXPECTED_LANES[event] if lane.startswith("linux-")]
+            return json.dumps(versions)
+
+        self.assertEqual(aggregate_mod.EXPECTED_LANES["push"], aggregate_mod.EXPECTED_LANES["workflow_dispatch"])
+        self.assertIn(
+            "python-version: ${{ github.event_name == 'pull_request' && "
+            f"fromJSON('{linux('pull_request')}') || fromJSON('{linux('push')}') }}}}",
+            workflow,
+        )
+        windows = {lane for lanes in aggregate_mod.EXPECTED_LANES.values() for lane in lanes if lane.startswith("windows-")}
+        self.assertEqual(windows, {"windows-3.12"})
+        self.assertIn("--lane windows-3.12 --shard", workflow)
+        self.assertIn("--event ${{ github.event_name }}", workflow)
 
 
 if __name__ == "__main__":

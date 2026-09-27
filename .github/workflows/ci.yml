@@ -4,14 +4,25 @@ on:
   pull_request:
   push:
     branches: [main]
+  # Runs the main-push lane set on any branch, so a lane that only main runs
+  # (Linux 3.13) can be observed green before the change that adds it merges.
+  workflow_dispatch:
 
-# One run per pull request: a new push cancels the run for the commit it
-# superseded, which nobody will merge and which otherwise holds the runners the
-# current commit is waiting for (#1752: 14 of 25 active runs were stale). A push
-# to main groups by commit, so a main run is never cancelled by a later merge.
+# One run per pull request, and one per pushed or dispatched ref: a new push
+# cancels the run it superseded. On a pull request nobody merges the superseded
+# commit, and its run holds runners the current commit is waiting for (#1752:
+# 14 of 25 active runs were stale). On main the same holds for a burst of
+# merges: in the 7 days to 2026-09-26, 32 of 86 main runs were superseded by a
+# later main push before they finished, at ~140 job-minutes each, and one
+# 5-push burst at 03:48 on 09-26 left test jobs queued for 13 to 17 minutes.
+# The tradeoff: a red main is attributed to a range of merges rather than one
+# commit, and bisecting it takes a dispatch. The tip run still covers every
+# merged commit, because it tests the tree that contains them all. Timing
+# history is saved only by a green main run, so a cancelled run saves nothing
+# and the next plan restores the newest entry the burst's tip run saved.
 concurrency:
-  group: ci-${{ github.event_name }}-${{ github.event.pull_request.number || github.sha }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ci-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   # Shard planner (issue #1294). Static source discovery never imports test
@@ -36,24 +47,52 @@ jobs:
           path: timings-history
           key: test-sharding-timings-${{ github.run_id }}
           restore-keys: test-sharding-timings-
+      # --shard0-offset is a declared constant, not a measurement taken here:
+      # the step-duration medians of the non-test gates each lane's shard 0
+      # also runs, read from recent CI runs (2026-09-26). Linux shard 0: ~25 s
+      # of docs/compile/smoke gates. Windows shard 0: ~90 s (fanout smoke 20 s,
+      # installer end-to-end 19 s, default locations/PATH 20 s, managed-command
+      # round trip 4 s, PowerShell parse/redirect ~7 s, compile). Re-read them
+      # when those gates change. The serial quarantine runs after the last
+      # shard's tests, and the planner seeds its duration onto that shard.
       - name: Plan test shards
         run: >-
-          python tools/test_sharding/plan.py --shards 2
+          python tools/test_sharding/plan.py --shards 2 --shard0-offset 25
           --durations timings-history/timings.json
           --quarantine tools/test_sharding/quarantine.json
           --out shard-plan/plan.json
+      # Windows runs the same suite more than twice as slowly as Linux, so its lane
+      # gets its own 4-shard plan over the same inventory and quarantine; the
+      # Linux lanes keep 2. The aggregate validates each lane against the plan
+      # that lane actually ran.
+      - name: Plan Windows test shards
+        run: >-
+          python tools/test_sharding/plan.py --shards 4 --shard0-offset 90
+          --durations timings-history/timings.json
+          --quarantine tools/test_sharding/quarantine.json
+          --out shard-plan/plan-windows.json
       - name: Upload shard plan
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: shard-plan
-          path: shard-plan/plan.json
+          path: |
+            shard-plan/plan.json
+            shard-plan/plan-windows.json
 
   test:
     needs: plan
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.11", "3.12"]
+        # A pull request runs the 3.11 floor only; a main push (and a dispatch)
+        # adds 3.13, the newest supported interpreter, where 3.12 used to run.
+        # Windows keeps 3.12 on every event. In the 7 days to 2026-09-26, 0 of
+        # 40 failed runs were red only on Linux 3.12, while a defect only 3.13
+        # shows (Path.resolve on a symlink loop, fixed by 13696e5d) had merged
+        # with every lane green. aggregate.py's
+        # EXPECTED_LANES spells the same sets per event and fails closed when
+        # one of them is missing; the tests pin the two together.
+        python-version: ${{ github.event_name == 'pull_request' && fromJSON('["3.11"]') || fromJSON('["3.11", "3.13"]') }}
         shard: [0, 1]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -95,6 +134,26 @@ jobs:
         with:
           name: shard-result-linux-${{ matrix.python-version }}-${{ matrix.shard }}
           path: results/result-linux-${{ matrix.python-version }}-${{ matrix.shard }}.json
+      # Serial quarantine (issue #1294): shared-state tests (process-wide
+      # signal handlers, spawned child processes, bound sockets) run in their
+      # own process after this lane's last shard, the one the planner leaves
+      # lightest, on the same OS and Python. Entries in
+      # tools/test_sharding/quarantine.json carry owner + reason metadata; a
+      # stale or metadata-less entry fails the plan.
+      - name: Quarantined tests (serial)
+        if: ${{ !cancelled() && matrix.shard == 1 }}
+        env:
+          PYTHONPATH: tests
+        run: >-
+          python tools/test_sharding/run.py --plan shard-plan/plan.json
+          --lane linux-${{ matrix.python-version }} --quarantine
+          --out results/result-quarantine-linux-${{ matrix.python-version }}.json
+      - name: Upload quarantine result
+        if: ${{ always() && matrix.shard == 1 }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: shard-result-quarantine-linux-${{ matrix.python-version }}
+          path: results/result-quarantine-linux-${{ matrix.python-version }}.json
       # Non-test gates run once per python-version (shard 0) instead of once
       # per shard; sharding them would duplicate cost without new signal.
       - name: Static analysis (ruff)
@@ -189,12 +248,12 @@ jobs:
     needs: plan
     runs-on: windows-latest
     strategy:
-      # Each shard runs a disjoint half of the suite, so cancelling the sibling
+      # Each shard runs a disjoint slice of the suite, so cancelling the sibling
       # when one fails leaves that half unmeasured and the blast radius unknown
       # -- and it cancelled a different half on each of two consecutive heads.
       fail-fast: false
       matrix:
-        shard: [0, 1]
+        shard: [0, 1, 2, 3]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
@@ -224,7 +283,7 @@ jobs:
         env:
           PYTHONPATH: tests
         run: >-
-          python tools/test_sharding/run.py --plan shard-plan/plan.json
+          python tools/test_sharding/run.py --plan shard-plan/plan-windows.json
           --lane windows-3.12 --shard ${{ matrix.shard }}
           --out results/result-windows-3.12-${{ matrix.shard }}.json
       - name: Upload shard result
@@ -233,6 +292,22 @@ jobs:
         with:
           name: shard-result-windows-3.12-${{ matrix.shard }}
           path: results/result-windows-3.12-${{ matrix.shard }}.json
+      # Serial quarantine in its own process after the lane's last shard; see
+      # the same step in the `test` job.
+      - name: Quarantined tests (serial)
+        if: ${{ !cancelled() && matrix.shard == 3 }}
+        env:
+          PYTHONPATH: tests
+        run: >-
+          python tools/test_sharding/run.py --plan shard-plan/plan-windows.json
+          --lane windows-3.12 --quarantine
+          --out results/result-quarantine-windows-3.12.json
+      - name: Upload quarantine result
+        if: ${{ always() && matrix.shard == 3 }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: shard-result-quarantine-windows-3.12
+          path: results/result-quarantine-windows-3.12.json
       - name: Compile package
         if: matrix.shard == 0
         run: python -m compileall src
@@ -360,60 +435,14 @@ jobs:
           if ($stored -notlike '*omh\bin*') { throw 'installer did not add its bin dir to the user PATH' }
           Write-Host 'default locations and user PATH edit verified'
 
-  # Serial quarantine (issue #1294): shared-state tests (process-wide
-  # signal handlers, spawned child processes, bound sockets) run here,
-  # isolated from the parallel shards but still on every required
-  # platform/version. Entries in tools/test_sharding/quarantine.json carry
-  # owner + reason metadata; a stale or metadata-less entry fails the plan.
-  test-quarantine:
-    needs: plan
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        include:
-          - os: ubuntu-latest
-            python-version: "3.11"
-            lane: linux-3.11
-          - os: ubuntu-latest
-            python-version: "3.12"
-            lane: linux-3.12
-          - os: windows-latest
-            python-version: "3.12"
-            lane: windows-3.12
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
-        with:
-          python-version: ${{ matrix.python-version }}
-      - name: Install package
-        run: python -m pip install -e .
-      - name: Download shard plan
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: shard-plan
-          path: shard-plan
-      - name: Quarantined tests (serial)
-        env:
-          PYTHONPATH: tests
-        run: >-
-          python tools/test_sharding/run.py --plan shard-plan/plan.json
-          --lane ${{ matrix.lane }} --quarantine
-          --out results/result-quarantine-${{ matrix.os }}-${{ matrix.python-version }}.json
-      - name: Upload quarantine result
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: shard-result-quarantine-${{ matrix.os }}-${{ matrix.python-version }}
-          path: results/result-quarantine-${{ matrix.os }}-${{ matrix.python-version }}.json
-
   # Fail-closed reconciliation (issue #1294). Runs no matter how the shard
   # jobs ended: a failed or cancelled leg is red here even if its result
   # artifact never arrived, and the aggregate re-proves that discovered ==
   # sharded + quarantined == accounted, with no missing or duplicate tests.
-  # Make this job (with test, test-windows, and test-quarantine) a required
+  # Make this job (with test and test-windows) a required
   # status check so no shard outcome can produce a partial green.
   aggregate:
-    needs: [test, test-windows, test-quarantine]
+    needs: [test, test-windows]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -425,9 +454,8 @@ jobs:
         env:
           TEST_RESULT: ${{ needs.test.result }}
           TEST_WINDOWS_RESULT: ${{ needs.test-windows.result }}
-          QUARANTINE_RESULT: ${{ needs.test-quarantine.result }}
         run: |
-          for result in "$TEST_RESULT" "$TEST_WINDOWS_RESULT" "$QUARANTINE_RESULT"; do
+          for result in "$TEST_RESULT" "$TEST_WINDOWS_RESULT"; do
             if [ "$result" != "success" ]; then
               echo "required test job did not succeed: $result"
               exit 1
@@ -449,7 +477,8 @@ jobs:
           python tools/test_sharding/aggregate.py --plan shard-plan/plan.json
           --quarantine tools/test_sharding/quarantine.json
           --results-dir results
-          --lanes linux-3.11,linux-3.12,windows-3.12
+          --event ${{ github.event_name }}
+          --lane-plan windows-3.12=shard-plan/plan-windows.json
           --timings-out timings-merged/timings.json
       # Timing history is performance data only. Successful main runs save a
       # bounded immutable cache entry; the next plan restores it over the
