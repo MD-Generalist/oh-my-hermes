@@ -4,6 +4,7 @@ import unittest
 
 from _cli_harness import run_cli
 from omh.quality.routing_precision import ROUTING_INTERVENTION_CASES
+from omh.skills.catalog import builtin_definitions
 from omh.quality.skill_reach import (
     NO_NEGATIVE_CONTROL_BASELINE,
     REASON_ADDRESSED_BY_DESIGN,
@@ -24,8 +25,8 @@ from omh.quality.skill_reach import (
 # commit that removes it from the baseline, so it cannot quietly re-join.
 UNREACHED_POSITIVE_LEDGER = frozenset(
     {
-        "achievements", "jev-action-check", "jev-ask", "jev-done-check", "jev-failure-triage",
-        "jev-review-gate", "jev-route", "meta-router", "wiki",
+        "jev-action-check", "jev-ask", "jev-done-check", "jev-failure-triage",
+        "jev-review-gate", "jev-route", "meta-router",
     }
 )
 NO_NEGATIVE_CONTROL_LEDGER: frozenset[str] = frozenset()
@@ -83,10 +84,10 @@ class SkillReachGateTests(unittest.TestCase):
 
     def test_an_unreached_skill_missing_from_the_baseline_fails_by_name(self) -> None:
         positive = dict(UNREACHED_POSITIVE_BASELINE)
-        del positive["wiki"]
+        del positive["meta-router"]
         errors = self._errors(positive=positive)
         self.assertEqual(1, len(errors), errors)
-        self.assertTrue(errors[0].startswith("wiki: no intervention case dispatches to it"), errors)
+        self.assertTrue(errors[0].startswith("meta-router: no intervention case dispatches to it"), errors)
 
     def test_a_skill_without_a_negative_control_fails_by_name(self) -> None:
         # Every skill has a negative control now, so the baseline is empty and
@@ -124,12 +125,29 @@ class SkillReachGateTests(unittest.TestCase):
 
     def test_a_wrong_positive_reason_fails(self) -> None:
         # `jev-ask` is reached only when addressed, so "corpus_gap" (a non-name
-        # trigger reaches it) is false; `wiki` is reached by its own trigger,
-        # so "addressed_by_design" is false.
+        # trigger reaches it) is false. No skill is unreached on its own
+        # trigger any more, so `wiki` stands in with its intervention cases
+        # taken away: its own trigger probe still dispatches, which makes
+        # "corpus_gap" true and "addressed_by_design" false.
         self.assertEqual(REASON_ADDRESSED_BY_DESIGN, UNREACHED_POSITIVE_BASELINE["jev-ask"])
-        self.assertEqual(REASON_CORPUS_GAP, UNREACHED_POSITIVE_BASELINE["wiki"])
-        errors = self._errors(
-            positive={**UNREACHED_POSITIVE_BASELINE, "jev-ask": REASON_CORPUS_GAP, "wiki": REASON_ADDRESSED_BY_DESIGN}
+        wiki_triggers = next(definition.triggers for definition in builtin_definitions() if definition.name == "wiki")
+        probe = natural_trigger_probe("wiki", wiki_triggers, source="discord")
+        self.assertTrue(probe)
+        measurements: list[SkillReachMeasurement] = [
+            {**row, "natural_dispatch_cases": 0, "natural_trigger_probe": probe} if row["skill"] == "wiki" else row
+            for row in self.measurements
+        ]
+
+        def errors_for(positive: dict[str, str]) -> list[str]:
+            return skill_reach_errors(
+                measurements,
+                positive_baseline=positive,
+                negative_baseline=dict(NO_NEGATIVE_CONTROL_BASELINE),
+            )
+
+        self.assertEqual([], errors_for({**UNREACHED_POSITIVE_BASELINE, "wiki": REASON_CORPUS_GAP}))
+        errors = errors_for(
+            {**UNREACHED_POSITIVE_BASELINE, "jev-ask": REASON_CORPUS_GAP, "wiki": REASON_ADDRESSED_BY_DESIGN}
         )
         self.assertEqual(2, len(errors), errors)
         self.assertTrue(any(error.startswith("jev-ask: baseline reason corpus_gap is wrong") for error in errors), errors)

@@ -450,6 +450,8 @@ VISIBLE_ACTIONS = (
     "apply_capability_toggle",
     "show_running_work_board",
     "declare_plan_checklist",
+    "show_achievements_summary",
+    "prepare_wiki_blueprint",
     "run_setup_guide",
     "prepare_operating_workflow",
     "prepare_memory_review",
@@ -1024,6 +1026,8 @@ _ACK_PRIMARY_ACTIONS_BY_NEXT_ACTION = {
     "apply_capability_toggle": ("apply_capability_toggle", "Show capability policy"),
     "show_running_work_board": ("show_running_work_board", "Show running work"),
     "declare_plan_checklist": ("declare_plan_checklist", "Declare checklist"),
+    "show_achievements_summary": ("show_achievements_summary", "Show achievements"),
+    "prepare_wiki_blueprint": ("prepare_wiki_blueprint", "Prepare wiki blueprint"),
     "run_setup_guide": ("run_setup_guide", "Start setup guide"),
     "prepare_operating_workflow": ("prepare_operating_workflow", "Prepare workflow"),
     "prepare_memory_review": ("prepare_memory_review", "Review memory"),
@@ -3833,6 +3837,71 @@ _WORKFLOW_OPERATIONS_CHAT_CARDS.update(
             ),
             "actions": [
                 {"id": "declare_plan_checklist", "label": "Declare checklist", "style": "primary"},
+            ],
+        },
+        "achievements": {
+            "kind": "achievements_summary",
+            "headline": "I can summarize your Hermes badges, tiers, and progress.",
+            "body": (
+                "I will read the locally recorded hermes-achievements artifacts and show unlocked badges, current "
+                "tiers, recent unlocks, and the badges closest to their next tier. A number those artifacts do not "
+                "record stays unavailable rather than zero, and a badge is never recomputed or granted here."
+            ),
+            "phase": "achievements_summary_prepared",
+            "next_action": "show_achievements_summary",
+            "artifact_schema": "hermes_achievements_observation/v1",
+            "claim_boundary_suffix": (
+                "It is not a session-history rescan, badge recomputation, unlock proof beyond those artifacts, "
+                "or productivity evidence."
+            ),
+            "actions": [
+                {"id": "show_achievements_summary", "label": "Show achievements", "style": "primary"},
+                {"id": "show_status", "label": "Show status", "style": "secondary"},
+            ],
+            "recommended_flow": [
+                "read_local_achievement_artifacts",
+                "summarize_unlocked_badges_and_tiers",
+                "show_recent_unlocks_and_next_tier_progress",
+                "mark_unrecorded_metrics_unavailable",
+            ],
+            "evidence_not_observed": [
+                "session-history rescan",
+                "badge recomputation",
+                "unlocks beyond the local artifacts",
+                "productivity",
+            ],
+        },
+        "wiki": {
+            "kind": "wiki_blueprint",
+            "headline": "I can design a wiki you can start today, or file knowledge into the store you keep.",
+            "body": (
+                "I will size the structure to who reads and maintains it, propose one organization model with its "
+                "rationale, breaking conditions, and one alternative, then lay out the skeleton, entry points, "
+                "conventions, maintenance routine, and at most ten seed pages. For knowledge going into a store you "
+                "already keep, I will prepare destination-aware notes with a retrieval hint and a staleness warning. "
+                "Creating the store and writing its pages stay unobserved until a write is recorded."
+            ),
+            "phase": "wiki_blueprint_prepared",
+            "next_action": "prepare_wiki_blueprint",
+            "artifact_schema": "wiki_blueprint/v1",
+            "claim_boundary_suffix": (
+                "It is not store creation, external write, connector run, or memory mutation evidence."
+            ),
+            "actions": [
+                {"id": "prepare_wiki_blueprint", "label": "Prepare wiki blueprint", "style": "primary"},
+                {"id": "show_status", "label": "Show status", "style": "secondary"},
+            ],
+            "recommended_flow": [
+                "size_audience_and_maintainer",
+                "propose_model_with_breaking_conditions",
+                "lay_out_skeleton_conventions_and_seed_pages",
+                "prepare_destination_guidance",
+            ],
+            "evidence_not_observed": [
+                "store creation",
+                "external write",
+                "connector run",
+                "memory mutation",
             ],
         },
         "ultraperf": {

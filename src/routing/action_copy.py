@@ -147,6 +147,7 @@ NEXT_ACTION_LABELS: dict[str, str] = {
     "apply_capability_toggle": "turning an OMH capability family on or off",
     "show_running_work_board": "showing the running work board",
     "declare_plan_checklist": "declaring the plan checklist",
+    "prepare_wiki_blueprint": "preparing the wiki blueprint",
     "run_omh_uninstall": "running omh uninstall",
     "run_setup_guide": "walking the setup guide",
     "send_to_executor": "opening the selected coding agent",

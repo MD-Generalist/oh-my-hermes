@@ -7981,6 +7981,24 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "prepare_workspace_file_operator_card",
         "workspace_file_operator",
     ),
+    RoutingInterventionCase(
+        "monthly-badge-progress-reaches-achievements",
+        "Asking for badge progress opens the achievements summary",
+        "show my badge progress for this month",
+        "dispatch",
+        "achievements",
+        "show_achievements_summary",
+        "achievements_summary",
+    ),
+    RoutingInterventionCase(
+        "wiki-from-project-notes-reaches-wiki",
+        "Building a wiki out of scattered notes opens the wiki blueprint",
+        "help me build a wiki out of my project notes",
+        "dispatch",
+        "wiki",
+        "prepare_wiki_blueprint",
+        "wiki_blueprint",
+    ),
 )
 
 

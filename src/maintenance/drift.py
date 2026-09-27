@@ -406,7 +406,10 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # The #1893 review adds seven: subject-initial and passive
             # scheduling requests (a directive modal or a delivery passive on a
             # noun-phrase subject) that must keep dispatching.
-            expected=529,
+            # The achievements and wiki chat cards add two: a badge-progress
+            # request and a wiki-from-notes request, each answered by its own
+            # card instead of the generic acknowledgement.
+            expected=531,
             sites=(
                 "tests/test_cli.py",
                 "tests/test_hermes_ux_quality.py",

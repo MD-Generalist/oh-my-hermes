@@ -1219,6 +1219,34 @@ _SKILL_POLICIES.update(
                 "write because it replaces rather than merges. Never present an item state as an observed result."
             ),
         ),
+        # Without these two entries `achievements` fell to the observability
+        # category's `refresh_status` and `wiki` to the knowledge category's
+        # `prepare_memory_review`, so a dispatch to either answered with the
+        # generic acknowledgement instead of its own card.
+        "achievements": RecommendationPolicy(
+            next_action="show_achievements_summary",
+            evidence_boundary=(
+                "An achievements card reflects only locally observed hermes-achievements plugin artifacts; it is not "
+                "a session-history rescan, badge recomputation, unlock proof beyond those artifacts, or productivity "
+                "evidence."
+            ),
+            wrapper_guidance=(
+                "Summarize unlocked badges, tiers, recent unlocks, and next-tier progress from the locally recorded "
+                "achievement artifacts only, and report a number they do not record as unavailable, never zero."
+            ),
+        ),
+        "wiki": RecommendationPolicy(
+            next_action="prepare_wiki_blueprint",
+            evidence_boundary=(
+                "A wiki blueprint is a prepared structure; it is not store creation, external write, connector run, "
+                "or memory mutation evidence."
+            ),
+            wrapper_guidance=(
+                "Size the structure to the audience and maintainer, propose one model with its rationale, breaking "
+                "conditions, and one alternative, and cap seed pages at ten. Never present the blueprint as a "
+                "created store or an observed write."
+            ),
+        ),
         "github-event-ops": RecommendationPolicy(
             next_action="prepare_github_event_ops_card",
             evidence_boundary="A GitHub event ops card is not webhook delivery, API mutation, label application, review completion, CI rerun, or fix execution evidence.",
