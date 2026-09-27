@@ -280,8 +280,8 @@ def project_motion_evidence(
 ) -> dict[str, object]:
     """Project motion records onto the observation verdict for named cells only.
 
-    A record satisfies a cell only when run, plan digest, cell, repository,
-    revision, round, route, state, viewport, and browser all match exactly. The
+    A record satisfies a cell only when run, plan digest, repository, revision,
+    round, route, state, viewport, and browser all match exactly. The
     projection can only keep or lower the observation verdict: a covered motion
     cell never turns a BLOCK or REVISE into PASS.
     """
@@ -313,7 +313,6 @@ def project_motion_evidence(
             if record.get("schema_version") == MOTION_INTERACTION_CAPTURE_SCHEMA_VERSION
             and record.get("run_id") == normalized_plan["run_id"]
             and record.get("plan_digest") == normalized_plan["plan_digest"]
-            and record.get("cell_id") == cell_id
             and all(_object(record.get("lineage")).get(key) == value for key, value in expected.items())
         )
         if cited:
