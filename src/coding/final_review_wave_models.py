@@ -25,6 +25,16 @@ class LaneState(str, Enum):
     CANCELLED = "cancelled"
 
 
+class ContextProvenance(str, Enum):
+    """Where a review lane's context came from; only a fresh lane is independent."""
+
+    FRESH_FROM_DIFF = "fresh_from_diff"
+    INHERITED_FROM_AUTHOR = "inherited_from_author"
+
+
+CONTEXT_PROVENANCE_FIELD = "context_provenance"
+
+
 class WaveVerdict(str, Enum):
     PASS = "PASS"
     HOLD = "HOLD"
@@ -89,9 +99,21 @@ class LaneBudgetReservationInput:
 
 @dataclass(frozen=True, slots=True)
 class LaneObservation:
+    """One lane's reported state, with the required provenance of its context.
+
+    Declaring provenance is not evidence that the review ran; only the state
+    carries that, and a prepared lane stays prepared whatever it declares.
+    """
+
     lens: ReviewLens
     state: LaneState
     revision: ImmutableRevision
+    context_provenance: ContextProvenance
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self, "context_provenance", _required_provenance(self.context_provenance)
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -101,12 +123,16 @@ class ReviewLane:
     read_only: ReadOnlyCapability
     bound_revision: ImmutableRevision | None
     observed_revision: ImmutableRevision | None = None
+    # None means no observation declared a provenance; it never counts as
+    # independent review.
+    context_provenance: ContextProvenance | None = None
 
 
 @dataclass(frozen=True, slots=True)
 class WaveAssessment:
     verdict: WaveVerdict
     blocking_lens: ReviewLens | None
+    refused_field: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -121,3 +147,14 @@ class LaneStatusProjection:
 class WaveStatusProjection:
     assessment: WaveAssessment
     lanes: tuple[LaneStatusProjection, ...]
+
+
+def _required_provenance(value: object) -> ContextProvenance:
+    if isinstance(value, ContextProvenance):
+        return value
+    if isinstance(value, str):
+        for member in ContextProvenance:
+            if value == member.value:
+                return member
+    allowed = " or ".join(member.value for member in ContextProvenance)
+    raise ValueError(f"{CONTEXT_PROVENANCE_FIELD} is required: {allowed}")

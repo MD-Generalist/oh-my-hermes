@@ -595,13 +595,28 @@ wave and records one execution reference per observed lane. A complete-looking
 engine result with no matching lane observations, or a dirty or changed
 checkout after review, is `BLOCK`, never `PASS`.
 
+Every lane observation also carries a required `context_provenance`:
+`fresh_from_diff` when the reviewer's context was built from the change
+itself, or `inherited_from_author` when it came from the author's session.
+An observation without it is refused at construction. A final review is an
+independent review, so an `inherited_from_author` lane is `BLOCK`, never
+`PASS`, and the aggregate names `refused_field: context_provenance` beside the
+blocking lens; a lane that completed with no provenance recorded is refused
+the same way. The built-in adapter declares `fresh_from_diff`, because each
+child starts from a detached checkout and a prompt of goal, lens, and revision
+only. Declaring provenance is not evidence that the review ran: a lane that
+declares one and never runs stays `prepared_not_executed`. Each fan-out
+record carries the lane's `context_provenance`. No OMH reader loads earlier
+fan-out records back, so records written before this field have no load
+path to preserve.
+
 The wave reduces to exactly three verdicts:
 
 | Verdict | When |
 | --- | --- |
 | `PASS` | integration is green, producer evidence exists, and every lane completed at that exact revision |
 | `HOLD` | integration is not green, producer evidence is missing, or a lane has not finished yet |
-| `BLOCK` | the revision is not immutable, a lane drifted off it, mutated, went missing, went stale, failed, timed out, or was cancelled |
+| `BLOCK` | the revision is not immutable, a lane drifted off it, mutated, went missing, went stale, failed, timed out, or was cancelled, or a lane's context was not `fresh_from_diff` |
 
 The verdict is derived from lane states in lens order, so the blocking lens is
 named rather than guessed, and remediation invalidates the wave instead of

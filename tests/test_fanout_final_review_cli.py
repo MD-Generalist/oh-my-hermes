@@ -139,6 +139,12 @@ class FanoutFinalReviewCliTests(unittest.TestCase):
                 for record in result["final_review_records"]
             )
         )
+        # Each built-in child starts from a detached checkout and a prompt of
+        # goal, lens, and revision only.
+        self.assertEqual(
+            [record["context_provenance"] for record in result["final_review_records"]],
+            ["fresh_from_diff"] * 4,
+        )
 
     def test_final_review_configuration_refuses_missing_provider(self) -> None:
         with TemporaryDirectory(prefix="omh-final-review-config-") as raw:

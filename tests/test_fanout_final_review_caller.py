@@ -21,6 +21,7 @@ from omh.coding.fanout_final_review_hook import run_final_review_after_integrati
 from omh.system.paths import OmhPaths  # noqa: E402
 from omh.coding.final_review_wave import (  # noqa: E402
     LANE_ORDER,
+    ContextProvenance,
     FinalReviewWave,
     ImmutableRevision,
     IntegrationReceipt,
@@ -35,14 +36,24 @@ from omh.coding.final_review_wave import (  # noqa: E402
 _REVISION = "a" * 40
 
 
-def _wave(*, revision: str = _REVISION, blocked: ReviewLens | None = None) -> FinalReviewWave:
+def _wave(
+    *,
+    revision: str = _REVISION,
+    blocked: ReviewLens | None = None,
+    inherited: ReviewLens | None = None,
+) -> FinalReviewWave:
     wave = prepare_final_review_wave(
         "fanout-review",
         tuple(LaneBudgetReservationInput(lens, limit=1, reserved=0) for lens in LANE_ORDER),
     ).integrate(IntegrationReceipt(ImmutableRevision(revision), completed=True))
     for lens in LANE_ORDER:
         wave = wave.observe(
-            LaneObservation(lens, LaneState.MISSING if lens is blocked else LaneState.COMPLETED, ImmutableRevision(revision))
+            LaneObservation(
+                lens,
+                LaneState.MISSING if lens is blocked else LaneState.COMPLETED,
+                ImmutableRevision(revision),
+                ContextProvenance.INHERITED_FROM_AUTHOR if lens is inherited else ContextProvenance.FRESH_FROM_DIFF,
+            )
         )
     return wave
 
@@ -61,7 +72,7 @@ class _Engine:
         for lane in self.wave.lanes:
             if lane.observed_revision is not None:
                 observe(
-                    LaneObservation(lane.lens, lane.state, lane.observed_revision)
+                    LaneObservation(lane.lens, lane.state, lane.observed_revision, lane.context_provenance)
                 )
         return self.wave
 
@@ -96,6 +107,9 @@ class FanoutFinalReviewCallerTests(unittest.TestCase):
         self.assertEqual([record["lens"] for record in result["final_review_records"]], [lens.value for lens in LANE_ORDER])
         self.assertTrue(all(record["revision"] == _REVISION for record in result["final_review_records"]))
         self.assertTrue(all(record["execution_observed"] for record in result["final_review_records"]))
+        self.assertEqual(
+            {record["context_provenance"] for record in result["final_review_records"]}, {"fresh_from_diff"}
+        )
         self.assertTrue(all(str(record["execution_ref"]).startswith("final-review:") for record in result["final_review_records"]))
         self.assertNotIn("integration_ready", result)
         self.assertNotIn("verification_status", result)
@@ -224,6 +238,45 @@ class FanoutFinalReviewCallerTests(unittest.TestCase):
             "blocking_lens": "safety",
         })
         self.assertNotIn("integration_ready", result)
+
+    def test_inherited_lens_blocks_and_the_aggregate_names_the_refused_field(self) -> None:
+        result = run_final_review_after_integration(
+            _Engine(_wave(inherited=ReviewLens.QUALITY)),
+            integrated_revision=_REVISION,
+            integration_green=True,
+            producer_evidence=True,
+            workspace_revision=lambda: _REVISION,
+        )
+
+        self.assertEqual(result["final_review_status"], "BLOCK")
+        self.assertEqual(result["final_review_aggregate"], {
+            "revision": _REVISION,
+            "verdict": "BLOCK",
+            "blocking_lens": "quality",
+            "refused_field": "context_provenance",
+        })
+        self.assertEqual(
+            [record["context_provenance"] for record in result["final_review_records"]],
+            ["fresh_from_diff", "inherited_from_author", "fresh_from_diff", "fresh_from_diff"],
+        )
+
+    def test_observed_provenance_that_disagrees_with_the_wave_blocks(self) -> None:
+        class _RelabelingEngine(_Engine):
+            def execute(self, revision, observe):
+                for lane in self.wave.lanes:
+                    observe(LaneObservation(lane.lens, lane.state, lane.observed_revision, ContextProvenance.FRESH_FROM_DIFF))
+                return self.wave
+
+        result = run_final_review_after_integration(
+            _RelabelingEngine(_wave(inherited=ReviewLens.SAFETY)),
+            integrated_revision=_REVISION,
+            integration_green=True,
+            producer_evidence=True,
+            workspace_revision=lambda: _REVISION,
+        )
+
+        self.assertEqual(result["final_review_status"], "BLOCK")
+        self.assertNotIn("final_review_records", result)
 
     def test_workspace_mutation_after_review_blocks_a_reported_pass(self) -> None:
         revisions = iter((_REVISION, None))

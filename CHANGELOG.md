@@ -60,6 +60,18 @@ All notable changes will be documented here.
   fail-closed: a shard with no result in any attempt is red, two results for
   one shard in one attempt are red, and a stale green can never hide a fresh
   red (#1894).
+- **A final-review lane now records whether it saw the author's context,
+  and an inherited one cannot pass as independent review (#1698).** Every
+  lane observation carries a required `context_provenance`,
+  `fresh_from_diff` or `inherited_from_author`; an observation without it
+  is refused at construction. The wave assesses an `inherited_from_author`
+  lane, or a lane that completed with no provenance recorded, as `BLOCK`
+  with `refused_field: context_provenance` beside the blocking lens.
+  `execute_final_review_wave` takes the executor's declared provenance, and
+  a runner result may declare its own. The built-in Hermes adapter declares
+  `fresh_from_diff`, and each fan-out `final_review_records` row carries the
+  field. Declaring provenance is not evidence that a review ran: a prepared
+  lane stays `prepared_not_executed`.
 - **The cost receipt now counts Hermes kanban workers the conversation
   started.** `omh_cost_receipt/v1` gains a fourth source, `kanban_workers`.
   A worker run belongs to the conversation when its task's `tasks.session_id`

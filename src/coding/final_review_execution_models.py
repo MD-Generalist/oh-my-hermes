@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Mapping
 
-from .final_review_wave_models import ImmutableRevision, LaneState
+from .final_review_wave_models import ContextProvenance, ImmutableRevision, LaneState
 
 
 @dataclass(frozen=True, slots=True)
@@ -64,7 +64,12 @@ class FinalReviewExecutionReservations:
 
 @dataclass(frozen=True, slots=True)
 class LaneExecutionResult:
-    """One runner's terminal observation; no result means missing evidence."""
+    """One runner's terminal observation; no result means missing evidence.
+
+    ``context_provenance`` left as None takes the provenance the wave's
+    executor declared for every lane.
+    """
 
     state: LaneState
     revision: ImmutableRevision | None
+    context_provenance: ContextProvenance | None = None
