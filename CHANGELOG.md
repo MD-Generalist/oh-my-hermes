@@ -33,6 +33,22 @@ All notable changes will be documented here.
   transcript before this hook runs. This closes the end-of-turn half of
   #1721. Arming a watcher at that point is still impossible, because the
   hook cannot re-enter the turn loop.
+- **`achievements` and `wiki` answer with their own chat card.** A request
+  that dispatched to either skill, such as "show my badge progress for this
+  month" or "help me build a wiki out of my project notes", got the generic
+  "I know which workflow should handle this" acknowledgement, because neither
+  had a routing policy of its own: `achievements` fell to the observability
+  default (`refresh_status`) and `wiki` to the knowledge default
+  (`prepare_memory_review`). Each now has a policy and a workflow card:
+  `achievements_summary` (`show_achievements_summary`,
+  `hermes_achievements_observation/v1`) summarizes unlocked badges, tiers,
+  recent unlocks and next-tier progress from the local artifacts only, and
+  `wiki_blueprint` (`prepare_wiki_blueprint`, `wiki_blueprint/v1`) sizes a
+  wiki to its readers and maintainer or prepares destination-aware notes for
+  an existing store. Both sentences are now intervention cases, so natural
+  skill reach goes from 121 to 123 of 130 and both skills leave the
+  unreached baseline.
+
 - **The cost receipt now counts Hermes kanban workers the conversation
   started.** `omh_cost_receipt/v1` gains a fourth source, `kanban_workers`.
   A worker run belongs to the conversation when its task's `tasks.session_id`

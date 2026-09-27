@@ -61,13 +61,6 @@ NEGATIVE_REASONS = (REASON_CORPUS_GAP,)
 # measured when this gate landed. Shrink-only: remove an entry in the same
 # commit that adds the intervention case reaching it.
 UNREACHED_POSITIVE_BASELINE: Mapping[str, str] = {
-    # `achievements` and `wiki` dispatch on their own non-name triggers, but
-    # every dispatch to them measured so far answers with the generic `ack`
-    # chat response, which the intervention evaluator rejects ("generic
-    # acknowledgement replaced expected workflow surface"). Giving them a
-    # passing case means giving them a response surface of their own -- a
-    # wrapper change, not a corpus one.
-    "achievements": REASON_CORPUS_GAP,
     "jev-action-check": REASON_ADDRESSED_BY_DESIGN,
     "jev-ask": REASON_ADDRESSED_BY_DESIGN,
     "jev-done-check": REASON_ADDRESSED_BY_DESIGN,
@@ -75,7 +68,6 @@ UNREACHED_POSITIVE_BASELINE: Mapping[str, str] = {
     "jev-review-gate": REASON_ADDRESSED_BY_DESIGN,
     "jev-route": REASON_ADDRESSED_BY_DESIGN,
     "meta-router": REASON_ADDRESSED_BY_DESIGN,
-    "wiki": REASON_CORPUS_GAP,
 }
 
 # Skills whose territory no negative control in ROUTING_PRECISION_CASES enters,
