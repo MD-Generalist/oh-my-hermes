@@ -46,6 +46,11 @@ CANONICAL_OBSERVATION_EVENTS = (
     # Per-unit dispatcher evidence. This is deliberately distinct from the
     # run-level verification_result_observed event and its projection field.
     "unit_verification_observed",
+    # A receipt, not a lifecycle rung: the dispatcher ran a reproduction unit's
+    # declared command and saw it exit nonzero (`observed`) or zero
+    # (`not_observed`: the failure was not observed).
+    # It releases the fanout reproduction hold and advances nothing here.
+    "reproduction_failure_observed",
     "verification_result_observed",
     "review_result_observed",
     "ci_result_observed",

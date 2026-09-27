@@ -87,6 +87,33 @@ MAX_UNIT_VERIFICATION_COMMAND_CHARS = 240
 # back, and the docs describing both cannot drift apart.
 UNIT_VERIFICATION_OBSERVATION_SOURCE = "dispatch_verification"
 
+# Optional unit kind. The only declared kind is `reproduction`: a unit whose
+# job is to make the reported failure fail on purpose, before anything is
+# fixed. A split that declares one is debugging-shaped by that declaration and
+# nothing else; the request text is never read to decide it. Such a unit
+# carries `reproduction_command`, which the dispatcher runs itself and which
+# must EXIT NONZERO to count, and every other unit in the split must reach a
+# reproduction unit through `depends_on`, so no edit unit can be admitted
+# before the failure it fixes has been observed. Absent everywhere, the
+# contract is byte-identical to one frozen before the field existed.
+REPRODUCTION_UNIT_KIND = "reproduction"
+FANOUT_UNIT_KINDS = (REPRODUCTION_UNIT_KIND,)
+FANOUT_REPRODUCTION_SCHEMA_VERSION = "fanout_reproduction/v1"
+# The journal receipt that makes an observed reproduction survive a resume: a
+# later dispatch skips the already-completed reproduction unit and reads this
+# event instead of re-running it.
+REPRODUCTION_OBSERVED_EVENT = "reproduction_failure_observed"
+# The receipt's closed status vocabulary. Only `failure_reproduced` releases
+# the hold; `not_reproduced` means the command ran and exited 0 (the failure
+# did not reproduce), and `not_observed` means it never produced an exit code
+# the dispatcher saw (not requested, dry run, could not start, timed out).
+REPRODUCTION_STATUSES = ("failure_reproduced", "not_reproduced", "not_observed")
+FANOUT_REPRODUCTION_CLAIM_BOUNDARY = (
+    "A reproduction receipt records only whether the dispatcher itself observed the declared reproduction "
+    "command exit nonzero in the reproduction unit's worktree. It is not evidence that the failure is the "
+    "reported bug, that any fix is correct, or of verification, review, CI, or merge."
+)
+
 # Optional per-check metadata (`verification_checks`): the additive,
 # structured sibling of `verification_commands` that lets a unit declare
 # tiers, read/write safety, dependency edges, and a narrowed timeout per

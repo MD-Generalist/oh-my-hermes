@@ -16,6 +16,7 @@ from .fanout_contracts import (
     FANOUT_SPAWN_PLAN_THRESHOLD,
     FANOUT_UNIT_INPUT_BUDGET_CLAIM_BOUNDARY,
     FANOUT_UNIT_INPUT_BUDGET_SCHEMA_VERSION,
+    FANOUT_UNIT_KINDS,
     FANOUT_UNIT_OWNERS,
     FanoutContractError,
     MAX_CHARS_PER_TOKEN,
@@ -30,6 +31,7 @@ from .fanout_contracts import (
     MAX_UNIT_SOURCE_RANGES,
     MAX_UNIT_VERIFICATION_COMMANDS,
     PREPARED_NOT_OBSERVED,
+    REPRODUCTION_UNIT_KIND,
     UNIT_SOURCE_RANGE_KEYS,
     VERIFICATION_CHECK_ID_PATTERN,
     VERIFICATION_CHECK_CLAIM_SCOPES,
@@ -233,6 +235,41 @@ def validate_fanout_units(units: Sequence[Mapping[str, object]]) -> None:
                 raise FanoutContractError(f"unit {unit_id} depends on unknown unit {dependency!r}")
             if str(dependency) == unit_id:
                 raise FanoutContractError(f"unit {unit_id} cannot depend on itself")
+    _require_reproduction_hold_edges(units)
+
+
+def _require_reproduction_hold_edges(units: Sequence[Mapping[str, object]]) -> None:
+    """Refuse a debugging-shaped split an edit unit could enter unheld.
+
+    A split is debugging-shaped exactly when it declares a reproduction unit.
+    Then every other unit must reach one through `depends_on`, directly or
+    through another unit: the dispatcher's hold sits on that edge, so a unit
+    with no path to a reproduction would be admitted before any failure was
+    observed. A split with no reproduction unit is not touched.
+    """
+    reproduction_ids = {
+        str(unit.get("unit_id", "")) for unit in units if unit.get("kind") == REPRODUCTION_UNIT_KIND
+    }
+    if not reproduction_ids:
+        return
+    edges = {str(unit.get("unit_id", "")): [str(dep) for dep in unit.get("depends_on", []) or []] for unit in units}
+    for unit_id in sorted(edges):
+        if unit_id in reproduction_ids:
+            continue
+        seen: set[str] = set()
+        frontier = list(edges[unit_id])
+        while frontier:
+            current = frontier.pop()
+            if current in seen:
+                continue
+            seen.add(current)
+            frontier.extend(edges.get(current, []))
+        if not seen & reproduction_ids:
+            raise FanoutContractError(
+                f"unit {unit_id} must depend on a reproduction unit ({', '.join(sorted(reproduction_ids))}), "
+                "directly or through another unit: a split that declares a reproduction holds every other "
+                "unit behind an observed failure"
+            )
 
 
 def spawn_plan_required(unit_count: int) -> bool:
@@ -412,9 +449,13 @@ def _normalized_unit(unit: Mapping[str, object], index: int) -> dict[str, object
                 "declare verification_checks only — the command list is derived from it"
             )
         commands = [str(check["command"]) for check in checks]
+    kind, reproduction_command = _normalized_unit_kind(unit, index)
     return {
         "unit_id": str(unit.get("unit_id", "")).strip(),
         "title": " ".join(str(unit.get("title", "")).split()),
+        # '' when undeclared; `reproduction` is the only declared kind.
+        "kind": kind,
+        "reproduction_command": reproduction_command,
         "owner": str(owner) if owner is not None and str(owner).strip() else None,
         "file_scope": sorted(set(file_scope)),
         "depends_on": sorted(set(depends_on)),
@@ -617,6 +658,43 @@ def _normalized_verification_commands(value: object, index: int) -> list[str]:
         verification_command_argv(command)
         commands.append(command)
     return commands
+
+
+def _normalized_unit_kind(unit: Mapping[str, object], index: int) -> tuple[str, str]:
+    """The unit's declared kind and reproduction command, or ('', '').
+
+    Closed vocabulary: an unknown kind is a freeze-time refusal rather than a
+    silently ordinary unit. The command is required on a reproduction unit and
+    refused on any other, because on an ordinary unit nothing would run it and
+    its presence would read as a hold that does not exist.
+    """
+    raw_kind = unit.get("kind")
+    kind = "" if raw_kind is None else str(raw_kind).strip()
+    if kind and kind not in FANOUT_UNIT_KINDS:
+        raise FanoutContractError(
+            f"unit at index {index} kind {kind!r} is not one of {', '.join(FANOUT_UNIT_KINDS)} (or absent)"
+        )
+    raw_command = unit.get("reproduction_command")
+    if kind != REPRODUCTION_UNIT_KIND:
+        if raw_command is not None:
+            raise FanoutContractError(
+                f"unit at index {index} declares reproduction_command without kind {REPRODUCTION_UNIT_KIND!r}"
+            )
+        return kind, ""
+    if not isinstance(raw_command, str) or not raw_command.strip():
+        raise FanoutContractError(
+            f"unit at index {index} is a reproduction unit and requires a non-empty reproduction_command"
+        )
+    command = " ".join(raw_command.split())
+    if len(command) > MAX_UNIT_VERIFICATION_COMMAND_CHARS:
+        raise FanoutContractError(
+            f"unit at index {index} reproduction_command must be at most "
+            f"{MAX_UNIT_VERIFICATION_COMMAND_CHARS} chars"
+        )
+    # Parsed at freeze for the reason verification commands are: the
+    # dispatcher runs it through the same argv split with `shell=False`.
+    verification_command_argv(command)
+    return kind, command
 
 
 def _normalized_verification_checks(value: object, index: int) -> list[dict[str, object]] | None:
@@ -829,6 +907,17 @@ def _contract_unit(
         contract_unit["task_linked_test_runner"] = runner
         contract_unit["integration_checks"] = [
             task_linked_criterion(runner),
+            "no edits outside boundary.file_scope",
+        ]
+    # A reproduction unit's done-means is the inverse of an edit unit's: its
+    # command has to FAIL. Its first prose check says so, which is what the
+    # executor's completion criteria are derived from; ordinary units carry no
+    # key and stay byte-identical.
+    if unit.get("kind"):
+        contract_unit["kind"] = str(unit["kind"])
+        contract_unit["reproduction_command"] = str(unit["reproduction_command"])
+        contract_unit["integration_checks"] = [
+            f"`{unit['reproduction_command']}` exits nonzero: it reproduces the reported failure before any fix",
             "no edits outside boundary.file_scope",
         ]
     # Only a declared answer rides the contract; absence keeps existing

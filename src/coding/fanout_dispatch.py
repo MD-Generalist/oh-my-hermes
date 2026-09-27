@@ -91,7 +91,7 @@ from .executor_progress import (
     write_progress_binding,
 )
 from .executor_readiness import probe_executor_readiness
-from .fanout_admission import AdaptiveFanoutAdmission
+from .fanout_admission import AdaptiveFanoutAdmission, reproduction_hold_released
 from .fanout_artifact_sharing import plan_and_link_shared_artifacts
 from .fanout_diagnostics_hook import run_post_green_diagnostics
 from .fanout_final_review_hook import FinalReviewWaveEngine, run_final_review_after_integration
@@ -116,7 +116,11 @@ from .diagnostic_execution import DiagnosticExecutionEngine
 from .fanout_contracts import (
     FANOUT_CLAIM_BOUNDARY,
     FANOUT_CONTRACT_SCHEMA_VERSION,
+    FANOUT_REPRODUCTION_CLAIM_BOUNDARY,
+    FANOUT_REPRODUCTION_SCHEMA_VERSION,
     LEGACY_FANOUT_CONTRACT_SCHEMA_VERSION,
+    REPRODUCTION_OBSERVED_EVENT,
+    REPRODUCTION_UNIT_KIND,
     UNIT_VERIFICATION_OBSERVATION_SOURCE,
     FanoutContractError,
     verification_command_argv,
@@ -1320,6 +1324,121 @@ def _unit_verification_is_observed(paths: OmhPaths, run_ref: str) -> bool:
     return bool(projection.get("unit_verification_observed"))
 
 
+def _reproduction_receipt(
+    unit: Mapping[str, Any], status: str, *, reason: str = "", exit_code: int | None = None
+) -> dict[str, Any]:
+    """One reproduction unit's `fanout_reproduction/v1` receipt. Metadata only."""
+    return {
+        "schema_version": FANOUT_REPRODUCTION_SCHEMA_VERSION,
+        "command": str(unit.get("reproduction_command") or ""),
+        "status": status,
+        # Named only when the dispatcher saw an exit code of its own run.
+        "observed_by": None if status == "not_observed" else "dispatcher",
+        "exit_code": exit_code,
+        "reason": reason,
+        "claim_boundary": FANOUT_REPRODUCTION_CLAIM_BOUNDARY,
+    }
+
+
+def _observe_reproduction(
+    paths: OmhPaths,
+    unit: Mapping[str, Any],
+    *,
+    ready: bool,
+    run_verification: bool,
+    run_ref: str,
+    unit_id: str,
+    worktree: Path,
+    owner: str,
+    runner: Callable[..., Any],
+    child_env: Mapping[str, str] | None,
+    confinement: FanoutFilesystemConfinement | None,
+    environment_policy: Mapping[str, object] | None,
+    known_secrets: tuple[str, ...],
+    attempt_id: str,
+    observed_revision: str,
+) -> dict[str, Any]:
+    """Run a reproduction unit's declared command and receipt what was observed.
+
+    Runs under the same gate as declared verification (`--run-verification`,
+    the unit exited 0, its sidecar validated, no input pending) and through the
+    same `shell=False` runner. Only a process exit code the dispatcher saw
+    counts: nonzero is `failure_reproduced`, zero is `not_reproduced`, and a
+    command that could not start or timed out is `not_observed` -- a hang is
+    not a reproduction. Both observed outcomes are journaled, so a later
+    dispatch that skips this completed unit reads the latest verdict instead of
+    re-running it.
+    """
+    if not run_verification:
+        return _reproduction_receipt(unit, "not_observed", reason="verification_not_requested")
+    if not ready:
+        return _reproduction_receipt(unit, "not_observed", reason="unit_not_completed")
+    observed: dict[str, Any] = {}
+
+    def on_failure(_capture: FanoutOutput, reason: str, code: int | None, source: str) -> None:
+        observed.update(reason=reason, code=code, source=source)
+
+    outcome, _detail, _truncation = _run_verification_command(
+        str(unit.get("reproduction_command") or ""),
+        worktree,
+        runner,
+        child_env,
+        confinement=confinement,
+        environment_policy=environment_policy,
+        on_failure=on_failure,
+        known_secrets=known_secrets,
+    )
+    if outcome == "passed":
+        receipt = _reproduction_receipt(unit, "not_reproduced", reason="command_exited_zero", exit_code=0)
+    elif observed.get("source") == "process" and isinstance(observed.get("code"), int) and observed["code"] != 0:
+        receipt = _reproduction_receipt(
+            unit, "failure_reproduced", reason="command_exited_nonzero", exit_code=int(observed["code"])
+        )
+    else:
+        return _reproduction_receipt(
+            unit, "not_observed", reason=f"command_{observed.get('reason') or 'not_run'}"
+        )
+    append_journal_observation(
+        paths,
+        {
+            "target_type": "run",
+            "target_id": run_ref,
+            "run_id": run_ref,
+            "event": REPRODUCTION_OBSERVED_EVENT,
+            # `not_observed` reads literally for a zero exit -- the failure was
+            # not observed -- and, unlike `failed`, does not fold into the run
+            # projection as a failed run: the unit itself did complete.
+            "status": "observed" if receipt["status"] == "failure_reproduced" else "not_observed",
+            "summary": f"dispatcher ran the reproduction command for unit {unit_id}: {receipt['reason']}",
+            "worker_ref": unit_id,
+            "worktree_ref": str(worktree),
+            "runtime_profile": owner,
+            "attempt_id": attempt_id,
+            **({"observed_revision": observed_revision} if observed_revision else {}),
+        },
+    )
+    return receipt
+
+
+def _journaled_reproduction(paths: OmhPaths, unit: Mapping[str, Any]) -> dict[str, Any]:
+    """The receipt a completed reproduction unit left in the journal, or not_observed.
+
+    The latest reproduction event decides, so a later attempt that did not
+    reproduce the failure is not outlived by an earlier one that did.
+    """
+    run_ref = str(unit.get("run_ref", ""))
+    try:
+        events = read_observation_events(paths, run_id=run_ref, limit=None)
+    except (OSError, ValueError, KeyError):
+        events = []
+    latest = [event for event in events if event.get("event") == REPRODUCTION_OBSERVED_EVENT]
+    if not latest:
+        return _reproduction_receipt(unit, "not_observed", reason="no_journaled_reproduction")
+    if latest[-1].get("status") == "observed":
+        return _reproduction_receipt(unit, "failure_reproduced", reason="journaled_in_earlier_dispatch")
+    return _reproduction_receipt(unit, "not_reproduced", reason="journaled_in_earlier_dispatch")
+
+
 def declared_verification_commands(unit: Mapping[str, Any]) -> list[str]:
     """The runnable commands one contract unit declares, or an empty list."""
     declared = unit.get("verification_commands")
@@ -2161,10 +2280,25 @@ def dispatch_fanout(
                     paths, str(unit.get("run_ref", unit_id))
                 ),
             )
+            # Skipped, not re-run: the hold is released by the verdict the
+            # earlier dispatch journaled, or stays closed without one.
+            if unit.get("kind") == REPRODUCTION_UNIT_KIND:
+                results[unit_id]["reproduction"] = _journaled_reproduction(paths, unit)
         elif unit_id not in selected:
             results[unit_id] = _skipped(unit, "not_selected")
 
     pending = [unit_id for unit_id in order if unit_id not in results]
+
+    def _reproduction_held(dependency: str) -> bool:
+        # Finished and satisfied as an ordinary dependency, but a reproduction
+        # whose receipt does not release the hold. Terminal for this dispatch:
+        # the receipt of a finished unit does not change afterwards.
+        result = results.get(dependency)
+        return (
+            result is not None
+            and _dependency_satisfied(result)
+            and not reproduction_hold_released(units.get(dependency, {}), result)
+        )
     admission = (
         AdaptiveFanoutAdmission(ceiling=concurrency, dry_run=dry_run)
         if adaptive_concurrency
@@ -2308,8 +2442,11 @@ def dispatch_fanout(
                 if unit_id in futures:
                     continue
                 deps = units[unit_id].get('depends_on', [])
-                if all(dep in results for dep in deps) and any(_dependency_failed(results.get(dep)) for dep in deps):
-                    results[unit_id] = _blocked(units[unit_id], results)
+                held = [dep for dep in deps if _reproduction_held(dep)]
+                if all(dep in results for dep in deps) and (
+                    held or any(_dependency_failed(results.get(dep)) for dep in deps)
+                ):
+                    results[unit_id] = _blocked(units[unit_id], results, reproduction_held=held)
                     pending.remove(unit_id)
             available_slots = (
                 admission.available_slots(
@@ -2323,6 +2460,9 @@ def dispatch_fanout(
                     break
                 if unit_id in futures:
                     continue
+                # A unit held by a reproduction never reaches this line: every
+                # dependency satisfied means every dependency has a result, and
+                # the blocking pass above already took it out of `pending`.
                 if all(_dependency_satisfied(results.get(dep)) for dep in units[unit_id].get("depends_on", [])):
                     _submit(unit_id)
                     if available_slots is not None:
@@ -3991,6 +4131,10 @@ def _dispatch_unit(
                     planned["skill_sequence"] = [str(step["invocation"]) for step in auto_steps]
                 else:
                     planned["skill_sequence_source"] = "none"
+        # A planned reproduction is prepared, not observed: its receipt says so
+        # and keeps the hold closed, so a dry run shows the edit units held.
+        if unit.get("kind") == REPRODUCTION_UNIT_KIND:
+            planned["reproduction"] = _reproduction_receipt(unit, "not_observed", reason="dry_run")
         return planned
     # Claimed here, after the dry-run return and BEFORE either durable review
     # accounting or worktree creation. A ceiling refusal therefore leaves both
@@ -4723,6 +4867,28 @@ def _dispatch_unit(
                 ),
                 phase="verification",
             )
+    # A reproduction unit's own receipt, beside (never inside) its ordinary
+    # verification: the command it declares has to exit NONZERO to count, so it
+    # cannot ride the check rows whose failure moves the ladder to failed.
+    reproduction: dict[str, Any] | None = None
+    if unit.get("kind") == REPRODUCTION_UNIT_KIND:
+        reproduction = _observe_reproduction(
+            paths,
+            unit,
+            ready=bool(run_verification and exit_code == 0 and unit_result.get("result_schema_valid") and not input_required),
+            run_verification=run_verification,
+            run_ref=run_ref,
+            unit_id=unit_id,
+            worktree=worktree,
+            owner=owner,
+            runner=runner,
+            child_env=verification_environment.environment,
+            confinement=confinement,
+            environment_policy=environment_policy,
+            known_secrets=known_secrets,
+            attempt_id=attempt_id,
+            observed_revision=str(unit_result.get("producer_head_sha") or ""),
+        )
     diagnostics: dict[str, object] = {}
     if diagnostic_engine is not None and diagnostic_engine.settings.enabled:
         producer_head = _observed_clean_producer_head(runner, worktree)
@@ -4815,6 +4981,7 @@ def _dispatch_unit(
         ),
         **unit_result,
         **verification,
+        **({"reproduction": reproduction} if reproduction is not None else {}),
         **diagnostics,
         "started_at": started_at,
         "finished_at": finished_at,
@@ -5601,7 +5768,12 @@ def _dependency_failed(result: dict[str, Any] | None) -> bool:
     } and not result.get("process_succeeded")
 
 
-def _blocked(unit: Mapping[str, Any], results: Mapping[str, dict[str, Any]]) -> dict[str, Any]:
+def _blocked(
+    unit: Mapping[str, Any],
+    results: Mapping[str, dict[str, Any]],
+    *,
+    reproduction_held: Sequence[str] = (),
+) -> dict[str, Any]:
     deps = [str(dep) for dep in unit.get("depends_on", []) or []]
     capacity_deps = [dep for dep in deps if str((results.get(dep) or {}).get('status', '')) in CAPACITY_STATUSES]
     cancelled_deps = [
@@ -5618,14 +5790,19 @@ def _blocked(unit: Mapping[str, Any], results: Mapping[str, dict[str, Any]]) -> 
         'blocked_by_capacity_dependency' if capacity_deps else
         UNIT_STATUS_BLOCKED_BY_CANCELLED_DEPENDENCY if cancelled_deps else "blocked_by_dependency",
     )
-    failed = [dep for dep in deps if _dependency_failed(results.get(dep))]
+    # A finished reproduction that did not release the hold is named beside
+    # the failed dependencies: it did not fail, but a dependent cannot build on
+    # it, and `reproduction_not_observed` says which receipt is missing.
+    held = [str(dep) for dep in reproduction_held]
+    failed = [dep for dep in deps if _dependency_failed(results.get(dep)) or dep in held]
     # A dependency stuck in a non-terminal verdict (for example
     # model_choice_required) is neither satisfied nor failed; the entry must
     # still name what it was waiting on rather than blocking on nothing.
     entry["blocked_on"] = failed or [
         dep for dep in deps if not _dependency_satisfied(results.get(dep))
     ]
-    entry['blocked_reasons'] = {dep: ('awaiting_input' if (results.get(dep) or {}).get('status') == 'input_required' else
+    entry['blocked_reasons'] = {dep: ('reproduction_not_observed' if dep in held else
+        'awaiting_input' if (results.get(dep) or {}).get('status') == 'input_required' else
         'capacity' if dep in capacity_deps else
         'cancelled' if dep in cancelled_deps else 'failure') for dep in entry['blocked_on']}
     return entry
