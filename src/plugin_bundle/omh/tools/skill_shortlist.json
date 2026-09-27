@@ -989,7 +989,7 @@
 }
 },
 {
-"anchors":"break breakdown bug github hub reproduc reproduction safely step templat triag",
+"anchors":"break breakdown bug github hub reproduc reproduction safely templat triag",
 "hangul":"계획 구사 다음 답할 로젝 브가 비할 사항 상태 요구 운영 작업 재현 정리 젝트 준비 차례 태와 트별 프로 필요 행동 허브",
 "hangul_anchors":"계획 구사 다음 답할 로젝 브가 비할 사항 상태 요구 운영 작업 재현 정리 젝트 차례 태와 트별 필요 행동 허브",
 "label":"omh-plan",
@@ -1071,7 +1071,7 @@
 }
 },
 {
-"anchors":"between codebas larg lockfil migrat move safely split stag step",
+"anchors":"between codebas larg lockfil migrat move safely split stag",
 "hangul":"계별 계획 단계 롤백 리팩 세워 터링 토링 팩터 팩토",
 "hangul_anchors":"계별 계획 단계 롤백 리팩 세워 터링 토링 팩터 팩토",
 "label":"omh-refactor-plan",
@@ -1263,7 +1263,7 @@
 }
 },
 {
-"anchors":"finish left mark migration progress rest step",
+"anchors":"finish left mark migration progress rest",
 "hangul":"",
 "hangul_anchors":"",
 "label":"omh-todo-checklist",
@@ -1464,6 +1464,23 @@
 "6":"pull request",
 "8":"pr",
 "9":"commit"
+}
+},
+{
+"anchors":"bottom line reflog reset restack tidy",
+"hangul":"",
+"hangul_anchors":"",
+"label":"omh-git-workflow",
+"name":"git-workflow",
+"situation":"Git branch in trouble -- a merge conflict, a commit that broke something, history to repair",
+"terms":{
+"1":"back code first includ introduc new rather regression resolution step troubl work",
+"2":"after already befor bottom chang cherry clean detach failur head interactiv last line marker name pick plan prs reflog repair restack review start tidy undo",
+"3":"brok forc leas rebas resolv squash stack",
+"4":"bisect conflict find history lost push reset rewrit",
+"5":"recover",
+"6":"branch commit merg",
+"7":"git"
 }
 },
 {
@@ -2152,7 +2169,7 @@
 }
 },
 {
-"anchors":"breakdown duration efficiency efficient last slow spent step timing utilization wast",
+"anchors":"breakdown duration efficiency efficient last slow spent timing utilization wast",
 "hangul":"도구 리포 사용 스트 시간 실행 용량 지연 컨텍 텍스 포트 효율",
 "hangul_anchors":"도구 리포 사용 시간 실행 용량 지연 컨텍 텍스 포트 효율",
 "label":"omh-run-efficiency",

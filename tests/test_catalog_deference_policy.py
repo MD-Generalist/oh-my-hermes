@@ -197,9 +197,11 @@ NON_SKILL_BACKTICKS = frozenset(
 # `commit-pr-authoring` (#1711) defers to `code-review`, `github-event-ops`,
 # `github-issue-intake`, and `content-operator`. Four cases, four pairs, one
 # owner.
-EXPECTED_DEFERENCE_CASES = 273
-EXPECTED_DEFERENCE_PAIRS = 284
-EXPECTED_DEFERRING_OWNERS = 80
+# `git-workflow` (#1695) defers to `commit-pr-authoring`, `code-review`,
+# `build-failure-triage`, and `ultrawork`. Four cases, four pairs, one owner.
+EXPECTED_DEFERENCE_CASES = 277
+EXPECTED_DEFERENCE_PAIRS = 288
+EXPECTED_DEFERRING_OWNERS = 81
 
 # The ratchet. Recording a new inversion must be a visible edit to this number,
 # not one more dict line with a plausible sentence attached.

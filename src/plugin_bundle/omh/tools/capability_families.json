@@ -203,6 +203,7 @@
    "native-debugging",
    "app-debugging",
    "commit-pr-authoring",
+   "git-workflow",
    "ai-slop-cleaner",
    "frontend-refactor",
    "tech-debt-audit",

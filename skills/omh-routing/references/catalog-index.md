@@ -55,6 +55,7 @@ Trigger phrases and the role registry live in `references/workflow-registry.md`;
 - `omh-frontend`: [omh] Building or polishing a web or terminal UI: prepare design-system-driven web and terminal (TUI) UI creation, redesign, polish, accessibility, performance, and visual QA handoffs.
 - `omh-frontend-refactor`: [omh] Oversized or tangled UI component: behavior-preserving refactor of UI code - preview the full change plan first, apply as a second explicit step, and work impact-ordered from state architecture down to naming polish.
 - `omh-gateway-intent-card`: [omh] Bot replies via Discord, Slack, or Telegram: normalize Discord, Slack, Telegram, and other gateway sessions into origin, thread, delivery, silent, attachment, and status-update policy.
+- `omh-git-workflow`: [omh] Git branch in trouble -- a merge conflict, a commit that broke something, history to repair: plan the resolution, the bisect, or the rewrite, name what is already pushed first, and force-push only with `--force-with-lease`.
 - `omh-github-event-ops`: [omh] Incoming GitHub PR, issue, or CI event: GitHub event operations: route PR, issue, CI, and review webhook events into triage, review, or fix handoff cards.
 - `omh-github-issue-intake`: [omh] Chat report that should become a GitHub issue: turn a public chat report into a confirmed, verified issue package.
 - `omh-harness-session-inventory`: [omh] Lost track of agent sessions and worktrees: normalize Codex, Claude Code, Hermes, OpenCode, Cursor, MCP host, worktree, and wrapper session metadata into one drift-aware inventory.

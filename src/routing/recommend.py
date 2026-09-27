@@ -318,6 +318,48 @@ _APP_DEBUGGING_EXPLICIT_PHRASES = tuple(
     )
 )
 
+# `git-workflow` holds back every token its phrases are built from, which left
+# "resolve this merge conflict" and "clean up this branch's history before
+# review" at the bare +6 credit against `code-review`'s 12 on "review". Listed
+# are the phrases that name a git operation. The ones that are also ordinary
+# English ("resolve the conflict", "force push", "cherry-pick", "bisect",
+# "rewrite history") are safe to boost because `EVERYDAY_SENSE_PHRASES` has
+# already dropped this skill when no git word stands beside them.
+_GIT_WORKFLOW_EXPLICIT_PHRASES = tuple(
+    normalized_phrase(phrase)
+    for phrase in (
+        "git-workflow",
+        "git workflow",
+        "merge conflict",
+        "merge conflicts",
+        "rebase conflict",
+        "conflict markers",
+        "resolve the conflict",
+        "resolve this conflict",
+        "git bisect",
+        "bisect",
+        "which commit broke",
+        "find the commit that broke",
+        "rewrite history",
+        "rewrite the history",
+        "branch history",
+        "branch's history",
+        "interactive rebase",
+        "squash commits",
+        "squash the commits",
+        "force push",
+        "force-push",
+        "force-with-lease",
+        "git reset",
+        "lost commit",
+        "cherry-pick",
+        "stacked prs",
+        "stacked branches",
+        "rebase the stack",
+        "detached head",
+    )
+)
+
 # `commit-pr-authoring` holds back every token of its phrases, which leaves a
 # complete phrase at +6: "fill in the pull request description for this
 # branch, the unit tests passed" then went to `verification-gate` on "tests
@@ -815,6 +857,18 @@ _SKILL_POLICIES = {
             "Prepare native_fault_statement/v1, hypothesis_set/v1 with at least three hypotheses on distinct axes, "
             "distinguishing_observation_plan/v1, and debugger_session_plan/v1 naming the DAP adapter, breakpoints, "
             "watchpoints, threads, frames, and values the executor reads at each stop."
+        ),
+    ),
+    "git-workflow": RecommendationPolicy(
+        next_action="prepare_git_repair_plan",
+        evidence_boundary=(
+            "A git repair plan is not a resolved conflict, a bisect verdict, a rewritten history, or a push until the "
+            "user's or executor's git output is observed; OMH runs no git command."
+        ),
+        wrapper_guidance=(
+            "Prepare pushed_state_inventory/v1 first, then git_repair_plan/v1 with every rewriting step marked and a "
+            "recovery point before it, `--force-with-lease` for every force-push, and counted or generated files re-derived "
+            "from their producer instead of picked in a conflict."
         ),
     ),
     "commit-pr-authoring": RecommendationPolicy(
@@ -2465,6 +2519,55 @@ _WHOLE_PHRASE_ONLY_TRIGGER_TOKENS = {
     # them (`EVERYDAY_SENSE_PHRASES`: "PR" is also public relations). Two
     # tokens stay creditable: `commit-pr`, which appears only in the skill
     # name, and `not-tested`, the trailer itself.
+    # `git-workflow` is built from "conflict", "resolve", "history", "clean",
+    # "force", "push", "cherry", "pick", "bisect", "undo", "lost", "recover",
+    # "stack" and "branch" -- two teams in conflict, a car forced out of the
+    # snow, apples picked at an orchard and an angle bisected with a compass
+    # all reached it as bare tokens. Only the complete phrases score, and the
+    # phrases that are also ordinary English need a git word beside them
+    # (`EVERYDAY_SENSE_PHRASES`). Three tokens stay creditable because nothing
+    # else means them: `git-workflow` (the skill name), `force-with` (from
+    # `--force-with-lease`), and `reflog`. `reflog` is not in the explicit
+    # boost below: "the reflog of my feelings" dispatched on it alone.
+    "git-workflow": frozenset(
+        {
+            "bisect",
+            "branch",
+            "broke",
+            "cherry",
+            "cherry-pick",
+            "clean",
+            "commit",
+            "commits",
+            "conflict",
+            "conflicts",
+            "detached",
+            "find",
+            "force",
+            "force-push",
+            "git",
+            "head",
+            "history",
+            "interactive",
+            "last",
+            "lease",
+            "lost",
+            "markers",
+            "merge",
+            "pick",
+            "prs",
+            "push",
+            "rebase",
+            "recover",
+            "resolve",
+            "rewrite",
+            "squash",
+            "stack",
+            "stacked",
+            "undo",
+            "which",
+        }
+    ),
     "commit-pr-authoring": frozenset(
         {
             "authoring",
@@ -3352,6 +3455,9 @@ def _score_definition(
     if definition.name == "todo-checklist" and _todo_checklist_explicit_match(normalized_query):
         score += 30
         matched.add("direct:todo_checklist")
+    if definition.name == "git-workflow" and _git_workflow_explicit_match(normalized_query):
+        score += 30
+        matched.add("direct:git_workflow")
     if definition.name == "commit-pr-authoring" and _commit_pr_authoring_explicit_match(normalized_query):
         score += 30
         matched.add("direct:commit_pr_authoring")
@@ -4128,6 +4234,10 @@ def _contains_any_phrase(normalized_query: str, phrases: tuple[str, ...]) -> boo
 
 def _todo_checklist_explicit_match(normalized_query: str) -> bool:
     return any(_explicit_phrase_match(normalized_query, phrase) for phrase in _TODO_CHECKLIST_EXPLICIT_PHRASES)
+
+
+def _git_workflow_explicit_match(normalized_query: str) -> bool:
+    return any(_explicit_phrase_match(normalized_query, phrase) for phrase in _GIT_WORKFLOW_EXPLICIT_PHRASES)
 
 
 def _commit_pr_authoring_explicit_match(normalized_query: str) -> bool:

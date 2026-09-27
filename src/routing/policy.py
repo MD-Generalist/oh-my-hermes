@@ -2122,6 +2122,25 @@ EVERYDAY_SENSE_PHRASES: dict[str, tuple[tuple[str, ...], frozenset[str]]] = {
     # "write a PR description of our product launch for the press release" is
     # public relations, and "a message to my landlord about the pull request
     # for more time" is not a repository.
+    # "resolve the conflict between the two teams", "force push the car out of
+    # the snow", "cherry-pick the best apples" and "bisect an angle with a
+    # compass" are not git; each phrase keeps this route only beside a word of
+    # the repository.
+    "git-workflow": (
+        (
+            "resolve the conflict", "resolve this conflict", "bisect", "force push", "cherry-pick",
+            "rewrite history", "rewrite the history", "clean up the history", "undo the last commit",
+            "lost commit", "recover the commit",
+        ),
+        frozenset(
+            {
+                "branch", "branches", "commit", "commits", "diff", "file", "files", "git", "github",
+                "head", "hunk", "lockfile", "main", "master", "merge", "merged", "origin", "pushed",
+                "rebase", "regression", "remote", "repo", "repository", "reset", "sha", "stash", "tag",
+                "test", "tests", "upstream", "worktree",
+            }
+        ),
+    ),
     "commit-pr-authoring": (
         ("pr body", "pr description", "pr template", "pull request body", "pull request description"),
         frozenset(

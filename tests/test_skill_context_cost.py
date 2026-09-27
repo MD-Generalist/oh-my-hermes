@@ -27,7 +27,14 @@ class SkillContextCostTests(unittest.TestCase):
         # every workflow body must (the reply rule, completion checklist,
         # fallback contract, lane footer), taking repeated bytes to 104,214;
         # their shared Jev rules live once in `jev-rail.md` instead.
-        self.assertLess(profile["repeated"]["bytes"], 107_000)
+        # 107,000 -> 111,000: `app-debugging`, `commit-pr-authoring`,
+        # `git-workflow`, and `relational-db` (#1709, #1711, #1695, #1692)
+        # each join the coding_handoff lane, whose `Workflow Lane` line is
+        # stamped into every lane body, and the two without a declared harness
+        # carry the shared `Runtime Evidence` section verbatim, as 14 skills
+        # already do. Repeated bytes measure 107,916 with the first three and
+        # 108,400 with all four; ~2.4% headroom kept.
+        self.assertLess(profile["repeated"]["bytes"], 111_000)
 
     def test_ulw_context_reports_bounded_static_body_and_progressive_references(self) -> None:
         payload = skill_context_cost_payload()

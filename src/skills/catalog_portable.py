@@ -111,6 +111,8 @@ _PORTABILITY: dict[str, str] = {
     'omh-app-debugging': PORTABILITY_PORTABLE,
     # required_inputs: the diff, the repo template and log, the commands that ran; expected_outputs: drafted text from an evidence ledger; reading a repo and drafting text needs no Hermes runtime.
     'omh-commit-pr-authoring': PORTABILITY_PORTABLE,
+    # required_inputs: branches, upstreams, what is pushed; expected_outputs: pushed_state_inventory/v1 and git_repair_plan/v1; the user or executor runs every git command, so no Hermes runtime is needed.
+    'omh-git-workflow': PORTABILITY_PORTABLE,
     # required_inputs: target app, page, route, component, or design system; expected_outputs: accessibility_audit_plan/v1; final_checklist requires evidence/approval, not a native runtime.
     'omh-accessibility-audit': PORTABILITY_PORTABLE,
     # expected_outputs are evidence gates; artifact_expectations import host receipts through omh web-qa observation.
@@ -930,6 +932,7 @@ PORTABLE_REFERENCE_PATHS = frozenset({
     'native-debugging/references/native-debug-loop.md',
     'app-debugging/references/hypothesis-and-race-method.md',
     'commit-pr-authoring/references/commit-and-pr-conventions.md',
+    'git-workflow/references/git-repair-method.md',
     'application-threat-model/references/threat-model-method.md',
     'live-incident-response/references/incident-command-method.md',
     'external-connector-readiness/references/memory-provider-trial.md',
