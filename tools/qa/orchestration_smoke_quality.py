@@ -20,7 +20,7 @@ from omh.coding.final_review_wave import (
     ProviderReviewReservation, ReadOnlyCapability, ReviewLane, ReviewReservation,
     execute_final_review_wave, prepare_final_review_wave, prepare_remediated_wave,
 )
-from omh.coding.final_review_wave_models import LANE_ORDER, ReviewLens
+from omh.coding.final_review_wave_models import LANE_ORDER, ContextProvenance, ReviewLens
 
 _BASELINE = "orchestration-baseline"
 _END = "orchestration-end"
@@ -210,7 +210,7 @@ def happy_review() -> dict[str, object]:
             active -= 1
         return LaneExecutionResult(LaneState.COMPLETED, ImmutableRevision(_END))
 
-    completed = execute_final_review_wave(_wave(), runner, _limits(), provider_for=lambda _: "local")
+    completed = execute_final_review_wave(_wave(), runner, _limits(), provider_for=lambda _: "local", context_provenance=ContextProvenance.FRESH_FROM_DIFF)
     return {"lane_states": {lane.lens.value: lane.state.value for lane in completed.lanes}, "aggregate": completed.assess().verdict.value, "concurrent_peak": peak, "revision": _END}
 
 
@@ -219,13 +219,13 @@ def adversarial_review() -> dict[str, str]:
     cases = {"missing": lambda lane: None, "failed": lambda lane: LaneExecutionResult(LaneState.FAILED, revision), "stale": lambda lane: LaneExecutionResult(LaneState.COMPLETED, ImmutableRevision(_BASELINE)), "timed_out": lambda lane: (_ for _ in ()).throw(TimeoutError()), "cancelled": lambda lane: (_ for _ in ()).throw(CancelledError()), "crashed": lambda lane: (_ for _ in ()).throw(RuntimeError("crash"))}
     result: dict[str, str] = {}
     for name, runner in cases.items():
-        assessment = execute_final_review_wave(_wave(), runner, _limits(), provider_for=lambda _: "local").assess()
+        assessment = execute_final_review_wave(_wave(), runner, _limits(), provider_for=lambda _: "local", context_provenance=ContextProvenance.FRESH_FROM_DIFF).assess()
         result[name] = f"{assessment.verdict.value}:{assessment.blocking_lens.value if assessment.blocking_lens else 'none'}"
     try:
         ReviewLane(ReviewLens.QUALITY, LaneState.PREPARED, ReadOnlyCapability(True), None)
     except ValueError as error:
         result["non_read_only_attempt"] = f"BLOCK:{error}"
-    completed = execute_final_review_wave(_wave(), lambda lane: LaneExecutionResult(LaneState.COMPLETED, revision), _limits(), provider_for=lambda _: "local")
+    completed = execute_final_review_wave(_wave(), lambda lane: LaneExecutionResult(LaneState.COMPLETED, revision), _limits(), provider_for=lambda _: "local", context_provenance=ContextProvenance.FRESH_FROM_DIFF)
     invalidated = completed.invalidate_for_remediation()
     replacement = prepare_remediated_wave(invalidated, "qa-wave-2", _reservations()).integrate(IntegrationReceipt(ImmutableRevision("orchestration-remediated"), True))
     result["remediation_invalidation"] = f"{invalidated.assess().verdict.value}:{replacement.assess().verdict.value}"
