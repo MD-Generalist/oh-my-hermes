@@ -333,7 +333,7 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # obligation, belief), which stay narration.
             # The #1893 re-review adds five: a modal inside a subordinate or
             # reported clause, which does not make the main clause a request.
-            expected=380,
+            expected=383,
             sites=(
                 "tests/test_cli.py",
                 "tests/test_hermes_ux_quality.py",
@@ -409,7 +409,7 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # The achievements and wiki chat cards add two: a badge-progress
             # request and a wiki-from-notes request, each answered by its own
             # card instead of the generic acknowledgement.
-            expected=573,
+            expected=578,
             sites=(
                 "tests/test_cli.py",
                 "tests/test_hermes_ux_quality.py",
@@ -422,7 +422,7 @@ def count_metrics() -> tuple[CountMetric, ...]:
             describe="Installable workflow skills quoted in reference surfaces",
             live=_installable_skill_count,
             # The current workflow additions are part of the installable catalog.
-            expected=136,
+            expected=137,
             sites=(
                 "docs/README.md",
                 # The docs index quotes the count in prose and

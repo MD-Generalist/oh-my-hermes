@@ -2142,6 +2142,17 @@ EVERYDAY_SENSE_PHRASES: dict[str, tuple[tuple[str, ...], frozenset[str]]] = {
             }
         ),
     ),
+    # "the mouse cursor rules the screen in this game" is not an editor rule
+    # file; the phrase keeps this route only beside a word of the repository.
+    "agent-instructions": (
+        ("cursor rules", "cursor rule"),
+        frozenset(
+            {
+                "agents", "assistant", "codebase", "coding", "cursorrules", "editor", "ide", "mdc",
+                "project", "repo", "repository",
+            }
+        ),
+    ),
     # "the travel security advisory for mexico", "the leaked secret ending of
     # the film" and "is my driver's license ok abroad" are not security events;
     # each phrase keeps this route only beside a word of code.

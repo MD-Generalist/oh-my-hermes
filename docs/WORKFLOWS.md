@@ -3767,6 +3767,7 @@ These surfaces are generated command references, not installed Hermes workflow s
   - The user wants a single workflow route regression; use `workflow-learning`.
   - The user wants durable factual project memory; use `wiki` or memory curation.
   - The user already approved a concrete code/doc change; use the implementation workflow.
+  - The ask is writing or keeping current the file an agent reads at startup -- AGENTS.md, CLAUDE.md, a Cursor rule; use `agent-instructions`, which updates only its marked region.
 - Strong routing signals: `rules-distill`, `rules distill`, `distill rules`, `rule distillation`, `principle distill`, `skill principles`, `extract agent rules`, `turn traces into rules`, `policy distill`, `guidance distill`, `규칙 증류`, `원칙 추출`, `스킬 원칙`, `프롬프트 규칙`
 - Good example:
   - Prompt: rules-distill 최근 실패 trace와 스킬들을 보고 OMH AGENTS에 넣을 만한 반복 원칙 후보만 뽑아줘.
@@ -6882,6 +6883,79 @@ These surfaces are generated command references, not installed Hermes workflow s
   - Never print the secret value, and never paste it into the plan, the handoff, or a search.
   - OMH never runs a scanner, contacts a registry, or rotates a credential; reachability and license facts come from observed output or are marked unverified.
   - Do not call a dependency safe from a version number alone: cite the reachable path or its observed absence.
+
+### agent-instructions
+
+[omh] Agent instruction file for a repo -- AGENTS.md, CLAUDE.md, a Cursor rule: write or update what an agent cannot derive from the code, inside a marked region, with every command verified or marked unverified and no counts that drift.
+
+- Category: `planning`
+- Phase: `agent-instructions`
+- Hermes role: `planner`
+- Quality tier: `verified-command-and-region-gated`
+- Reasoning demand: `standard`
+- Exposure: `direct_skill`
+- Install visibility: `true`
+- Docs visibility: `primary_workflow_skill`
+- Compatibility alias: `false`
+- Lifecycle stage: `canonical`
+- Preferred usage: Use as an installed Hermes workflow skill when this explicit workflow is the clearest user-facing handle.
+- Handoff policy: Keep the section plan, the command verification record, and the region update in Hermes. Every command's outcome is recorded only from executor, operator, or wrapper observed output; the file is written by the executor, and only inside its marked region.
+- Why this exists: `agent-instructions` exists because the file every handoff target reads first had no owner: `rules-distill` extracts rule candidates, `codebase-onboarding` builds a human reading path, and `context` aligns terminology, and each reads that file without writing it.
+- First steps:
+  - List every instruction file and which agent reads it before proposing a section.
+  - Run or ask for the observed run of each command before marking it verified.
+- Use when: Use when the repository's agent instruction file is being written or kept current: AGENTS.md, CLAUDE.md, GEMINI.md, a Cursor rule, or a Copilot instructions file. The output is the build and test commands each marked verified or unverified, the generated-file map with its regenerate command and gate, the byte-exact gates, and the pitfalls that cost time, written inside a marker-delimited region so hand-written sections survive.
+- Do not use when:
+  - The ask is distilling repeated lessons into reviewed rule candidates; use `rules-distill`.
+  - The ask is a reading path through the codebase for a new engineer; use `codebase-onboarding`.
+  - The ask is project terminology alignment -- reviewing the terms this project uses and correcting inconsistent vocabulary; use `context`.
+  - The ask is user-facing product documentation; use `product-docs`.
+- Strong routing signals: `agent-instructions`, `agents.md`, `claude.md`, `gemini.md`, `copilot-instructions.md`, `.cursorrules`, `cursor rules`, `cursor rule`, `agent instruction file`, `agent instructions file`, `instructions file for agents`, `set up agents.md`, `update our claude.md`, `write an agents.md`
+- Good example:
+  - Prompt: update our CLAUDE.md
+  - Expected behavior: Inventory the instruction files, run or collect each build and test command, mark each verified or unverified, and replace only the marked region with the commands, the generated-file map, the gates, and the costed pitfalls, refusing any count or line number.
+  - Why: An instruction file that states an unrun command or a stale count sends every later agent the wrong way.
+- Bad example:
+  - Prompt: add that the suite has 4,100 tests and the router is at line 212 of chat.py
+  - Expected behavior: Refuse both values, and write the command that counts the tests and the symbol that locates the router instead.
+  - Why: Both numbers were already wrong by the next merge.
+- Quality bar:
+  - Inventory every instruction file first and respect closest-file-wins nesting.
+  - Load `references/instruction-file-method.md` for the section order, the marker convention, the verified and unverified command form, and the drift rules instead of recalling them.
+  - Record each pitfall with what it cost, so a reader can tell a scar from a preference.
+  - Pair every generated file with its source, its regenerate command, and the gate that checks it.
+  - Keep prepared, verified, and written as separate states for every command and section.
+- Completion checklist:
+  - Every instruction file and its reader are listed.
+  - Every command is marked verified with an observed run, or unverified.
+  - Only the marked region changed, and hand-written text is byte-for-byte.
+  - No count, line number, or value the code already states was written.
+  - Every generated file names its source, its regenerate command, and its gate.
+- Recovery notes:
+  - If a command cannot be run here, write it marked unverified with what would verify it.
+  - If the file has no markers, insert them once around the new section and leave everything else untouched.
+- Required inputs:
+  - which instruction files exist, where they sit, and which agents read them
+  - the build, test, lint, and regenerate commands the repository uses
+  - which files are generated, from what source, and which gate checks them
+  - the pitfalls that have cost time, each with what it cost
+  - observed output for every command written into the file
+- Expected outputs:
+  - instruction_file_inventory/v1
+  - command_verification_record/v1
+  - instruction_region_update/v1
+  - drift_refusal_note/v1 when a requested line would record a count or a line number
+- Artifact expectations:
+  - instruction_file_inventory/v1 lists every instruction file, its path, the agents that read it, and which one is closest to each directory, since the closest file wins
+  - command_verification_record/v1 marks every command verified, with the observed exit status and when, or unverified, and nothing is written as verified without an observed run
+  - instruction_region_update/v1 replaces only the text between `<!-- omh:agent-instructions:begin -->` and `<!-- omh:agent-instructions:end -->`, and inserts the markers once when absent, so every hand-written section outside them is left byte-for-byte
+  - drift_refusal_note/v1 names each requested count, line number, or other value the code already states, and writes the command or the file that derives it instead
+- Safety rules:
+  - Never write outside the marker-delimited region: the text before `<!-- omh:agent-instructions:begin -->` and after `<!-- omh:agent-instructions:end -->` is hand-written and stays byte-for-byte.
+  - Never write a command as verified without an observed run; mark it unverified instead.
+  - Refuse to record counts, line numbers, test totals, or file sizes; they drift, so point at the command or file that derives them.
+  - Write only what an agent cannot derive from the code; restating the code is drift waiting to happen.
+  - Never copy secrets, tokens, or private hostnames into an instruction file.
 
 ### release-cut
 

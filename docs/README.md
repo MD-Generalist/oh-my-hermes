@@ -72,7 +72,7 @@ Hermes memory, skills, tools, gateway surfaces, and OMH's role, see the
 
 ## Six Capability Families
 
-The public front door groups **136 installable skills** by user intent. Exact
+The public front door groups **137 installable skills** by user intent. Exact
 skill names remain available for deterministic routing, wrapper rendering, and
 operator control.
 

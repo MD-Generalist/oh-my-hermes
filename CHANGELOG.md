@@ -4,6 +4,28 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **The repo's agent instruction file has an owner: `omh-agent-instructions`.**
+  "set up AGENTS.md", "update our CLAUDE.md" and "write an AGENTS.md for this
+  repo" used to ask a question led by `rules-distill` or `memory-sync`. They
+  now dispatch to a skill that writes and keeps current what an agent cannot
+  derive from the code:
+  - every instruction file and the agent that reads it are listed first, and
+    the closest file wins;
+  - every command written into the file is marked verified with its observed
+    run, or unverified;
+  - updates replace only the text between `<!-- omh:agent-instructions:begin -->`
+    and `<!-- omh:agent-instructions:end -->`, so hand-written sections stay
+    byte-for-byte;
+  - counts, line numbers and anything else the code already states are
+    refused, with the command or file that derives them written instead.
+
+  The file table, the marker convention, the section order and the "what
+  never goes in" table load on demand from
+  `references/instruction-file-method.md`. Distilling lessons into AGENTS.md
+  rule candidates stays with `rules-distill`, and each skill names the other.
+  A question about what a CLAUDE.md says is not a request to write one, so a
+  bare file name is not boosted (#1713).
+
 - **Deciding and undoing a release has an owner: `omh-release-cut`.** "cut a
   release and tag it", "roll back the last deploy" and "set up a canary for
   this service" used to ask a question led by `img-summary`,

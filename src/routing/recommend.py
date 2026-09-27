@@ -396,6 +396,27 @@ _RELEASE_CUT_EXPLICIT_PHRASES = tuple(
     )
 )
 
+# `agent-instructions` holds back every token its phrases are built from.
+# Listed are requests to write or keep the file: a verb and the file name. A
+# bare "AGENTS.md" or "CLAUDE.md" is not boosted, because "distill these
+# lessons into AGENTS.md rule candidates" is `rules-distill` and "explain what
+# is in CLAUDE.md" is a question about the file, not a request to write it.
+_AGENT_INSTRUCTIONS_EXPLICIT_PHRASES = tuple(
+    normalized_phrase(phrase)
+    for phrase in (
+        "agent-instructions",
+        "agent instruction file",
+        "agent instructions file",
+        "instructions file for agents",
+        *(
+            f"{verb} {article}{name}"
+            for verb in ("set up", "update", "write", "create", "refresh", "maintain", "rewrite")
+            for article in ("", "an ", "a ", "our ", "the ", "my ")
+            for name in ("agents.md", "claude.md", "gemini.md", ".cursorrules", "cursor rules", "copilot-instructions.md")
+        ),
+    )
+)
+
 # `security-event-response` holds back every token its phrases are built from,
 # which left "we committed a secret, what now" and "is this dependency's license
 # OK for us" at the bare phrase credit. Listed are the phrases that name an
@@ -990,6 +1011,18 @@ _SKILL_POLICIES = {
             "Prepare release_scope/v1 with contents, held items, and the version derived from change classes; release_plan/v1 "
             "ordering freeze, bump, tag, workflow, approval, publish, and notes; rollout_stages/v1 with promotion criteria; "
             "rollback_trigger/v1 naming the signal, threshold, exact command, and who runs it; and release_readiness_verdict/v1."
+        ),
+    ),
+    "agent-instructions": RecommendationPolicy(
+        next_action="prepare_instruction_file_update",
+        evidence_boundary=(
+            "An instruction file update is not a run command, a written file, or a replaced region until observed; only the "
+            "marked region changes, a command is verified only by an observed run, and counts and line numbers are refused."
+        ),
+        wrapper_guidance=(
+            "Prepare instruction_file_inventory/v1 with every file and its reader; command_verification_record/v1 marking "
+            "each command verified with its observed run or unverified; instruction_region_update/v1 replacing only the text "
+            "between the omh:agent-instructions markers; and drift_refusal_note/v1 for any requested count or line number."
         ),
     ),
     "security-event-response": RecommendationPolicy(
@@ -2722,6 +2755,35 @@ _WHOLE_PHRASE_ONLY_TRIGGER_TOKENS = {
             "what",
         }
     ),
+    # `agent-instructions` is built from "agent", "instructions", "file",
+    # "cursor", "rules", "set", "update" and "write" -- a travel agent's
+    # instructions, a mouse cursor, and any request to update or write
+    # anything reached it as bare tokens. Only the complete phrases score,
+    # and "cursor rules" also needs a word of the repository beside it
+    # (`EVERYDAY_SENSE_PHRASES`). `claude` is held too: as a bare token it
+    # lifted "CLAUDE.md 파일 내용 설명해줘", a question about the file, and
+    # "README랑 CLAUDE.md 만들어줘" in a new project, which is the interview
+    # lane's, over their owners; `gemini` and `copilot` are held for the same
+    # reason, since a bare "gemini" is a model name. Two tokens stay creditable because nothing
+    # else means them: `agent-instructions` (the skill name) and `cursorrules`.
+    "agent-instructions": frozenset(
+        {
+            "agent",
+            "agents",
+            "claude",
+            "copilot",
+            "cursor",
+            "file",
+            "gemini",
+            "instruction",
+            "instructions",
+            "rule",
+            "rules",
+            "set",
+            "update",
+            "write",
+        }
+    ),
     # `security-event-response` is built from "security", "event", "secret",
     # "license", "advisory", "leaked", "committed", "key", "history" and
     # "dependency" -- a travel security advisory, a driver's licence, a secret
@@ -3738,6 +3800,9 @@ def _score_definition(
     if definition.name == "release-cut" and _release_cut_explicit_match(normalized_query):
         score += 30
         matched.add("direct:release_cut")
+    if definition.name == "agent-instructions" and _agent_instructions_explicit_match(normalized_query):
+        score += 30
+        matched.add("direct:agent_instructions")
     if definition.name == "security-event-response" and _security_event_response_explicit_match(normalized_query):
         score += 30
         matched.add("direct:security_event_response")
@@ -4531,6 +4596,10 @@ def _relational_db_explicit_match(normalized_query: str) -> bool:
 
 def _release_cut_explicit_match(normalized_query: str) -> bool:
     return any(_explicit_phrase_match(normalized_query, phrase) for phrase in _RELEASE_CUT_EXPLICIT_PHRASES)
+
+
+def _agent_instructions_explicit_match(normalized_query: str) -> bool:
+    return any(_explicit_phrase_match(normalized_query, phrase) for phrase in _AGENT_INSTRUCTIONS_EXPLICIT_PHRASES)
 
 
 def _security_event_response_explicit_match(normalized_query: str) -> bool:

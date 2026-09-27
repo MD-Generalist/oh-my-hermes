@@ -1517,6 +1517,22 @@
 }
 },
 {
+"anchors":"ai assistant codex current cursorrul date document edit generat md stop tell wrong",
+"hangul":"",
+"hangul_anchors":"",
+"label":"omh-agent-instructions",
+"name":"agent-instructions",
+"situation":"Agent instruction file for a repo -- AGENTS.md, CLAUDE.md, a Cursor rule",
+"terms":{
+"1":"byte cannot code cost count delimit deriv drift exact gate hand kept map marker output pitfall regenerat repository section surviv time written",
+"2":"ai assistant codex coding cursorrul date document edit insid keep mark region run set stop tell unverifi verifi wrong",
+"3":"build copilot current gemini generat repo test updat writ",
+"4":"claud command cursor md",
+"6":"file rule",
+"9":"agent instruction"
+}
+},
+{
 "anchors":"bad five number percent restor semver send week yesterday",
 "hangul":"",
 "hangul_anchors":"",
