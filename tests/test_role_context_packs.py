@@ -25,6 +25,7 @@ from _credential_fixtures import AWS_ACCESS_KEY_ID
 from _local_package import load_local_package
 
 load_local_package()
+from omh.codegraph.schema import CODEGRAPH_CONTEXT_TRUTH_LEVEL
 from omh.coding_delegation import build_coding_delegation_payload
 from omh.local_store import atomic_write_text
 from omh.memory import (
@@ -587,7 +588,9 @@ class ExplainedRecordTests(unittest.TestCase):
     def test_the_reason_vocabulary_is_the_existing_one_not_a_parallel_table(self) -> None:
         self.assertEqual(
             set(TRUTH_LEVEL_REASON_TEXT),
-            set(SOURCE_TRUTH_LEVELS.values()),
+            # The codegraph pack is the one non-memory producer with a level of
+            # its own; every other code is the memory vocabulary's.
+            set(SOURCE_TRUTH_LEVELS.values()) | {CODEGRAPH_CONTEXT_TRUTH_LEVEL},
             "the context-pack truth levels are the vocabulary; rendering may not add or drop a code",
         )
         for code in ("stale_review_required", "source_changed", "superseded"):

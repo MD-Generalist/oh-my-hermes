@@ -20,6 +20,26 @@ All notable changes will be documented here.
   completed reproduction unit reads it instead of re-running it. A split
   without a reproduction unit freezes and dispatches exactly as before.
   Closes #1699.
+- **A coding handoff now carries the project's codegraph, and the codegraph
+  ranks files by structure.** When a handoff is built with a project root and
+  that project stores a codegraph artifact (`omh codegraph build --write`), the
+  handoff carries a `handoff_context_pack/v1` derived from it: up to twelve
+  repo-relative focus files, each a `source: omh_codegraph` item with the new
+  `static_analysis_hint` truth level, and the handoff's input manifest lists
+  them. A caller-supplied context pack still wins, a project without an
+  artifact gets byte-identical output (50 payload digests across five messages,
+  five executor targets, and with and without a project root match
+  `origin/main`), and an artifact that is corrupt or of another schema is
+  named in `codegraph_context_not_attached` rather than read as absent. The
+  ranking behind both `omh codegraph handoff` and the pack is now a
+  personalized PageRank over the scanner's internal import edges, restarted at
+  the files that match the task (terms weighted by how few files carry them)
+  and at files already in play, so a module the task's files depend on
+  outranks a leaf that only shares a word with the task. It is deterministic:
+  fixed damping, iteration cap and tolerance, ties broken by path.
+  `omh codegraph handoff` gains `--changed <paths...>` to seed the walk, and
+  its JSON gains `changed_paths`; focus-symbol ranking is unchanged. Closes
+  #1696.
 
 - **`omh doctor` no longer tells you to rename a shared lifecycle hook.**
   When OMH and another Hermes plugin both subscribe to an event such as

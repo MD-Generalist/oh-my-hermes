@@ -15,6 +15,7 @@ from ..codegraph import (
     summarize_codegraph,
     write_codegraph_artifact,
 )
+from ..codegraph.selection import _resolve_changed_path
 from ..codegraph.uml import (
     DEFAULT_DEPTH,
     DEFAULT_MAX_INTERFACE,
@@ -63,7 +64,9 @@ def cmd_codegraph_summary(args: argparse.Namespace) -> int:
 def cmd_codegraph_handoff(args: argparse.Namespace) -> int:
     try:
         graph = build_codegraph(args.repo)
-        context = build_handoff_context(graph, task=args.task)
+        repo_root = Path(graph["repo_root"])
+        changed = [str(_resolve_changed_path(repo_root, raw)["resolved_path"]) for raw in args.changed or ()]
+        context = build_handoff_context(graph, task=args.task, changed_paths=changed)
     except ValueError as exc:
         raise OmhError(str(exc)) from exc
     if _wants_json(args):
@@ -145,6 +148,13 @@ def _add_codegraph_commands(sub) -> None:
     handoff = codegraph_sub.add_parser("handoff", help="Build compact prepared context for coding agents.")
     handoff.add_argument("--repo", default=".", help="Repository root to scan.")
     handoff.add_argument("--task", required=True, help="Task description used to rank relevant files and symbols.")
+    handoff.add_argument(
+        "--changed",
+        nargs="+",
+        default=[],
+        metavar="PATH",
+        help="Files already in play (repository-relative or absolute); they seed the structural ranking.",
+    )
     handoff.add_argument("--json", action="store_true", help="Print the handoff context payload as JSON.")
     handoff.set_defaults(func=cmd_codegraph_handoff)
 

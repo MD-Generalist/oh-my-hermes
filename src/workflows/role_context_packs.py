@@ -44,6 +44,7 @@ import re
 from pathlib import Path
 from typing import Any
 
+from ..codegraph.schema import CODEGRAPH_CONTEXT_TRUTH_LEVEL
 from ..local_store import atomic_write_json, read_json_object
 from ..paths import OmhPaths
 from ..system.metadata_safety import is_secret_value_shaped
@@ -120,8 +121,9 @@ _MAX_PACK_REF_LENGTH = 160
 _ELIGIBLE_REASON_CODE = "eligible"
 _ELIGIBLE_REASON_TEXT = "Reviewed project memory that passed replay evaluation for this handoff."
 # Human text for the source truth levels `handoff_context_pack/v1` items carry.
-# The codes are `SOURCE_TRUTH_LEVELS`' own values; a guard test fails when the
-# two sets drift apart.
+# The codes are `SOURCE_TRUTH_LEVELS`' own values plus the codegraph's one
+# level (a codegraph pack is derived from local source, not a memory
+# snapshot); a guard test fails when the sets drift apart.
 TRUTH_LEVEL_REASON_TEXT = {
     "observed_evidence": "Observed runtime evidence recorded in the OMH run ledger.",
     "runtime_index_state": "Current OMH runtime index state.",
@@ -132,6 +134,7 @@ TRUTH_LEVEL_REASON_TEXT = {
     "durable_knowledge": "Durable project knowledge kept in OMH wiki notes.",
     "capability_hint": "A catalog capability hint, not observed evidence.",
     "supplied_hint": "Context the wrapper supplied for this task.",
+    CODEGRAPH_CONTEXT_TRUTH_LEVEL: "A file the local codegraph ranked for this task; static analysis, not observed evidence.",
 }
 _UNKNOWN_REASON_TEXT = "Included as reviewed OMH guidance; its source surface gave no reason code."
 

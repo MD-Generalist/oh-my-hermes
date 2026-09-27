@@ -65,6 +65,7 @@ from .owner_fit import (
 from .product_family_templates import product_family_template
 from .product_quality_harnesses import product_quality_harness
 from .project_governance import discover_project_governance, governance_handoff_attachment
+from .codegraph_context import derived_codegraph_context_pack
 from ..executor_readiness import (
     EXECUTOR_CHOICE_CONTEXT_PROFILES,
     executor_readiness_contract,
@@ -546,6 +547,16 @@ def _build_coding_delegation_payload_native(
         main_agent_model or (source_metadata or {}).get("main_agent_model", "")
     ).strip()
     governance = discover_project_governance(project_root, decision=governance_default) if project_root else None
+    # A caller-supplied pack always wins; otherwise the project's stored
+    # codegraph supplies one, and a project without an artifact is untouched.
+    codegraph_context_not_attached: dict[str, object] | None = None
+    if context_pack is None and project_root:
+        context_pack, codegraph_context_not_attached = derived_codegraph_context_pack(
+            project_root,
+            message=message,
+            executor_target=executor_target,
+            input_manifest=input_manifest,
+        )
     family_template = product_family_template(product_family) if product_family else None
     quality_harness = product_quality_harness(product_family) if product_family else None
 
@@ -860,6 +871,8 @@ def _build_coding_delegation_payload_native(
         _attach_memory_recall_pack(payload["prompt_handoff"], memory_recall_pack)
     if declared_contract is not None:
         _attach_handoff_contract(payload, declared_contract)
+    if codegraph_context_not_attached is not None:
+        payload["codegraph_context_not_attached"] = codegraph_context_not_attached
     _attach_model_routing_metadata(
         payload,
         category=model_route_category,
