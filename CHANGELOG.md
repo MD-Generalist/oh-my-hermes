@@ -4,6 +4,24 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **The cost receipt now counts Hermes kanban workers the conversation
+  started.** `omh_cost_receipt/v1` gains a fourth source, `kanban_workers`.
+  A worker run belongs to the conversation when its task's `tasks.session_id`
+  (the originating session Hermes stamps at creation, inherited by a worker's
+  follow-up tasks) is one of the conversation's sessions. The worker's spend
+  is read from the session it stamped on its run
+  (`task_runs.metadata.worker_session_id`), with that session's continuations
+  and delegates, in the state.db of the profile the run was claimed for.
+  Every board is read, the default one and each named one, read-only. The
+  same honesty rules hold: priced usage, unpriced tokens and missing records
+  stay apart. A worker that ran without stamping its session (crashed, or
+  still running) is listed as missing, never as zero and never matched by
+  timing or title. A session the delegate walk already summed is not counted
+  again. The receipt names the boards it read and says when there is no board
+  or one could not be read. "Hermes kanban workers" leaves the not-covered
+  list; tasks created from the CLI or dashboard, which record no originating
+  session, take its place.
+
 - **A cadence phrase in a report, or a command to fix a product defect, no
   longer dispatches a confident wrong skill (#1892).** `every morning` and
   `every day` are `automation-blueprint`'s own trigger phrases, and the

@@ -29,9 +29,7 @@ OTHER = "20260926_090000_other1"
 SESSION_START = 1_000_000.0
 
 
-def _build_state_db(home: Path) -> None:
-    home.mkdir(parents=True, exist_ok=True)
-    connection = sqlite3.connect(home / "state.db")
+def _create_state_schema(connection: sqlite3.Connection) -> None:
     connection.executescript(
         """
         CREATE TABLE sessions (
@@ -50,6 +48,22 @@ def _build_state_db(home: Path) -> None:
         );
         """
     )
+
+
+def _insert_usage(connection: sqlite3.Connection, rows: list[tuple]) -> None:
+    for row in rows:
+        connection.execute(
+            "INSERT INTO session_model_usage (session_id, model, input_tokens, output_tokens, "
+            "estimated_cost_usd, actual_cost_usd, cost_status, cost_source, api_call_count) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)",
+            row,
+        )
+
+
+def _build_state_db(home: Path) -> None:
+    home.mkdir(parents=True, exist_ok=True)
+    connection = sqlite3.connect(home / "state.db")
+    _create_state_schema(connection)
     sessions = [
         # (id, source, model, model_config, parent, started_at, end_reason)
         (MAIN, "tui", "gpt-6-sol", "{}", None, SESSION_START, "compression"),
@@ -75,15 +89,136 @@ def _build_state_db(home: Path) -> None:
         (BRANCH, "gpt-6-sol", 999_000, 1_000, 9.0, 0.0, "estimated", "official_docs_snapshot"),
         (OTHER, "gpt-6-sol", 777_000, 1_000, 7.0, 0.0, "estimated", "official_docs_snapshot"),
     ]
-    for row in usage:
-        connection.execute(
-            "INSERT INTO session_model_usage (session_id, model, input_tokens, output_tokens, "
-            "estimated_cost_usd, actual_cost_usd, cost_status, cost_source, api_call_count) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)",
-            row,
-        )
+    _insert_usage(connection, usage)
     connection.commit()
     connection.close()
+
+
+WORKER = "20260926_101000_work01"
+WORKER_CHILD = "20260926_101100_wchild"
+DEFAULT_WORKER = "20260926_101200_work02"
+OPS_WORKER = "20260926_101300_work03"
+FOREIGN_WORKER = "20260926_101400_work04"
+
+
+def _create_board(path: Path) -> sqlite3.Connection:
+    """The `kanban.db` columns the receipt reads, as `hermes_cli/kanban_db.py` declares them."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    connection = sqlite3.connect(path)
+    connection.executescript(
+        """
+        CREATE TABLE tasks (
+            id TEXT PRIMARY KEY, title TEXT NOT NULL, assignee TEXT, status TEXT NOT NULL,
+            created_at INTEGER NOT NULL, session_id TEXT
+        );
+        CREATE TABLE task_runs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, task_id TEXT NOT NULL, profile TEXT,
+            status TEXT NOT NULL, worker_pid INTEGER, started_at INTEGER NOT NULL,
+            ended_at INTEGER, outcome TEXT, metadata TEXT
+        );
+        CREATE TABLE task_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, task_id TEXT NOT NULL, run_id INTEGER,
+            kind TEXT NOT NULL, payload TEXT, created_at INTEGER NOT NULL
+        );
+        """
+    )
+    return connection
+
+
+def _add_run(
+    connection: sqlite3.Connection,
+    task_id: str,
+    *,
+    session_id: str | None,
+    assignee: str = "default",
+    status: str = "done",
+    spawned: bool = True,
+    worker_session: str = "",
+) -> None:
+    started = int(SESSION_START) + 500
+    if not connection.execute("SELECT 1 FROM tasks WHERE id = ?", (task_id,)).fetchone():
+        connection.execute(
+            "INSERT INTO tasks (id, title, assignee, status, created_at, session_id) VALUES (?, ?, ?, ?, ?, ?)",
+            (task_id, "a task", assignee, status, started, session_id),
+        )
+    metadata = json.dumps({"worker_session_id": worker_session}) if worker_session else None
+    run_id = connection.execute(
+        "INSERT INTO task_runs (task_id, profile, status, started_at, ended_at, outcome, metadata) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (task_id, assignee, status, started, None if status == "running" else started + 60,
+         None if status == "running" else status, metadata),
+    ).lastrowid
+    if spawned:
+        connection.execute(
+            "INSERT INTO task_events (task_id, run_id, kind, payload, created_at) VALUES (?, ?, 'spawned', '{}', ?)",
+            (task_id, run_id, started),
+        )
+
+
+def _build_kanban(hermes_home: Path) -> None:
+    """Boards and worker sessions: what the conversation's kanban work recorded, and what it did not."""
+    # The `coder` profile's worker ran under that profile's own state.db.
+    profile = hermes_home / "profiles" / "coder"
+    profile.mkdir(parents=True)
+    connection = sqlite3.connect(profile / "state.db")
+    _create_state_schema(connection)
+    for session_id, model, config, parent in (
+        (WORKER, "gpt-6-sol", "{}", None),
+        (WORKER_CHILD, "kimi-k3", json.dumps({"_delegate_from": WORKER}), WORKER),
+    ):
+        connection.execute(
+            "INSERT INTO sessions (id, source, model, model_config, parent_session_id, started_at) "
+            "VALUES (?, 'kanban', ?, ?, ?, ?)",
+            (session_id, model, config, parent, SESSION_START + 500),
+        )
+    _insert_usage(connection, [
+        (WORKER, "gpt-6-sol", 15_000, 5_000, 0.05, 0.0, "estimated", "official_docs_snapshot"),
+        # The worker's own delegate, with no recorded price.
+        (WORKER_CHILD, "kimi-k3", 6_000, 1_000, 0.0, 0.0, "unknown", "none"),
+    ])
+    connection.commit()
+    connection.close()
+    # Default-profile workers write the root state.db, the conversation's own.
+    connection = sqlite3.connect(hermes_home / "state.db")
+    for session_id in (DEFAULT_WORKER, OPS_WORKER, FOREIGN_WORKER):
+        connection.execute(
+            "INSERT INTO sessions (id, source, model, model_config, started_at) VALUES (?, 'kanban', 'gpt-6-luna', '{}', ?)",
+            (session_id, SESSION_START + 600),
+        )
+    _insert_usage(connection, [
+        (DEFAULT_WORKER, "gpt-6-luna", 3_000, 1_000, 0.0, 0.02, "actual", "provider"),
+        (OPS_WORKER, "gpt-6-luna", 800, 200, 0.0, 0.0, "included", "none"),
+        (FOREIGN_WORKER, "gpt-6-luna", 400_000, 1_000, 6.0, 0.0, "estimated", "official_docs_snapshot"),
+    ])
+    connection.commit()
+    connection.close()
+
+    board = _create_board(hermes_home / "kanban.db")
+    # Created in MAIN; the coder worker reported and stamped its session.
+    _add_run(board, "t_00000001", session_id=MAIN, assignee="coder", worker_session=WORKER)
+    # A retry of the same task whose worker crashed before reporting: missing.
+    _add_run(board, "t_00000001", session_id=MAIN, assignee="coder", status="crashed")
+    # Created in the continuation, run by a default-profile worker.
+    _add_run(board, "t_00000002", session_id=CONTINUED, worker_session=DEFAULT_WORKER)
+    # A run stamping a session the delegate walk already summed: counted once.
+    _add_run(board, "t_00000003", session_id=MAIN, worker_session=GRANDCHILD)
+    # Another conversation's task: never on this receipt.
+    _add_run(board, "t_00000004", session_id=OTHER, worker_session=FOREIGN_WORKER)
+    # A spawn that never happened: no worker, nothing spent, nothing missing.
+    _add_run(board, "t_00000005", session_id=MAIN, status="spawn_failed", spawned=False)
+    # A worker still running: it has not stamped its session yet.
+    _add_run(board, "t_00000006", session_id=MAIN, status="running")
+    # A stamp naming a session its profile's state.db does not hold.
+    _add_run(board, "t_00000007", session_id=MAIN, assignee="coder", worker_session="20260926_101500_gone01")
+    # A task created from the CLI records no originating session.
+    _add_run(board, "t_00000008", session_id=None, worker_session=FOREIGN_WORKER)
+    board.commit()
+    board.close()
+    # A named board holds the conversation's task too.
+    ops =_create_board(hermes_home / "kanban" / "boards" / "ops" / "kanban.db")
+    _add_run(ops, "t_00000009", session_id=CHILD, worker_session=OPS_WORKER)
+    ops.commit()
+    ops.close()
 
 
 def _write_summary(omh_home: Path, fanout_id: str, summary: dict, *, mtime: float) -> None:
@@ -149,6 +284,10 @@ class CostReceiptTest(unittest.TestCase):
         self.omh_home = root / "omh"
         _build_state_db(self.hermes_home)
         _build_fanout(self.omh_home)
+        # The board root follows HERMES_KANBAN_HOME; never the developer's own.
+        env = mock.patch.dict(os.environ, {"HERMES_KANBAN_HOME": "", "HERMES_KANBAN_BOARD": ""})
+        env.start()
+        self.addCleanup(env.stop)
 
     def _receipt(self, session_id: str = CONTINUED) -> dict:
         return build_cost_receipt(hermes_home=self.hermes_home, omh_home=self.omh_home, session_id=session_id)
@@ -259,6 +398,93 @@ class CostReceiptTest(unittest.TestCase):
         )
         self.assertNotEqual(status, 0)
         self.assertIn("no Hermes session", stderr)
+
+    def test_no_board_is_said_rather_than_read_as_no_workers(self) -> None:
+        receipt = self._receipt()
+        self.assertEqual(receipt["sources"]["kanban_workers"]["count"], 0)
+        self.assertEqual(receipt["kanban"], {"boards_read": [], "boards_unreadable": []})
+        self.assertIn("- Kanban workers: no kanban board present", receipt["text"])
+
+
+class KanbanWorkerCostTest(unittest.TestCase):
+    """Kanban worker runs join the receipt only through recorded fields."""
+
+    def setUp(self) -> None:
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name)
+        self.hermes_home = root / "hermes"
+        self.omh_home = root / "omh"
+        _build_state_db(self.hermes_home)
+        _build_kanban(self.hermes_home)
+        env = mock.patch.dict(os.environ, {"HERMES_KANBAN_HOME": "", "HERMES_KANBAN_BOARD": ""})
+        env.start()
+        self.addCleanup(env.stop)
+
+    def _receipt(self, session_id: str = CONTINUED) -> dict:
+        return build_cost_receipt(hermes_home=self.hermes_home, omh_home=self.omh_home, session_id=session_id)
+
+    def test_worker_runs_on_the_conversations_tasks_are_summed_across_boards(self) -> None:
+        receipt = self._receipt()
+        kanban = receipt["sources"]["kanban_workers"]
+        # t1 (both runs), t2, t3, t6, t7 on the default board and t9 on `ops`;
+        # never t4 (another conversation), t5 (never spawned) or t8 (CLI-created).
+        self.assertEqual(kanban["count"], 7)
+        # WORKER (0.05 estimated) + DEFAULT_WORKER (0.02 actual) + OPS_WORKER (included $0).
+        self.assertAlmostEqual(kanban["cost_usd"], 0.07)
+        self.assertEqual(kanban["priced_tokens"], 25_000)
+        self.assertEqual(kanban["cost_bases"], ["Hermes actual", "Hermes estimated", "Hermes included"])
+        self.assertEqual(receipt["kanban"], {"boards_read": ["default", "ops"], "boards_unreadable": []})
+        self.assertAlmostEqual(receipt["observed_cost_usd"], 0.60 + 0.07)
+
+    def test_a_worker_delegate_is_usage_with_no_recorded_price(self) -> None:
+        kanban = self._receipt()["sources"]["kanban_workers"]
+        # WORKER_CHILD, read from the coder profile's state.db through the worker's own lineage.
+        self.assertEqual(kanban["unpriced_tokens"], 7_000)
+        self.assertEqual(kanban["unpriced_models"], ["kimi-k3"])
+
+    def test_a_session_the_delegate_walk_summed_is_not_counted_again(self) -> None:
+        receipt = self._receipt()
+        # t3's stamp names GRANDCHILD, already in the delegated children bucket.
+        self.assertEqual(receipt["sources"]["delegated_children"]["priced_tokens"], 10_000)
+        self.assertEqual(receipt["priced_tokens"], 180_000 + 10_000 + 25_000)
+
+    def test_a_worker_with_no_session_record_is_missing_not_zero(self) -> None:
+        missing = {
+            item["id"]: item["reason"] for item in self._receipt()["missing"] if item["source"] == "kanban_workers"
+        }
+        self.assertEqual(
+            missing,
+            {
+                "kanban default/t_00000001 run 2": "worker ran and recorded no session on its run",
+                "kanban default/t_00000006 run 7": "worker still running; it records its session when it reports",
+                "kanban default/t_00000007 run 8":
+                    "worker session 20260926_101500_gone01 has no row in its profile's state.db",
+            },
+        )
+        self.assertIn("- kanban default/t_00000001 run 2: worker ran and recorded no session on its run",
+                      self._receipt()["text"])
+
+    def test_another_conversations_tasks_are_excluded(self) -> None:
+        receipt = self._receipt(OTHER)
+        self.assertEqual(receipt["sources"]["kanban_workers"]["count"], 1)
+        self.assertAlmostEqual(receipt["sources"]["kanban_workers"]["cost_usd"], 6.0)
+
+    def test_an_unreadable_board_is_named_not_skipped(self) -> None:
+        (self.hermes_home / "kanban" / "boards" / "ops" / "kanban.db").write_bytes(b"not a database")
+        receipt = self._receipt()
+        self.assertEqual(receipt["kanban"], {"boards_read": ["default"], "boards_unreadable": ["ops"]})
+        self.assertEqual(receipt["sources"]["kanban_workers"]["count"], 6)
+        self.assertIn("board(s) that could not be read: ops", receipt["text"])
+
+    def test_reading_leaves_the_board_and_worker_store_unchanged(self) -> None:
+        before = {
+            path: path.read_bytes()
+            for path in (self.hermes_home / "kanban.db", self.hermes_home / "profiles" / "coder" / "state.db")
+        }
+        self._receipt()
+        for path, content in before.items():
+            self.assertEqual(path.read_bytes(), content, path)
 
 if __name__ == "__main__":
     unittest.main()

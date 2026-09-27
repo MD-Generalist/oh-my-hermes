@@ -3,7 +3,7 @@
 A person asks in chat "how much did this cost?"; the answer has to cover
 everything the work used, not only the turns of the session they are typing
 in. This reader anchors "the work" on the calling Hermes conversation and adds
-up three kinds of recorded spend:
+up four kinds of recorded spend:
 
 - the conversation's own session rows: the session plus its compression
   continuations (`kanban_board_reader.conversation_session_ids`, the same
@@ -19,7 +19,19 @@ up three kinds of recorded spend:
   ``HERMES_SESSION_ID``, which Hermes injects into every terminal command's
   environment as the session-db id of the spawning conversation. The same
   stamp on the summary covers the run's Hermes-lane and retarget recovery
-  attempts.
+  attempts;
+- Hermes kanban worker runs on tasks whose ``tasks.session_id`` is in the
+  conversation. Hermes stamps that column with the originating session when a
+  task is created inside an agent loop (``kanban_tools._handle_create``,
+  verified against ``state.db`` before stamping), and a worker that creates a
+  follow-up task passes its own task's origin on, so the chain stays
+  attributed. The worker's own session is the one it stamped on its run as
+  ``task_runs.metadata.worker_session_id`` when it reported
+  (``kanban_tools._stamp_worker_session_metadata``); that session, its
+  continuations and its own delegates are read from the ``state.db`` of the
+  profile the run was claimed for. A worker that ran without stamping its
+  session is listed as missing -- no timing window or title is used to guess
+  which session it was.
 
 Hermes persists spend per API call as deltas into the calling session's own
 row (``conversation_loop`` -> ``queue_token_counts``); the in-memory rollup of
@@ -38,13 +50,23 @@ is read.
 from __future__ import annotations
 
 import math
+import os
 import sqlite3
 import stat
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 
 from .fanout_scan import path_mtime
-from .kanban_board_reader import conversation_session_ids
+from .kanban_board_reader import (
+    DEFAULT_BOARD,
+    _board_root,
+    _existing_slug,
+    _worker_session_id,
+    _worker_state_db,
+    conversation_session_ids,
+    hermes_root,
+    kanban_db_path,
+)
 from .runtime_reader import _read_hud_json
 
 COST_RECEIPT_SCHEMA_VERSION = "omh_cost_receipt/v1"
@@ -55,6 +77,7 @@ _FANOUT_DIR_PREFIX = "fanout-"
 _MAX_SESSIONS = 2000
 _MAX_FANOUT_SUMMARIES = 500
 _MAX_MISSING_LISTED = 20
+_MAX_KANBAN_RUNS = 500
 
 COST_RECEIPT_CLAIM_BOUNDARY = (
     "Summed from Hermes' session accounting in state.db and OMH fanout dispatch summaries. "
@@ -66,16 +89,18 @@ COST_RECEIPT_CLAIM_BOUNDARY = (
 NOT_COVERED = (
     "fanout units dispatched outside a Hermes session or before OMH recorded the originating session",
     "standalone `omh hermes-child dispatch` runs, which record no originating session",
-    "Hermes kanban workers",
+    "Hermes kanban tasks created outside a Hermes session (CLI or dashboard), which record no originating session",
     "earlier attempts of a fanout unit that was dispatched again (the summary keeps the latest)",
 )
 
-_SOURCES = ("session", "delegated_children", "fanout_units")
+_SOURCES = ("session", "delegated_children", "fanout_units", "kanban_workers")
 _SOURCE_LABELS = {
     "session": "Hermes session",
     "delegated_children": "Delegated Hermes children",
     "fanout_units": "Fanout units",
+    "kanban_workers": "Kanban workers",
 }
+_SOURCE_NOUNS = {"fanout_units": "unit", "kanban_workers": "worker run"}
 
 
 def build_cost_receipt(*, hermes_home: str | Path, omh_home: str | Path, session_id: str) -> dict[str, Any]:
@@ -92,7 +117,8 @@ def build_cost_receipt(*, hermes_home: str | Path, omh_home: str | Path, session
         receipt["reason"] = "no Hermes session row for this session id"
         receipt["text"] = "No cost receipt: Hermes has no session record for this conversation."
         return receipt
-    sessions = _read_sessions(Path(hermes_home).expanduser() / "state.db", conversation)
+    state_db = Path(hermes_home).expanduser() / "state.db"
+    sessions = _read_sessions(state_db, conversation)
     if sessions is None:
         receipt["status"] = "not_observed"
         receipt["reason"] = "state.db could not be read"
@@ -113,6 +139,8 @@ def build_cost_receipt(*, hermes_home: str | Path, omh_home: str | Path, session
             _add_usage(bucket, usage)
     earliest = min((row["started_at"] for row in sessions["rows"] if row["started_at"] is not None), default=None)
     fanout_truncated = _add_fanout(buckets["fanout_units"], missing, Path(omh_home).expanduser(), lineage_ids, earliest)
+    counted = {(_file_identity(state_db), session) for session in lineage_ids}
+    kanban = _add_kanban(buckets["kanban_workers"], missing, hermes_home, lineage_ids, counted)
     for bucket in buckets.values():
         _finish_bucket(bucket)
     totals = _totals(buckets.values())
@@ -125,7 +153,8 @@ def build_cost_receipt(*, hermes_home: str | Path, omh_home: str | Path, session
             "priced_tokens": totals["priced_tokens"],
             "unpriced_tokens": totals["unpriced_tokens"],
             "missing": missing,
-            "truncated": bool(sessions["truncated"] or fanout_truncated),
+            "kanban": {key: kanban[key] for key in ("boards_read", "boards_unreadable")},
+            "truncated": bool(sessions["truncated"] or fanout_truncated or kanban["truncated"]),
         }
     )
     receipt["text"] = format_cost_receipt(receipt)
@@ -150,7 +179,10 @@ def format_cost_receipt(receipt: Mapping[str, Any]) -> str:
     lines.append("By source:")
     for source in _SOURCES:
         bucket = (receipt.get("sources") or {}).get(source) or {}
-        lines.append(f"- {_SOURCE_LABELS[source]}: {_bucket_line(source, bucket)}")
+        line = _bucket_line(source, bucket)
+        if source == "kanban_workers":
+            line = _kanban_line(line, receipt.get("kanban") or {})
+        lines.append(f"- {_SOURCE_LABELS[source]}: {line}")
     if missing:
         lines.append("Missing:")
         for item in missing[:_MAX_MISSING_LISTED]:
@@ -165,7 +197,7 @@ def format_cost_receipt(receipt: Mapping[str, Any]) -> str:
 
 def _bucket_line(source: str, bucket: Mapping[str, Any]) -> str:
     count = int(bucket.get("count") or 0)
-    noun = "unit" if source == "fanout_units" else "session"
+    noun = _SOURCE_NOUNS.get(source, "session")
     head = f"{count} {noun}{'s' if count != 1 else ''}"
     if not count:
         return f"{head} recorded"
@@ -181,6 +213,19 @@ def _bucket_line(source: str, bucket: Mapping[str, Any]) -> str:
     if bucket.get("cost_usd") is None and not unpriced:
         parts.append("no usage recorded")
     return ", ".join(parts)
+
+
+def _kanban_line(line: str, kanban: Mapping[str, Any]) -> str:
+    """Name the boards read, so "0 worker runs" is never read as "no board"."""
+    read = list(kanban.get("boards_read") or ())
+    unreadable = list(kanban.get("boards_unreadable") or ())
+    if not read and not unreadable:
+        return "no kanban board present"
+    if read:
+        line += f" (boards read: {', '.join(read)})"
+    if unreadable:
+        line += f"; board(s) that could not be read: {', '.join(unreadable)}"
+    return line
 
 
 def _money(value: Any) -> str:
@@ -428,6 +473,158 @@ def _add_fanout_run(bucket: dict[str, Any], missing: list[dict[str, str]], run: 
         missing.append({"source": "fanout_units", "id": label, "reason": "ran, reported no usage"})
         return
     _add_usage(bucket, record)
+
+
+def _file_identity(path: Path) -> tuple[int, int] | str:
+    """One key per database file, however the path to it was spelled."""
+    try:
+        info = os.stat(path)
+    except OSError:
+        return str(path)
+    return (info.st_dev, info.st_ino)
+
+
+def _board_paths(hermes_home: str | Path) -> list[tuple[str, Path]]:
+    """Every board database that exists: the default board and each named one.
+
+    A task stamped with this conversation may sit on any board, not only the
+    current one, so all of them are read. A named board is admitted the way
+    Hermes admits it (``_existing_slug``), and ``kanban_db_path`` refuses a
+    symlinked database.
+    """
+    root = _board_root(hermes_home)
+    slugs = [DEFAULT_BOARD]
+    boards_dir = root / "kanban" / "boards"
+    try:
+        if stat.S_ISDIR(boards_dir.lstat().st_mode):
+            named = {_existing_slug(root, entry.name) for entry in boards_dir.iterdir()}
+            slugs += sorted(slug for slug in named if slug and slug != DEFAULT_BOARD)
+    except OSError:
+        pass
+    found = []
+    for slug in slugs:
+        path = kanban_db_path(hermes_home, slug)
+        if path is not None and path.is_file():
+            found.append((slug, path))
+    return found
+
+
+def _kanban_runs(board_db: Path, lineage_ids: set[str]) -> list[dict[str, Any]] | None:
+    """Runs on tasks this conversation created; ``None`` when the board is unreadable.
+
+    ``spawned`` is whether the dispatcher recorded a ``spawned`` event for the
+    run. ``task_runs.worker_pid`` cannot say it: the dispatcher clears it once
+    it reaps the worker.
+    """
+    try:
+        connection = sqlite3.connect(f"file:{board_db}?mode=ro", uri=True, timeout=0.5)
+    except sqlite3.Error:
+        return None
+    try:
+        task_columns = {str(row[1]) for row in connection.execute('PRAGMA table_info("tasks")')}
+        run_columns = {str(row[1]) for row in connection.execute('PRAGMA table_info("task_runs")')}
+        event_columns = {str(row[1]) for row in connection.execute('PRAGMA table_info("task_events")')}
+        needed_runs = {"id", "task_id", "profile", "status", "ended_at", "metadata", "started_at"}
+        if not ({"id", "session_id", "assignee"} <= task_columns and needed_runs <= run_columns):
+            return None
+        spawned = (
+            "EXISTS (SELECT 1 FROM task_events e WHERE e.run_id = r.id AND e.kind = 'spawned')"
+            if {"run_id", "kind"} <= event_columns
+            else "0"
+        )
+        placeholders = ",".join("?" for _ in lineage_ids)
+        rows = connection.execute(
+            f"SELECT r.id, r.task_id, r.profile, t.assignee, r.status, r.ended_at, r.metadata, {spawned} "
+            f"FROM task_runs r JOIN tasks t ON t.id = r.task_id WHERE t.session_id IN ({placeholders}) "
+            "ORDER BY r.started_at, r.id LIMIT ?",
+            [*sorted(lineage_ids), _MAX_KANBAN_RUNS + 1],
+        ).fetchall()
+    except sqlite3.Error:
+        return None
+    finally:
+        connection.close()
+    keys = ("run_id", "task_id", "profile", "assignee", "status", "ended_at", "metadata", "spawned")
+    return [dict(zip(keys, row)) for row in rows]
+
+
+def _add_kanban(
+    bucket: dict[str, Any],
+    missing: list[dict[str, str]],
+    hermes_home: str | Path,
+    lineage_ids: set[str],
+    counted: set[tuple[Any, str]],
+) -> dict[str, Any]:
+    """Add worker runs on this conversation's kanban tasks.
+
+    A run with neither a ``spawned`` event nor a stamped session started no
+    worker (a spawn that failed, a run Hermes synthesized for a manual
+    completion) and cost nothing. ``counted`` holds every (database, session)
+    already summed, so a session the delegate walk reached, or one two runs
+    both stamped, is added once.
+    """
+    result: dict[str, Any] = {"boards_read": [], "boards_unreadable": [], "truncated": False}
+    root = hermes_root(hermes_home)
+    for slug, board_db in _board_paths(hermes_home):
+        runs = _kanban_runs(board_db, lineage_ids)
+        if runs is None:
+            result["boards_unreadable"].append(slug)
+            continue
+        result["boards_read"].append(slug)
+        if len(runs) > _MAX_KANBAN_RUNS:
+            runs = runs[:_MAX_KANBAN_RUNS]
+            result["truncated"] = True
+        for run in runs:
+            worker_session = _worker_session_id(run["metadata"])
+            if not (run["spawned"] or worker_session):
+                continue
+            bucket["count"] += 1
+            label = f"kanban {slug}/{run['task_id']} run {run['run_id']}"
+            if not worker_session:
+                reason = (
+                    "worker still running; it records its session when it reports"
+                    if run["status"] == "running" and run["ended_at"] is None
+                    else "worker ran and recorded no session on its run"
+                )
+            else:
+                profile = _text(run["profile"], limit=80) or _text(run["assignee"], limit=80)
+                reason = _add_worker_session(
+                    bucket, missing, result, _worker_state_db(root, profile), worker_session, counted
+                )
+            if reason:
+                missing.append({"source": "kanban_workers", "id": label, "reason": reason})
+    return result
+
+
+def _add_worker_session(
+    bucket: dict[str, Any],
+    missing: list[dict[str, str]],
+    result: dict[str, Any],
+    worker_db: Path | None,
+    worker_session: str,
+    counted: set[tuple[Any, str]],
+) -> str:
+    """Fold in the worker session, its continuations and delegates; the missing reason, else ``""``."""
+    if worker_db is None:
+        return "worker profile has no readable state.db"
+    identity = _file_identity(worker_db)
+    worker_conversation = conversation_session_ids(worker_db.parent, worker_session)
+    if not worker_conversation:
+        return f"worker session {worker_session} has no row in its profile's state.db"
+    sessions = _read_sessions(worker_db, worker_conversation)
+    if sessions is None:
+        return "worker profile state.db could not be read"
+    result["truncated"] = result["truncated"] or sessions["truncated"]
+    for row in sessions["rows"]:
+        key = (identity, row["id"])
+        if key in counted:
+            continue
+        counted.add(key)
+        if not row["usage"]:
+            missing.append({"source": "kanban_workers", "id": row["id"], "reason": "no usage recorded"})
+            continue
+        for usage in row["usage"]:
+            _add_usage(bucket, usage)
+    return ""
 
 
 def _count(value: Any) -> int:
