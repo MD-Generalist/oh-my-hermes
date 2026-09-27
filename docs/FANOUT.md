@@ -449,6 +449,36 @@ Rules, all applied at freeze time:
   dispatcher cannot read fails closed with nothing run. Dispatch has no
   repair loop of its own: a failed postcondition is reported, and the next
   attempt is the operator's (or the parent agent's) decision.
+- **Reproduction hold (opt-in by declaration).** A split is debugging-shaped
+  when, and only when, it declares a unit with `kind: "reproduction"`; the
+  request text is never read to decide it. That unit also declares
+  `reproduction_command` (bounded and parsed at freeze like a verification
+  command), and its frozen first check becomes "`<command>` exits nonzero: it
+  reproduces the reported failure before any fix". Every other unit in the
+  split must reach a reproduction unit through `depends_on`, directly or
+  through another unit, or the freeze is refused — so no edit unit can be
+  admitted unheld. Under `--run-verification`, after the reproduction unit
+  exited 0 with a validated sidecar, the dispatcher runs the command itself in
+  that unit's worktree (`shell=False`, same environment policy and ceiling) and
+  records a `reproduction` receipt (`fanout_reproduction/v1`) on the unit:
+  `failure_reproduced` for an observed nonzero exit, `not_reproduced` for an
+  observed exit 0, or `not_observed` with a reason (`dry_run`,
+  `verification_not_requested`, `unit_not_completed`, or `command_<reason>` for
+  a command that could not start or timed out — a hang is not a
+  reproduction). Only `failure_reproduced` with `observed_by: dispatcher`
+  releases the hold; every other receipt blocks the dependents as
+  `blocked_by_dependency` with `blocked_reasons: {<unit>:
+  "reproduction_not_observed"}`, and a dry run shows them held the same way.
+  An observed exit 0 means the failure did not reproduce, so a fix would be
+  verified against nothing: dispatch holds the edit units, names the receipt,
+  and leaves the next step — a corrected reproduction or a revised split — to
+  the operator. The reproduced failure is the unit's success, so it never
+  rides the check rows whose failure moves the ladder. Both observed outcomes
+  are journaled as `reproduction_failure_observed` (`observed` or
+  `not_observed`), and a later dispatch that skips the already-completed
+  reproduction unit reads the latest one instead of re-running it. A split
+  with no reproduction unit carries none of these keys and admits exactly as
+  before.
 - **Verification plans, tiers, and receipts (opt-in).** Beside bare
   `verification_commands`, a unit may declare `verification_checks` — the
   additive, structured sibling (declare one or the other, never both; the

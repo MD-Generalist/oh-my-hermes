@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any, Mapping
 
 from ..system.metadata_safety import redact_metadata_text
+from .fanout_contracts import REPRODUCTION_UNIT_KIND
 
 FANOUT_ADMISSION_SCHEMA_VERSION = "fanout_admission/v1"
 FANOUT_ADMISSION_ADJUSTMENT_LIMIT = 32
@@ -96,6 +97,29 @@ class AdaptiveFanoutAdmission:
             ),
             "claim_boundary": FANOUT_ADMISSION_CLAIM_BOUNDARY,
         }
+
+
+def reproduction_hold_released(unit: Mapping[str, Any], result: Mapping[str, Any] | None) -> bool:
+    """Whether a finished dependency lets the units behind it be admitted.
+
+    The reproduction hold: a unit that depends on a reproduction unit is
+    admitted only once the dispatcher itself observed that unit's declared
+    reproduction command exit nonzero. The verdict is read from the receipt's
+    fields, never from output text, and nothing short of `failure_reproduced`
+    observed by the dispatcher releases it -- a dry-run plan, a command that
+    never ran, and a command that exited 0 all keep the hold closed.
+
+    Every unit that is not a reproduction unit releases nothing here, so a
+    split that declares no reproduction admits exactly as it did before.
+    """
+    if unit.get("kind") != REPRODUCTION_UNIT_KIND:
+        return True
+    receipt = result.get("reproduction") if isinstance(result, Mapping) else None
+    return (
+        isinstance(receipt, Mapping)
+        and receipt.get("status") == "failure_reproduced"
+        and receipt.get("observed_by") == "dispatcher"
+    )
 
 
 def _is_observed_process_completion(result: Mapping[str, Any]) -> bool:

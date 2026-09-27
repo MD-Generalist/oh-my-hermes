@@ -4,6 +4,23 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **A debugging-shaped fanout now holds its edit units until the dispatcher
+  has watched the failure reproduce.** A split declares itself
+  debugging-shaped with a `kind: "reproduction"` unit carrying a
+  `reproduction_command`; the request text is never read. Every other unit
+  must reach that unit through `depends_on`, or the freeze is refused. Under
+  `--run-verification` the dispatcher runs the command in the reproduction
+  unit's worktree and records a `fanout_reproduction/v1` receipt. Only an
+  observed nonzero exit (`failure_reproduced`, `observed_by: dispatcher`)
+  admits the dependents. A dry-run plan, an unrequested run, a command that
+  could not start or timed out, and an observed exit 0 (the failure did not
+  reproduce) all keep them `blocked_by_dependency` with the reason
+  `reproduction_not_observed`. The verdict is journaled as
+  `reproduction_failure_observed`, so a later dispatch that skips the
+  completed reproduction unit reads it instead of re-running it. A split
+  without a reproduction unit freezes and dispatches exactly as before.
+  Closes #1699.
+
 - **`omh doctor` no longer tells you to rename a shared lifecycle hook.**
   When OMH and another Hermes plugin both subscribe to an event such as
   `pre_llm_call`, `pre_tool_call` or `on_session_end`, the
