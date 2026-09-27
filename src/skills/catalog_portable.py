@@ -790,7 +790,34 @@ PORTABLE_OVERRIDES: dict[str, dict[str, tuple[str, ...]]] = {'ulw-plan': {'artif
                                       'routes research demands to source-backed evidence gathering - from '
                                       'live web citations to studied reference implementations - verifies '
                                       'contested claims, and distills decision-grounding output so planning '
-                                      'starts from evidence instead of guesses.',)},
+                                      'starts from evidence instead of guesses.',),
+                  # The catalog's first line names Hermes' bundled
+                  # `blocked-page-recovery` skill, which no other host ships.
+                  # The rule itself is host-neutral, so only the route changes.
+                  'recovery_notes': ('If a source fails with HTTP 403, HTTP 429, a paywall, or a WAF '
+                                     'or bot wall, use the host\'s blocked-page recovery capability '
+                                     'once for that source when it offers one and never retry the '
+                                     'same URL in a loop; cite an archive or cached copy it returns as '
+                                     'a dated historical capture, never as the live page. If no such '
+                                     'capability exists, recovery fails, or the source needs a login '
+                                     'or payment, name the retrieval gap with that reason.',
+                                     'If web or repository access is unavailable, name the retrieval '
+                                     'gap and use only observed local context instead of inventing '
+                                     'findings.',
+                                     "If no archive access exists or the capture provider's paid "
+                                     'authority is exhausted, record a temporal retrieval gap with no '
+                                     'network action and keep the as-of claim in the annex; never '
+                                     'substitute the current page for it.',
+                                     'If the evidence stays thin or contested, lower the stated '
+                                     'confidence and keep the unresolved claims in the annex rather '
+                                     'than flattening them.',
+                                     'If leads keep expanding past the declared budget, stop, record '
+                                     'open leads in the dossier, and ask whether to extend the budget.',
+                                     'If enough evidence already exists and the real request is '
+                                     'planning, hand off to ralplan with the recorded dossier.',
+                                     'If the audience answer arrives after retrieval started, keep the '
+                                     'evidence and re-render rather than re-running: the dossier feeds '
+                                     'both branches.')},
  'ulw-perf': {'why_this_exists': ('`ultraperf` exists because most performance work starts unlocalized: '
                                   'something is slow, leaking, or expensive and nobody knows where. It '
                                   'forces measurement before edits, one hypothesis at a time, executor-owned '

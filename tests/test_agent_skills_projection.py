@@ -22,6 +22,33 @@ class AgentSkillsProjectionTests(unittest.TestCase):
             for token in ("Hermes-native", "omh hermes", "Wrapper Backend", "skills.external_dirs"):
                 self.assertNotIn(token.lower(), content.lower(), name)
 
+    def test_research_blocked_source_recovery_names_hermes_skill_only_on_hermes(self):
+        """#1527: a 403/429/paywall/WAF source tries one recovery before the gap.
+
+        Hermes bundles `blocked-page-recovery`; no other host does, so the
+        portable body keeps the rule and drops the skill name.
+        """
+        from omh.skills.render import agent_skill_templates, builtin_skill_templates
+        hermes = {t.name: t.content for t in builtin_skill_templates()}["research"]
+        portable = {t.name: t.content for t in agent_skill_templates()}["ulw-research"]
+        rule = (
+            "If a source fails with HTTP 403, HTTP 429, a paywall, or a WAF or bot wall, "
+            "load Hermes' `blocked-page-recovery` skill once for that source when it is available"
+        )
+        self.assertIn(rule, hermes)
+        self.assertIn("never as the live page", hermes)
+        self.assertIn("name the retrieval gap with that reason", hermes)
+        self.assertNotIn("blocked-page-recovery", portable)
+        self.assertIn(
+            "If a source fails with HTTP 403, HTTP 429, a paywall, or a WAF or bot wall, "
+            "use the host's blocked-page recovery capability once for that source",
+            portable,
+        )
+        self.assertIn("never as the live page", portable)
+        self.assertIn("name the retrieval gap with that reason", portable)
+        for name, content in {t.name: t.content for t in agent_skill_templates()}.items():
+            self.assertNotIn("blocked-page-recovery", content, name)
+
     def test_requires_omh_cli_skills_carry_compatibility_frontmatter(self):
         from omh.skills.catalog_portable import PORTABILITY_REQUIRES_OMH_CLI, skill_portability
         from omh.skills.render import agent_skill_templates
