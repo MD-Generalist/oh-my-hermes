@@ -17,7 +17,7 @@ from .executor_cues import (
 from .intent import classify_omh_quality_intent
 from .reference_regions import executable_routing_text
 from .jev_addressing import jev_addressed_skill
-from .localization import normalized_phrase, routing_tokens
+from .localization import normalized_phrase, phrase_is_spoken, routing_tokens
 from .materials_cues import OFFICE_FILE_MATERIAL_PHRASES
 from .missed_route import has_normalized_missed_omh_workflow_context
 from .omh_help import is_omh_docs_question
@@ -2003,6 +2003,152 @@ _TOOLBELT_READINESS_TOKENS = _normalized_token_set(
         "설정",
     }
 )
+# Trigger phrases that are also ordinary English, per skill, with the words
+# that mark the skill's own sense when they stand beside the phrase. A phrase
+# match is the strongest evidence the scorer has, and when the phrase is
+# everyday English the phrase alone cannot say which sense a sentence is in:
+# "my phone had a silent failure of the alarm", "how many harness sessions
+# does a sled dog need", "what is a weekly status review in a school parent
+# meeting", "is a camera gate at the driveway worth installing", "habits that
+# keep your skill health up as a pianist", "summarize the independent
+# perspectives in this essay", "what is media input on an old VCR", "how do I
+# cancel my gym membership" and "how long does it take to become a doctor"
+# each dispatched, or led a clarify with, the skill whose phrase they share.
+#
+# The skill withdraws only when the phrase arrives with other content and
+# none of it is the lane's. The anchor words are the skill's other trigger
+# vocabulary plus the lane nouns and request verbs that say which sense is
+# meant. The phrase on its own -- "silent failures", "status review",
+# "cancel", "doctor" -- is still the phrase being asked for and keeps its
+# route, and an explicit invocation overrides this the way it overrides every
+# offers-itself precondition. Each path one of the measured sentences
+# reached its skill through asks `everyday_sense_phrase_unanchored`: catalog
+# scoring, the operator-surface fast path, the harness-session guard, a bare
+# leading name ("cancel my netflix subscription"), and the clarify shortlist.
+# The routing-precision controls fail when any one of those checks is removed.
+EVERYDAY_SENSE_PHRASES: dict[str, tuple[tuple[str, ...], frozenset[str]]] = {
+    "failure-signal-audit": (
+        ("silent failure", "silent failures", "hidden failure", "hidden failures"),
+        frozenset(
+            {
+                "api", "app", "apps", "async", "audit", "backend", "bug", "bugs", "build", "catch",
+                "client", "code", "codebase", "console", "cron", "database", "deploy",
+                "endpoint", "error", "errors", "exception", "exceptions", "fallback", "fallbacks",
+                "frontend", "function", "functions", "handler", "handlers", "hunter", "integration",
+                "job", "jobs", "library", "log", "logging", "logs", "module", "network", "pipeline",
+                "prod", "production", "propagation", "queue", "repo", "retries", "retry", "runtime",
+                "script", "sdk", "server", "service", "services", "swallowed", "sync", "test",
+                "tests", "webhook", "worker", "workers",
+            }
+        ),
+    ),
+    "harness-session-inventory": (
+        ("harness sessions",),
+        frozenset(
+            {
+                "adapter", "adapters", "agents", "claude", "cli", "codex", "coding",
+                "config", "configs", "connector", "connectors", "drift", "inventory", "lifecycle",
+                "list", "mcp", "omh", "opencode", "recall", "recover", "senpi", "session", "show",
+                "worktree", "worktrees",
+            }
+        ),
+    ),
+    "ops-review": (
+        ("status review", "weekly status"),
+        frozenset(
+            {
+                "blockers", "draft", "incident", "incidents", "launch", "milestone", "milestones",
+                "okr", "okrs", "operating", "ops", "our", "prepare", "priorities", "project",
+                "release", "risks", "roadmap", "run", "sprint", "standup", "team", "write",
+            }
+        ),
+    ),
+    "physical-device-readiness": (
+        ("camera gate",),
+        frozenset(
+            {
+                "actuator", "actuators", "device", "devices", "g-code", "gated", "gcode", "hardware",
+                "heat", "iot", "klipper", "moonraker", "nozzle", "physical", "print", "printer",
+                "printers", "relay", "relays", "robot", "robotics", "safety", "sensor", "sensors",
+                "snapmaker",
+            }
+        ),
+    ),
+    "skill-health": (
+        ("skill health",),
+        frozenset(
+            {
+                "amendments", "catalog", "check", "dashboard", "failure", "failures", "installed",
+                "omh", "our", "pattern", "patterns", "pending", "portfolio", "report", "run", "show",
+                "skills",
+            }
+        ),
+    ),
+    "adversarial-consensus": (
+        ("independent perspectives", "multiple perspectives"),
+        frozenset(
+            {
+                "adversarial", "approach", "architecture", "critique", "decision", "design",
+                "hyperplan", "idea", "migration", "plan", "plans", "proposal", "red-team", "refactor",
+                "rfc", "roadmap", "rollout", "spec", "strategy",
+            }
+        ),
+    ),
+    "media-input-operator": (
+        ("media input",),
+        frozenset(
+            {
+                "attached", "attachment", "audio", "clip", "extract", "extraction", "file", "files",
+                "handle", "image", "ocr", "operator", "photo", "picture", "podcast", "process",
+                "receipt", "recording", "screenshot", "text", "timestamps", "transcribe",
+                "transcript", "transcription", "upload", "uploaded", "url", "video", "webinar",
+                "youtube",
+            }
+        ),
+    ),
+    "cancel": (
+        ("cancel",),
+        frozenset(
+            {
+                "abort", "autopilot", "everything", "execution", "goal", "job", "loop", "mode", "omh",
+                "ralph", "run", "running", "session", "stop", "team", "ultrawork",
+            }
+        ),
+    ),
+    "doctor": (
+        ("doctor",),
+        frozenset(
+            {
+                "check", "cli", "config", "diagnose", "gateway", "health", "install", "installation",
+                "installed", "omh", "plugin", "plugins", "repair", "run", "setup", "skills", "tui",
+                "update", "version",
+            }
+        ),
+    ),
+}
+# Words a bare request wraps around the phrase without adding a sense of its own.
+_EVERYDAY_SENSE_FILLER_TOKENS = frozenset({"again", "can", "could", "just", "now", "please", "would", "you"})
+
+
+def everyday_sense_phrase_unanchored(skill: str, normalized_query: str) -> bool:
+    """True when the skill's only claim on the message is an everyday-English phrase.
+
+    See `EVERYDAY_SENSE_PHRASES`: the phrase is spoken, the message carries
+    other content, and none of that content is an anchor word of the skill.
+    """
+    entry = EVERYDAY_SENSE_PHRASES.get(skill)
+    if entry is None:
+        return False
+    phrases, anchors = entry
+    spoken = tuple(phrase for phrase in phrases if phrase_is_spoken(normalized_query, phrase))
+    if not spoken:
+        return False
+    query_tokens = routing_tokens(normalized_query)
+    if query_tokens & anchors:
+        return False
+    return bool(query_tokens - routing_tokens(" ".join(spoken)) - _EVERYDAY_SENSE_FILLER_TOKENS)
+
+
 _HARNESS_SESSION_INVENTORY_PHRASES = (
     "harness-session-inventory",
     "harness session inventory",
@@ -5795,7 +5941,13 @@ def _bare_first_word_reads_as_a_verb(stripped: str, candidate: str, used_prefix:
     the invocation stands and `research kubernetes operator patterns for this
     design` still reaches research.
     """
-    if used_prefix or candidate not in _VERB_SHAPED_BARE_INVOCATION_NAMES:
+    if used_prefix:
+        return False
+    # "cancel my netflix subscription" opens with the name and is the English
+    # verb: nothing else in it is the lane's (see `EVERYDAY_SENSE_PHRASES`).
+    if everyday_sense_phrase_unanchored(candidate, normalized_phrase(stripped)):
+        return True
+    if candidate not in _VERB_SHAPED_BARE_INVOCATION_NAMES:
         return False
     return _bare_invocation_is_outscored(stripped, candidate)
 
@@ -9277,6 +9429,8 @@ def _public_plugin_connector_readiness_requested(normalized_query: str) -> bool:
 
 
 def _harness_session_inventory_guard_applies(normalized_query: str, query_tokens: set[str]) -> bool:
+    if everyday_sense_phrase_unanchored("harness-session-inventory", normalized_query):
+        return False
     if _contains_phrase(normalized_query, _HARNESS_SESSION_INVENTORY_PHRASES):
         return True
     if not (_HARNESS_SESSION_INVENTORY_TOKENS & query_tokens):

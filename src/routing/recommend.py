@@ -35,6 +35,7 @@ from .trigger_language_packs import (
 )
 from .policy import (
     appearance_edit_request,
+    everyday_sense_phrase_unanchored,
     KOREAN_NOUN_PARTICLES,
     PUBLIC_PLUGIN_CONNECTOR_ALIAS_PHRASES,
     PUBLIC_PLUGIN_CONNECTOR_READINESS_CONTEXT_PHRASES,
@@ -1914,6 +1915,20 @@ def offers_itself_withheld(query: str, skill: str) -> bool:
     return not offers_itself(normalized_query, _tokens(normalized_query))
 
 
+def everyday_sense_withheld(query: str, skill: str) -> bool:
+    """True when `skill` shares only an everyday-English phrase with `query`.
+
+    `_score_definition` drops such a skill before scoring (see
+    `EVERYDAY_SENSE_PHRASES` in `policy.py`); a reader that ranks the
+    catalog another way, or matches the phrase on a fast path, asks here so
+    it drops the same skill.
+    """
+    routing_text = prepare_routing_text(
+        _strip_path_like_fragments(scrub_diagnostic_status_text(executable_routing_text(query)))
+    )
+    return everyday_sense_phrase_unanchored(skill, normalized_phrase(routing_text.scoring_text))
+
+
 def held_back_trigger_tokens(skill: str) -> frozenset[str]:
     """Words the router credits to `skill` only inside a whole trigger phrase."""
     return _trigger_token_holdback_for(skill)
@@ -3076,6 +3091,8 @@ def _score_definition(
         )
         and not offers_itself(normalized_query, query_tokens)
     ):
+        return None
+    if explicit_skill != definition.name and everyday_sense_phrase_unanchored(definition.name, normalized_query):
         return None
 
     if definition.name == explicit_skill:

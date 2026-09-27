@@ -83,6 +83,26 @@ All notable changes will be documented here.
   portable `agent-skills/ulw-research` body carries the same rule against
   the host's own recovery capability and does not name the Hermes skill.
 
+- **A skill's trigger phrase used in its everyday sense no longer reaches the
+  skill.** Nine sentences measured in #1899 carried a skill's own phrase whole
+  and dispatched it, or led a clarify with it: "my phone had a silent failure
+  of the alarm", "how many harness sessions does a sled dog need", "what is a
+  weekly status review in a school parent meeting", "is a camera gate at the
+  driveway worth installing", "habits that keep your skill health up as a
+  pianist", "summarize the independent perspectives in this essay", "what is
+  media input on an old VCR", "how do I cancel my gym membership" and "how
+  long does it take to become a doctor". A tenth, "cancel my netflix
+  subscription", dispatched `cancel` through the leading-name path. The
+  router now keeps one table of these phrases, `EVERYDAY_SENSE_PHRASES` in
+  `routing/policy.py`, with the lane words that mark each skill's sense. A
+  skill withdraws when its phrase comes with other content and none of that
+  content is a lane word. The phrase on its own ("silent failures", "cancel",
+  "doctor") still routes as before, and an explicit invocation always wins.
+  Catalog scoring, the operator-surface fast path, the harness-session guard,
+  the bare leading name and the clarify shortlist all check the same table. Ten negative controls pin the sentences and ten
+  intervention cases pin the lane sense of each phrase. Every case already
+  in both corpora routes exactly as before, and `omh demo skill-reach` still
+  reports 123/130 skills reached.
 - **The cost receipt now counts Hermes kanban workers the conversation
   started.** `omh_cost_receipt/v1` gains a fourth source, `kanban_workers`.
   A worker run belongs to the conversation when its task's `tasks.session_id`
