@@ -1999,7 +1999,8 @@ def _identity_conflicts_check(
     It never resolves the contest. `build_identity_conflict_report` reads local
     declarations and OMH's install manifests; Hermes' load order is not among
     them, so precedence stays `unknown` and this check never rewrites, renames,
-    or removes anything it found.
+    or removes anything it found. A shared lifecycle hook is reported as a
+    second subscriber, not as a contest with a missing winner.
     """
     report = build_identity_conflict_report(
         skills_dir=paths.skills_dir,
@@ -2027,8 +2028,11 @@ def _identity_conflict_summary(report: dict) -> str:
         f"precedence={report['precedence']} conflicts={len(report['conflicts'])} "
         f"scanned skill_dirs={scanned['skill_dirs']} plugin_dirs={scanned['plugin_dirs']}"
     )
+    # A hook is shared, not claimed: every subscriber receives the event, so the
+    # line must not read as a contest one side lost (#1902).
     details = [
-        f"{conflict['kind']} name {conflict['name']} ({conflict['severity']}) claimed by "
+        f"{conflict['kind']} name {conflict['name']} ({conflict['severity']}) "
+        + ("subscribed to by " if conflict["kind"] == "hook" else "claimed by ")
         + ", ".join(f"{source['ownership']} at {source['location']}" for source in conflict["sources"])
         for conflict in report["conflicts"]
     ]

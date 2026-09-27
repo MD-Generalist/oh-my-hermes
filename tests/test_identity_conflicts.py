@@ -333,7 +333,8 @@ class PrecedenceSeverityTests(unittest.TestCase):
         self.assertEqual(report["precedence"], "unknown")
         self.assertEqual(report["severity"], "warning")
         self.assertEqual(_conflict(report, "hook", CONTESTED_OPTIONAL_HOOK)["severity"], "warning")
-        self.assertIn("does not rename or delete assets it did not install", str(report["next_action"]))
+        # The warning names no repair: a shared hook is a second subscriber.
+        self.assertIn("nothing needs to change", str(report["next_action"]))
 
     def test_a_blocking_conflict_outranks_a_warning_one_in_the_report_severity(self) -> None:
         with TemporaryDirectory() as tmp:
@@ -352,6 +353,67 @@ class PrecedenceSeverityTests(unittest.TestCase):
             {item["kind"]: item["severity"] for item in report["conflicts"]},  # type: ignore[index]
             {"command": "blocking", "hook": "warning"},
         )
+
+
+class NextActionByKindTests(unittest.TestCase):
+    """#1902: the repair a report names follows the kinds it found.
+
+    A tool name is exclusive and a skill directory can be renamed, but a hook
+    name is the lifecycle event itself and Hermes lets every plugin subscribe
+    to it. Telling an operator to rename or unregister one sends them to break
+    a working plugin to silence a warning.
+    """
+
+    def _report(self, *, tools: tuple[str, ...] = (), hooks: tuple[str, ...] = (), skill: bool = False):
+        with TemporaryDirectory() as tmp:
+            fixture = _Fixture(Path(tmp))
+            if tools or hooks:
+                _write_foreign_plugin(fixture.paths.hermes_plugins_dir, "notes", tools=tools, hooks=hooks)
+            if skill:
+                foreign = Path(tmp) / "foreign-skills"
+                (foreign / CONTESTED_SKILL).mkdir(parents=True)
+                fixture.register_skill_dir(foreign)
+            report = fixture.report()
+        self.assertEqual(validate_identity_conflict_report(report), [])
+        return report, str(report["next_action"])
+
+    def test_a_hook_only_overlap_names_no_rename_and_no_unregister(self) -> None:
+        # Every hook OMH subscribes to, the way #1902's reproduction shared three.
+        report, action = self._report(hooks=(CONTESTED_REQUIRED_HOOK, CONTESTED_OPTIONAL_HOOK))
+
+        self.assertEqual({item["kind"] for item in report["conflicts"]}, {"hook"})  # type: ignore[index]
+        self.assertEqual(report["severity"], "warning")
+        self.assertEqual(report["precedence"], "unknown")
+        self.assertIn("subscribe to the same lifecycle event", action)
+        self.assertIn("both rewrite the same tool call or both inject context", action)
+        for word in ("rename", "unregister", "uninstall", "delete"):
+            self.assertNotIn(word, action.lower())
+
+    def test_a_command_conflict_keeps_the_blocking_rename_action(self) -> None:
+        report, action = self._report(tools=(CONTESTED_COMMAND,))
+
+        self.assertEqual(report["severity"], "blocking")
+        self.assertTrue(action.startswith("Rename or uninstall the competing tool name"))
+        self.assertNotIn("lifecycle event", action)
+
+    def test_a_skill_only_conflict_names_the_skill_directory_action(self) -> None:
+        report, action = self._report(skill=True)
+
+        self.assertEqual(report["severity"], "warning")
+        self.assertTrue(action.startswith("Rename or unregister whichever competing skill directory you own"))
+        self.assertNotIn("lifecycle event", action)
+        self.assertNotIn("tool name", action)
+
+    def test_a_command_and_hook_mix_leads_with_the_blocker_and_keeps_the_hook_wording(self) -> None:
+        report, action = self._report(tools=(CONTESTED_COMMAND,), hooks=(CONTESTED_OPTIONAL_HOOK,))
+
+        self.assertEqual(report["severity"], "blocking")
+        command_at = action.index("Rename or uninstall the competing tool name")
+        hook_at = action.index("subscribe to the same lifecycle event")
+        self.assertLess(command_at, hook_at)
+        # The only rename in the text is the one written for the tool name.
+        self.assertEqual(action.lower().count("rename"), 1)
+        self.assertNotIn("rename", action[hook_at:].lower())
 
 
 class AttributionGuardTests(unittest.TestCase):
@@ -561,6 +623,12 @@ class DoctorSurfaceTests(unittest.TestCase):
 
         self.assertTrue(check.ok)
         self.assertEqual(check.severity, "warning")
+        # A shared hook reads as a second subscriber, never as a claim one side
+        # lost, and the claim boundary says there is no winner to resolve.
+        self.assertIn(f"hook name {CONTESTED_OPTIONAL_HOOK} (warning) subscribed to by", check.message)
+        self.assertNotIn("claimed by", check.message)
+        self.assertIn("A shared lifecycle hook has no winner to resolve", check.message)
+        self.assertNotIn("rename", check.next_action.lower())
 
     def test_a_clean_installed_home_reports_uncontested(self) -> None:
         with TemporaryDirectory() as tmp:

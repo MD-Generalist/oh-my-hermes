@@ -19,11 +19,16 @@ install is precisely the case the attribution exists to catch, and a path-shaped
 guess would call it OMH's own.
 
 Precedence. OMH cannot read Hermes' resolution order from here, so a contested
-name is reported as `unknown` and never as a resolved winner. `uncontested` is
-reserved for a scan that actually enumerated every source and found no contest;
-an unreadable directory or a Hermes config that could not be read keeps the
-answer `unknown`, because "nothing was found" and "nothing was looked at" are
-different statements.
+tool or skill name is reported as `unknown` and never as a resolved winner.
+`uncontested` is reserved for a scan that actually enumerated every source and
+found no contest; an unreadable directory or a Hermes config that could not be
+read keeps the answer `unknown`, because "nothing was found" and "nothing was
+looked at" are different statements. A shared lifecycle hook also leaves the
+report at `unknown` -- the field says whether the scan came back clean, and it
+did not -- but no winner is missing there: Hermes lets any number of plugins
+subscribe to one event, so the wording for a hook (the next action, the doctor
+line, the claim boundary) never speaks of a winner or tells anyone to rename or
+remove a subscriber (#1902).
 
 Nothing in this module writes, moves, renames, or deletes. It reads directory
 names, `plugin.yaml` declarations, and two manifests, and returns a report. The
@@ -70,7 +75,10 @@ REPORT_SEVERITIES = ("blocking", "ok", "warning")
 #     lifecycle events that every plugin subscribes to, so an overlap there is a
 #     second subscriber rather than a stolen slot. Worth reporting -- it is the
 #     honest answer to "why did that trigger the wrong workflow" -- and not
-#     worth failing an install over.
+#     worth failing an install over. The repair differs by kind too, which is
+#     why `_next_action` composes one sentence per kind present: a skill
+#     directory can be renamed, but a hook name is the event itself, and the
+#     other subscriber is usually working as intended.
 #
 # Ownership deliberately does not decide this. AC3 forbids OMH from touching a
 # user-owned asset, so keying severity to ownership would paint the ordinary
@@ -80,7 +88,9 @@ EXCLUSIVE_NAME_KINDS = frozenset({"command"})
 IDENTITY_CONFLICT_CLAIM_BOUNDARY = (
     "This is a read-only scan of locally visible sources: configured skill directories, "
     "installed Hermes plugin declarations, and OMH's own install manifests. Hermes runtime "
-    "precedence is not observed, so a contested name has no resolved winner here. Nothing is "
+    "precedence is not observed, so a contested tool or skill name has no resolved winner here. "
+    "A shared lifecycle hook has no winner to resolve, since Hermes lets every plugin subscribe "
+    "to the same event; the order the subscribers run in is not observed either. Nothing is "
     "renamed, rewritten, or removed by this diagnosis."
 )
 
@@ -273,17 +283,34 @@ def _severity(conflicts: list[dict[str, Any]], unreadable: list[str]) -> str:
     return "ok"
 
 
+_NEXT_ACTION_BY_KIND = {
+    "command": (
+        "Rename or uninstall the competing tool name in the local plugin OMH did not install, then rerun "
+        "`omh doctor`; OMH will not edit or remove a plugin it does not own."
+    ),
+    "skill": (
+        "Rename or unregister whichever competing skill directory you own, then rerun `omh doctor`; OMH does "
+        "not rename or delete assets it did not install."
+    ),
+    # No rename, no removal. A hook name is the lifecycle event itself, and the
+    # other plugin subscribing to it is ordinary Hermes behaviour (#1902).
+    "hook": (
+        "Hermes lets any number of plugins subscribe to the same lifecycle event, so a shared hook is a "
+        "second subscriber and nothing needs to change. Look at the other plugin's callback only if its "
+        "effect clashes with OMH's, for example when both rewrite the same tool call or both inject context, "
+        "and keep a working subscriber in place rather than removing it to clear this warning."
+    ),
+}
+
+
 def _next_action(conflicts: list[dict[str, Any]], unreadable: list[str]) -> str:
-    if any(conflict.get("severity") == "blocking" for conflict in conflicts):
-        return (
-            "Rename or uninstall the competing tool name in the local plugin OMH did not install, then rerun "
-            "`omh doctor`; OMH will not edit or remove a plugin it does not own."
-        )
-    if conflicts:
-        return (
-            "Rename or unregister whichever competing source you own, then rerun `omh doctor`; OMH does not "
-            "rename or delete assets it did not install."
-        )
+    # One sentence per kind present, in `SOURCE_KINDS` order, so the blocking
+    # `command` repair always leads and a hook never inherits a repair written
+    # for an exclusive name.
+    kinds = {conflict.get("kind") for conflict in conflicts}
+    actions = [_NEXT_ACTION_BY_KIND[kind] for kind in SOURCE_KINDS if kind in kinds]
+    if actions:
+        return " ".join(actions)
     if unreadable:
         return "Repair or re-read the reported source, then rerun `omh doctor` for a complete scan."
     return (

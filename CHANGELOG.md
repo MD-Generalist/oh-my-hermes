@@ -4,6 +4,21 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **`omh doctor` no longer tells you to rename a shared lifecycle hook.**
+  When OMH and another Hermes plugin both subscribe to an event such as
+  `pre_llm_call`, `pre_tool_call` or `on_session_end`, the
+  `identity_conflicts` check still lists it as a warning, but its next action
+  now says what is true: Hermes lets any number of plugins subscribe to one
+  event, so nothing needs to change, and the other callback is worth a look
+  only if its effect clashes with OMH's (both rewrite the same tool call, or
+  both inject context). The doctor line reads "subscribed to by" rather than
+  "claimed by", and the claim boundary says a shared hook has no winner to
+  resolve. Next actions are now composed per kind: a contested tool name
+  still blocks and leads with the rename-or-uninstall repair, and a contested
+  skill directory keeps its own. The `identity_conflict_report/v1` schema,
+  its severities and its `precedence` values are unchanged. Reported by
+  @ComBba in #1902.
+
 - **The cost receipt now counts Hermes kanban workers the conversation
   started.** `omh_cost_receipt/v1` gains a fourth source, `kanban_workers`.
   A worker run belongs to the conversation when its task's `tasks.session_id`
