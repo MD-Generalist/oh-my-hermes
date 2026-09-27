@@ -64,6 +64,9 @@ class ExternalHandoffRequest:
     model_chains: dict[str, Sequence[tuple[str, str]]] | None = None
     requested_model: str = ""
     requested_effort: str = ""
+    # A caller-declared `handoff_contract/v1` declaration, validated and
+    # rendered into the prepared handoff by the native builder.
+    handoff_contract: Mapping[str, object] | None = None
 
 
 @dataclass(frozen=True)

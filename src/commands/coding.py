@@ -288,6 +288,7 @@ def cmd_coding_delegate(args: argparse.Namespace) -> int:
             model_recommendation=resolved_hermes_model_recommendation(executor_target, paths),
             input_representation=input_representation,
             transformation=transformation,
+            handoff_contract=_handoff_contract_declaration(args),
         )
         record_attached_recall_usage(paths, payload)
         if plan_artifact:
@@ -737,6 +738,42 @@ def _context_pack(args: argparse.Namespace) -> dict[str, object] | None:
     return read_handoff_context_pack_file(path)
 
 
+def _handoff_contract_declaration(args: argparse.Namespace) -> dict[str, object] | None:
+    """The caller's `handoff_contract/v1` declaration, read from a JSON file.
+
+    Only the declaration is read here; the builder normalizes it and refuses a
+    handoff whose templates and declared inputs disagree.
+    """
+    path = getattr(args, "handoff_contract", None)
+    if not path:
+        return None
+    raw = json.loads(Path(path).expanduser().read_text(encoding="utf-8"))
+    if not isinstance(raw, dict):
+        raise ValueError("--handoff-contract must contain a JSON object")
+    return raw
+
+
+def _postcondition_exit_statuses(entries: list[str] | None) -> dict[str, int]:
+    """Parse repeated `--postcondition-exit ID=STATUS` into integer exit statuses.
+
+    The value must be an integer: `passed`, `ok`, or any other word is refused,
+    because the exit status is the verdict and a word is not one.
+    """
+    statuses: dict[str, int] = {}
+    for entry in entries or []:
+        postcondition_id, separator, raw_status = entry.partition("=")
+        postcondition_id = postcondition_id.strip()
+        raw_status = raw_status.strip()
+        if not separator or not postcondition_id:
+            raise ValueError(f"--postcondition-exit must be ID=STATUS, got {entry!r}")
+        if not re.fullmatch(r"-?\d{1,5}", raw_status):
+            raise ValueError(f"--postcondition-exit {postcondition_id} must record an integer exit status, got {raw_status!r}")
+        if postcondition_id in statuses:
+            raise ValueError(f"--postcondition-exit {postcondition_id} is recorded twice")
+        statuses[postcondition_id] = int(raw_status)
+    return statuses
+
+
 def _transformation(args: argparse.Namespace) -> dict[str, object] | None:
     """The observed-transformation record a transformed-text handoff declares.
 
@@ -769,6 +806,7 @@ def cmd_coding_lifecycle_start(args: argparse.Namespace) -> int:
             limit=args.limit,
             include_message=args.include_message,
             context_pack=_context_pack(args),
+            handoff_contract=_handoff_contract_declaration(args),
         )
     except (OSError, json.JSONDecodeError, ValueError) as exc:
         raise OmhError(str(exc)) from exc
@@ -813,11 +851,12 @@ def cmd_coding_lifecycle_verify(args: argparse.Namespace) -> int:
                 args.run_id,
                 completion_status=args.completion_status,
                 gaps=args.gap or [],
+                postcondition_exit_statuses=_postcondition_exit_statuses(args.postcondition_exit),
             )
         )
     except FileNotFoundError as exc:
         raise OmhError(f"runtime run not found: {args.run_id}") from exc
-    except CodingLifecycleError as exc:
+    except (CodingLifecycleError, ValueError) as exc:
         raise OmhError(str(exc)) from exc
     return 0
 
@@ -3700,6 +3739,15 @@ def _add_coding_commands(sub) -> None:
         help="Optional handoff_context_pack/v1 JSON to attach to the prepared executor prompt when conflict-free.",
     )
     delegate.add_argument(
+        "--handoff-contract",
+        default=None,
+        help=(
+            "Optional handoff_contract/v1 declaration JSON (inputs, postconditions, output_shape, "
+            "forbidden_actions) to attach to the prepared handoff; refused when an input is unused or a "
+            "template variable is undeclared."
+        ),
+    )
+    delegate.add_argument(
         "--from-plan",
         default=None,
         help="Read an accepted hermes_plan/v1 Markdown artifact and use it as executor context.",
@@ -3817,6 +3865,14 @@ def _add_coding_commands(sub) -> None:
         default=None,
         help="Optional handoff_context_pack/v1 JSON to attach to the prepared Codex lifecycle handoff when conflict-free.",
     )
+    lifecycle_start.add_argument(
+        "--handoff-contract",
+        default=None,
+        help=(
+            "Optional handoff_contract/v1 declaration JSON; with one, `lifecycle verify` needs a "
+            "--postcondition-exit for every declared postcondition before verification is observed."
+        ),
+    )
     lifecycle_start.add_argument("--source-event-id", default="", help="Optional source message/event id to store as metadata.")
     lifecycle_start.add_argument("--channel-ref", default="", help="Optional channel reference to store as metadata.")
     lifecycle_start.add_argument("--user-ref", default="", help="Optional user reference to store as metadata.")
@@ -3837,6 +3893,11 @@ def _add_coding_commands(sub) -> None:
     lifecycle_verify.add_argument("--run", dest="run_id", required=True)
     lifecycle_verify.add_argument("--completion-status", choices=tuple(v for v in WRAPPER_COMPLETION_STATUSES if v != "started"), default="completed")
     lifecycle_verify.add_argument("--gap", action="append")
+    lifecycle_verify.add_argument(
+        "--postcondition-exit",
+        action="append",
+        help="ID=STATUS: the integer exit status the executor or host observed for one declared postcondition; repeat per postcondition.",
+    )
     lifecycle_verify.set_defaults(func=cmd_coding_lifecycle_verify)
 
     lifecycle_report = lifecycle_sub.add_parser("report")

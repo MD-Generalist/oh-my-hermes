@@ -181,8 +181,15 @@ def render_executor_prompt_sections(
     verification: Iterable[str],
     review_required: bool,
     task_placeholder: str = "{message}",
+    handoff_contract: Mapping[str, object] | None = None,
 ) -> str:
-    """Render the shared execution prompt body from metadata-only contract fields."""
+    """Render the shared execution prompt body from metadata-only contract fields.
+
+    A declared `handoff_contract/v1` reaches the executor here: its forbidden
+    actions join the Don't section, each postcondition joins the Test section
+    as the command whose exit status is the verdict, and the output shape joins
+    the expected result. Without a contract the rendered text is unchanged.
+    """
     strategy = str(contract.get("strategy", "direct_change"))
     task_source = str(contract.get("task_source", "original_message_at_dispatch_time"))
     intent = str(contract.get("intent", "unknown"))
@@ -228,18 +235,18 @@ def render_executor_prompt_sections(
         expected_result.append("Review status and any remaining review risk are explicit.")
     test_steps = [str(contract.get("verification_policy", ""))]
     test_steps.extend(str(item) for item in verification if str(item).strip())
+    dont_items = [
+        "Do not modify unrelated files or overwrite user changes.",
+        "Do not claim tests, review, CI, or merge passed without observed evidence.",
+        "Do not replace an active task with a broad refactor unless the request or plan requires it.",
+    ]
+    if handoff_contract is not None:
+        _extend_with_handoff_contract(handoff_contract, dont_items, expected_result, test_steps)
     return "\n\n".join(
         (
             _section("Goal", (_strategy_goal(strategy),)),
             _section("Do", do_items),
-            _section(
-                "Don't",
-                (
-                    "Do not modify unrelated files or overwrite user changes.",
-                    "Do not claim tests, review, CI, or merge passed without observed evidence.",
-                    "Do not replace an active task with a broad refactor unless the request or plan requires it.",
-                ),
-            ),
+            _section("Don't", dont_items),
             _section("Known context", known_context),
             _section("Unknowns and decision rule", (str(contract.get("uncertainty_policy", "")),)),
             _section("Expected result", expected_result),
@@ -256,6 +263,32 @@ def render_executor_prompt_sections(
             f"Task:\n{task_placeholder}",
         )
     )
+
+
+def _extend_with_handoff_contract(
+    handoff_contract: Mapping[str, object],
+    dont_items: list[str],
+    expected_result: list[str],
+    test_steps: list[str],
+) -> None:
+    forbidden = handoff_contract.get("forbidden_actions")
+    if isinstance(forbidden, list):
+        dont_items.extend(f"Forbidden: {item}" for item in forbidden if isinstance(item, str))
+    output_shape = handoff_contract.get("output_shape")
+    if isinstance(output_shape, Mapping):
+        fields = output_shape.get("required_fields")
+        field_list = ", ".join(f"`{field}`" for field in fields) if isinstance(fields, list) else ""
+        expected_result.append(
+            f"A final report in {output_shape.get('format', 'json')} format carrying {field_list}."
+        )
+    postconditions = handoff_contract.get("postconditions")
+    if isinstance(postconditions, list):
+        for entry in postconditions:
+            if isinstance(entry, Mapping):
+                test_steps.append(
+                    f"Postcondition `{entry.get('id')}`: run `{entry.get('command')}` and report its exit "
+                    "status under that id; the exit status is the verdict, not your description of it."
+                )
 
 
 def steering_delta_template() -> str:

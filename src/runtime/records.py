@@ -66,6 +66,7 @@ from ..coding.action_gate import (
     validate_handoff_safety_contract,
     validate_task_authority_envelope,
 )
+from ..coding.handoff_contract import handoff_contract_errors
 from ..coding.handoff_input_manifest import validate_handoff_input_manifest
 from ..coding.product_family_templates import validate_product_family_template
 from ..coding.product_quality_harnesses import validate_product_quality_harness
@@ -354,6 +355,7 @@ CODING_EXECUTOR_HANDOFF_KEYS = (
     "context_pack",
     "context_pack_blocked",
     "input_manifest",
+    "handoff_contract",
     "memory_recall_pack",
     "role_context_pack",
     "role_context_pack_hash",
@@ -395,6 +397,7 @@ CODING_PROMPT_HANDOFF_KEYS = (
     "context_pack",
     "context_pack_blocked",
     "input_manifest",
+    "handoff_contract",
     "memory_recall_pack",
     "role_context_pack",
     "role_context_pack_hash",
@@ -443,6 +446,7 @@ CODING_RUNTIME_HANDOFF_KEYS = (
     "context_pack",
     "context_pack_blocked",
     "input_manifest",
+    "handoff_contract",
     "memory_recall_pack",
     "role_context_pack",
     "role_context_pack_hash",
@@ -1333,6 +1337,11 @@ def _compact_executor_handoff(value: Any) -> dict[str, Any]:
     input_manifest = _compact_input_manifest(value.get("input_manifest"))
     if input_manifest:
         compact["input_manifest"] = input_manifest
+    # Kept whole: the stored contract is what a receipt's digest binds to, so
+    # a reshaped copy would make every later receipt read as a different one.
+    handoff_contract = value.get("handoff_contract")
+    if isinstance(handoff_contract, dict) and handoff_contract:
+        compact["handoff_contract"] = deepcopy(handoff_contract)
     memory_recall_pack = _compact_memory_recall_pack(value.get("memory_recall_pack"))
     if memory_recall_pack:
         compact["memory_recall_pack"] = memory_recall_pack
@@ -1402,6 +1411,11 @@ def _compact_prompt_handoff(value: Any) -> dict[str, Any]:
     input_manifest = _compact_input_manifest(value.get("input_manifest"))
     if input_manifest:
         compact["input_manifest"] = input_manifest
+    # Kept whole: the stored contract is what a receipt's digest binds to, so
+    # a reshaped copy would make every later receipt read as a different one.
+    handoff_contract = value.get("handoff_contract")
+    if isinstance(handoff_contract, dict) and handoff_contract:
+        compact["handoff_contract"] = deepcopy(handoff_contract)
     memory_recall_pack = _compact_memory_recall_pack(value.get("memory_recall_pack"))
     if memory_recall_pack:
         compact["memory_recall_pack"] = memory_recall_pack
@@ -1474,6 +1488,11 @@ def _compact_runtime_handoff(value: Any) -> dict[str, Any]:
     input_manifest = _compact_input_manifest(value.get("input_manifest"))
     if input_manifest:
         compact["input_manifest"] = input_manifest
+    # Kept whole: the stored contract is what a receipt's digest binds to, so
+    # a reshaped copy would make every later receipt read as a different one.
+    handoff_contract = value.get("handoff_contract")
+    if isinstance(handoff_contract, dict) and handoff_contract:
+        compact["handoff_contract"] = deepcopy(handoff_contract)
     memory_recall_pack = _compact_memory_recall_pack(value.get("memory_recall_pack"))
     if memory_recall_pack:
         compact["memory_recall_pack"] = memory_recall_pack
@@ -4299,6 +4318,9 @@ def validate_handoff_context_pack_fields(handoff: dict[str, Any], label: str) ->
         errors.extend(validate_project_memory_recall_pack(handoff.get("memory_recall_pack"), label=f"{label} memory_recall_pack"))
     if "input_manifest" in handoff:
         errors.extend(validate_handoff_input_manifest(handoff.get("input_manifest"), label=f"{label} input_manifest"))
+    # Re-derived from the stored templates, so a recorded handoff whose
+    # contract and templates drifted apart fails the same way a fresh one does.
+    errors.extend(f"{label} {error}" for error in handoff_contract_errors(handoff))
     # A pinned pack hash that disagrees with the pack it names is an error, not
     # a warning: the whole point of the pin is that a reader can trust it
     # without re-deriving the guidance.

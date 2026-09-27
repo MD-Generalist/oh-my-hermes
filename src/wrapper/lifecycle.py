@@ -1,7 +1,13 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Mapping
 
+from ..coding.handoff_contract import (
+    HandoffContractError,
+    build_handoff_contract_receipt,
+    contract_verification_observed,
+)
 from ..context_safety import build_coding_progress_reporting_policy
 from ..coding_delegation import build_coding_delegation_payload, coding_delegation_record_payload
 from ..executor_progress import (
@@ -17,10 +23,12 @@ from ..memory import memory_recall_pack_for_handoff, record_attached_recall_usag
 from ..runtime.artifacts import (
     append_event,
     create_prepared_coding_delegation_run,
+    stored_handoff_contract,
     summarize_delegated_coding_status,
     validate_runtime,
     write_coding_delegation,
     write_delegation,
+    write_handoff_contract_receipt,
     write_wrapper_contract,
 )
 from ..runtime.records import OBSERVED_RESULTS
@@ -46,6 +54,7 @@ def start_codex_delegation_lifecycle(
     preferred_workflow: str | None = None,
     preferred_workflow_score: int | None = None,
     force_coding_handoff: bool = False,
+    handoff_contract: dict[str, object] | None = None,
 ) -> dict[str, object]:
     if memory_recall_pack is None:
         memory_recall_pack = memory_recall_pack_for_handoff(paths, message, executor_target="codex")
@@ -62,6 +71,7 @@ def start_codex_delegation_lifecycle(
         preferred_workflow_score=preferred_workflow_score,
         force_coding_handoff=force_coding_handoff,
         capability_snapshot_directory=paths.omh_home / "coding" / "executor-capability-snapshots",
+        handoff_contract=handoff_contract,
     )
     delegation = payload.get("delegation")
     if not isinstance(delegation, dict):
@@ -170,7 +180,16 @@ def record_codex_verification(
     *,
     completion_status: str = "completed",
     gaps: list[str] | tuple[str, ...] | None = None,
+    postcondition_exit_statuses: Mapping[str, object] | None = None,
 ) -> dict[str, object]:
+    """Record verification for a run; a declared contract decides it by exit status.
+
+    Without a `handoff_contract/v1` on the run's handoff this is the existing
+    completion-status record. With one, the recorded exit status of every
+    declared postcondition is the only thing that can make verification
+    observed: `completion_status="completed"` with no exit statuses writes a
+    receipt that says `prepared_not_observed`, and verification stays pending.
+    """
     run_dir = _existing_run_dir(paths, run_id)
     status = summarize_delegated_coding_status(paths, run_id)
     execution = status.get("execution", {})
@@ -182,6 +201,20 @@ def record_codex_verification(
         )
     unobserved_gaps = list(gaps or [])
     verification_observed = completion_status == "completed" and not unobserved_gaps
+    contract = stored_handoff_contract(run_dir)
+    receipt: dict[str, object] | None = None
+    if contract is None:
+        if postcondition_exit_statuses:
+            raise CodingLifecycleError(
+                "this run's handoff declares no handoff_contract/v1; exit statuses have no postcondition to record against"
+            )
+    else:
+        try:
+            receipt = build_handoff_contract_receipt(contract, dict(postcondition_exit_statuses or {}))
+        except HandoffContractError as exc:
+            raise CodingLifecycleError(str(exc)) from exc
+        write_handoff_contract_receipt(run_dir, receipt)
+        verification_observed = verification_observed and contract_verification_observed(contract, receipt)
     wrapper = write_wrapper_contract(
         run_dir,
         {
@@ -192,11 +225,14 @@ def record_codex_verification(
             "unobserved_gaps": unobserved_gaps,
         },
     )
-    return {
+    result: dict[str, object] = {
         "schema_version": LIFECYCLE_SCHEMA_VERSION,
         "wrapper": wrapper,
         "status": report_codex_delegation_lifecycle(paths, run_id),
     }
+    if receipt is not None:
+        result["handoff_contract_receipt"] = receipt
+    return result
 
 
 def report_codex_delegation_lifecycle(paths: OmhPaths, run_id: str) -> dict[str, object]:
