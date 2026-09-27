@@ -4,6 +4,27 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **Deciding and undoing a release has an owner: `omh-release-cut`.** "cut a
+  release and tag it", "roll back the last deploy" and "set up a canary for
+  this service" used to ask a question led by `img-summary`,
+  `deploy-and-monitor` or `ops-observability-card`. They now dispatch to a
+  skill that plans the release with its rollback decided before it is needed:
+  - what goes in, what is held back, and the version derived from the change
+    classes come first;
+  - the cut freezes the release branch until the tag is pushed, then passes
+    the approval gate, publishes, and curates the notes;
+  - every rollout stage promotes on a named health signal, not a clock;
+  - `release_readiness_verdict/v1` reads ready only with a named rollback
+    trigger and the exact command that performs it.
+
+  The cut sequence, the rollout stage table and rollback by mechanism load on
+  demand from `references/release-and-rollback-method.md`. Watching a rollout
+  that is already running stays with `deploy-and-monitor`, and each skill
+  names the other. OMH prepares; the host or CI tags, publishes, deploys and
+  rolls back. "cut a release", "canary" and "release candidate" keep this
+  route only beside a word of shipping software, so a band's album and a pet
+  canary stay out (#1693).
+
 - **Security events on shipped code have an owner:
   `omh-security-event-response`.** "triage this CVE in our dependency tree",
   "we committed a secret, what now" and "is this dependency's license OK for

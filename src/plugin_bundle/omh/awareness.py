@@ -1343,6 +1343,7 @@ _WORKFLOW_CONTEXT_CARD_BY_WORKFLOW = {
     "git-workflow": "coding_handoff",
     "relational-db": "coding_handoff",
     "security-event-response": "coding_handoff",
+    "release-cut": "coding_handoff",
     # ULW fold (issue #954, PR D): the four contracts folding into
     # `ulw-work` share its coding-handoff lane so their capability family is
     # lane-derived (`delegate_coding_and_ship`) like their fold target.
@@ -1423,6 +1424,14 @@ _AWARENESS_MESSAGE_MARKERS = (
     "leaked credential",
     "security advisory",
     "dependabot alert",
+    # Releases: "release", "cut", "tag" and "canary" alone are everyday
+    # English, so only release phrases arm awareness.
+    "release-cut",
+    "cut a new release",
+    "roll back the last deploy",
+    "set up a canary",
+    "canary release",
+    "staged rollout",
     "codebase onboarding",
     "performance bottleneck",
     "\uba54\ubaa8\ub9ac \ub204\uc218",
@@ -2625,6 +2634,44 @@ _ROUTE_HINT_RULES = (
         ),
         "tokens": (),
         "adjacent_workflows": ("backend", "ultraperf", "data-analysis", "deploy-and-monitor"),
+    },
+    {
+        "id": "release_cut",
+        "workflow": "release-cut",
+        "lane": "coding_handoff",
+        "next_action": "prepare_release_plan",
+        "reason": "The user is deciding or undoing a release: cutting and tagging a version, staging it behind a canary, or rolling back a deploy; decide contents, version, stages, and a rollback with its trigger and exact command before it is needed.",
+        "fallback_action": "ask_for_the_release_mechanism_and_the_rollback_command",
+        "not_evidence_yet": (
+            "tag pushed",
+            "release published",
+            "canary promoted",
+            "rollback performed",
+        ),
+        # Only release phrases. "cut a release" and "canary" are absent: this
+        # table is a substring match with no anchor, and a band cuts a release
+        # and a canary is a bird.
+        "phrases": (
+            "release-cut",
+            "cut a new release",
+            "tag a release",
+            "tag the release",
+            "roll back the last deploy",
+            "roll back the deploy",
+            "rollback trigger",
+            "canary release",
+            "canary deploy",
+            "set up a canary",
+            "staged rollout",
+            "progressive rollout",
+        ),
+        "tokens": (),
+        "adjacent_workflows": (
+            "deploy-and-monitor",
+            "live-incident-response",
+            "production-audit",
+            "commit-pr-authoring",
+        ),
     },
     {
         "id": "security_event_response",
@@ -6560,6 +6607,7 @@ def awareness_primer_payload() -> dict[str, object]:
                 "git-workflow",
                 "relational-db",
                 "security-event-response",
+                "release-cut",
                 "ai-slop-cleaner",
                 "frontend-refactor",
                 "tech-debt-audit",
@@ -6931,6 +6979,7 @@ _DIRECT_WORKFLOW_NEXT_ACTIONS = {
     "git-workflow": "prepare_git_repair_plan",
     "relational-db": "prepare_db_change_plan",
     "security-event-response": "prepare_security_event_response",
+    "release-cut": "prepare_release_plan",
     "accessibility-audit": "prepare_accessibility_audit",
     "visual-qa": "prepare_visual_qa",
     "workspace-file-operator": "prepare_workspace_file_operator_card",

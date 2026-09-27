@@ -2129,6 +2129,19 @@ EVERYDAY_SENSE_PHRASES: dict[str, tuple[tuple[str, ...], frozenset[str]]] = {
     # "what index fund should I buy", "the table in the kitchen needs a new
     # partition" and "alter the table setting" are not database work; each
     # phrase keeps this route only beside a word of the database.
+    # "the band cut a release of their album", "my canary stopped singing" and
+    # "the release candidate for mayor" are not software releases; each phrase
+    # keeps this route only beside a word of shipping software.
+    "release-cut": (
+        ("cut a release", "cut the release", "canary", "release candidate"),
+        frozenset(
+            {
+                "artifact", "build", "changelog", "cluster", "deploy", "deployed", "deployment", "kubernetes", "npm",
+                "package", "pipeline", "pods", "prod", "production", "rollback", "rollout", "semver", "service",
+                "services", "tag", "traffic", "version", "versions",
+            }
+        ),
+    ),
     # "the travel security advisory for mexico", "the leaked secret ending of
     # the film" and "is my driver's license ok abroad" are not security events;
     # each phrase keeps this route only beside a word of code.

@@ -3343,6 +3343,7 @@ _PRIMARY_HARNESSES = {
     "idea-to-deploy": "app-delivery-loop",
     "cto-loop": "app-delivery-loop",
     "deploy-and-monitor": "app-delivery-loop",
+    "release-cut": "app-delivery-loop",
     "loop": "goal-loop",
     "ultraqa": "qa-specialist",
     "plan": "planning",

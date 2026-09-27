@@ -21,6 +21,7 @@ This is an OMH `deploy-and-monitor` workflow skill, projected for Agent Skills h
 ## Do Not Use When
 
 - An incident has already been declared and the work is commanding it -- severity, commander, running timeline, recovery verification -- rather than watching a release; use `live-incident-response`.
+- The ask is deciding a release before it ships -- what goes in, its version and tag, the canary stages, or which command rolls it back; use `release-cut`, which writes the rollback trigger down before it is needed.
 
 ## Examples
 
