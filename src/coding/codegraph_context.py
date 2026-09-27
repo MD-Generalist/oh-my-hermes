@@ -21,6 +21,7 @@ from typing import Any
 from ..codegraph import CODEGRAPH_SCHEMA_VERSION, build_handoff_context, codegraph_artifact_path
 from ..codegraph.schema import CLAIM_BOUNDARY, CODEGRAPH_ARTIFACT_RELATIVE_PATH, CODEGRAPH_CONTEXT_TRUTH_LEVEL
 from ..memory import validate_handoff_context_pack
+from .handoff_input_manifest import manifest_file_refs
 from ..system.local_store import read_json_object_result
 from ..system.paths import project_identity
 
@@ -53,7 +54,8 @@ def derived_codegraph_context_pack(
         return None, _not_attached("artifact_unreadable")
     if graph.get("schema_version") != CODEGRAPH_SCHEMA_VERSION or not isinstance(graph.get("files"), list):
         return None, _not_attached("artifact_schema_mismatch")
-    context = build_handoff_context(graph, task=message, changed_paths=_manifest_file_paths(input_manifest))
+    # Files the caller already put in the package are in play, so they seed.
+    context = build_handoff_context(graph, task=message, changed_paths=manifest_file_refs(input_manifest))
     focus_files = [record for record in context["focus_files"] if isinstance(record, dict)]
     if not focus_files:
         return None, None
@@ -109,20 +111,6 @@ def _focus_file_item(record: dict[str, Any], *, rank: int, total: int, scope: di
         "truth_level": CODEGRAPH_CONTEXT_TRUTH_LEVEL,
         "scope": dict(scope),
     }
-
-
-def _manifest_file_paths(input_manifest: dict[str, object] | None) -> list[str]:
-    """Files the caller already put in the package seed the ranking."""
-    if not isinstance(input_manifest, dict):
-        return []
-    paths: list[str] = []
-    for item in input_manifest.get("items", []) or []:
-        if not isinstance(item, dict) or item.get("item_kind") != "file":
-            continue
-        provenance = item.get("provenance")
-        if isinstance(provenance, dict) and provenance.get("local_ref"):
-            paths.append(str(provenance["local_ref"]))
-    return paths
 
 
 def _not_attached(reason: str) -> dict[str, object]:

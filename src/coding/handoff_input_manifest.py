@@ -528,6 +528,20 @@ def validate_handoff_input_manifest_pin(value: Any, *, label: str = "input_manif
     return errors
 
 
+def manifest_file_refs(manifest: object) -> list[str]:
+    """The workspace-relative refs of the file items a manifest carries, in order."""
+    if not isinstance(manifest, dict):
+        return []
+    refs: list[str] = []
+    for item in manifest.get("items", []) or []:
+        if not isinstance(item, dict) or item.get("item_kind") != "file":
+            continue
+        provenance = item.get("provenance")
+        if isinstance(provenance, dict) and provenance.get("local_ref"):
+            refs.append(str(provenance["local_ref"]))
+    return refs
+
+
 def pinned_input_manifest(manifest: dict[str, Any]) -> dict[str, object]:
     """The copy a handoff carries: validated, then detached from the caller's manifest.
 
