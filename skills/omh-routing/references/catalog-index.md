@@ -118,6 +118,7 @@ Trigger phrases and the role registry live in `references/workflow-registry.md`;
 - `omh-rust`: [omh] Rust ownership, lifetime, or unsafe trouble: prepare Rust changes with ownership, error, and API discipline, and escalate any unsafe, FFI, or lock-free change to the UB checklist.
 - `omh-sales-development`: [omh] Prospect or account worth pursuing: turn an account or market opportunity into a focused discovery, qualification, and next-step brief.
 - `omh-sales-pipeline-review`: [omh] CRM pipeline or sales forecast to review: turn a supplied CRM export or pipeline snapshot into an evidence-bound pipeline health, forecast, and follow-up review.
+- `omh-security-event-response`: [omh] Security event on the code already shipped -- a CVE in a dependency, a secret committed to the repo, a license question, an advisory: triage reachability and severity, contain in order, and never close a leaked secret before its rotation is observed.
 - `omh-security-safety-review`: [omh] Agent or automation safety risks: review prompt, tool, secret, dependency, destructive-action, and explicit local plugin risks before agent or code execution.
 - `omh-skill`: [omh] Installing, removing, or editing skills: managing local skills.
 - `omh-skill-health`: [omh] OMH skill portfolio health overview: prepare a metadata-only OMH skill portfolio dashboard with stale surfaces, observed failure signals, pending amendments, and top actions.

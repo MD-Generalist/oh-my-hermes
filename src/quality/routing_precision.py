@@ -2979,6 +2979,40 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
         "",
         "relational-db",
     ),
+    # `security-event-response` phrases outside shipped code: a travel
+    # advisory, a film's leaked ending, a driver's licence, and a recipe.
+    RoutingPrecisionCase(
+        "travel-security-advisory-is-not-security-event-response",
+        "A travel security advisory is not a dependency advisory",
+        "the travel security advisory for mexico",
+        "answer_clarification",
+        "",
+        "security-event-response",
+    ),
+    RoutingPrecisionCase(
+        "film-leaked-secret-is-not-security-event-response",
+        "A film's leaked ending is not a leaked credential",
+        "the leaked secret ending of the film spoiled it",
+        "answer_clarification",
+        "",
+        "security-event-response",
+    ),
+    RoutingPrecisionCase(
+        "drivers-license-is-not-security-event-response",
+        "A driver's licence is not a dependency's license",
+        "is my driver's license ok to use abroad",
+        "answer_clarification",
+        "",
+        "security-event-response",
+    ),
+    RoutingPrecisionCase(
+        "secret-recipe-is-not-security-event-response",
+        "A secret recipe is not a committed secret",
+        "my secret recipe for pancakes",
+        "answer_clarification",
+        "",
+        "security-event-response",
+    ),
 )
 
 
@@ -8519,6 +8553,65 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "relational-db",
         "prepare_db_change_plan",
         "db_change_plan",
+    ),
+    # #1694: an event on shipped code dispatches to the security event lane.
+    # The first three are the issue's rows. The issue's dependabot row is a
+    # version bump with no advisory and belongs to the upgrade lane (#1712);
+    # a dependabot security advisory is pinned here instead, even though it
+    # arrives as an opened PR that `github-event-ops` would otherwise take.
+    RoutingInterventionCase(
+        "cve-in-dependency-tree-reaches-security-event-response",
+        "A CVE in the dependency tree reaches the security event lane",
+        "triage this CVE in our dependency tree",
+        "dispatch",
+        "security-event-response",
+        "prepare_security_event_response",
+        "security_event_response",
+    ),
+    RoutingInterventionCase(
+        "committed-secret-reaches-security-event-response",
+        "A committed secret reaches the security event lane",
+        "we committed a secret, what now",
+        "dispatch",
+        "security-event-response",
+        "prepare_security_event_response",
+        "security_event_response",
+    ),
+    RoutingInterventionCase(
+        "dependency-license-reaches-security-event-response",
+        "A dependency license question reaches the security event lane",
+        "is this dependency's license OK for us",
+        "dispatch",
+        "security-event-response",
+        "prepare_security_event_response",
+        "security_event_response",
+    ),
+    RoutingInterventionCase(
+        "dependabot-security-advisory-reaches-security-event-response",
+        "A dependabot security advisory PR reaches the security event lane, not the GitHub event card",
+        "dependabot opened a security advisory PR for lodash",
+        "dispatch",
+        "security-event-response",
+        "prepare_security_event_response",
+        "security_event_response",
+    ),
+    RoutingInterventionCase(
+        "leaked-aws-key-reaches-security-event-response",
+        "A cloud key leaked in a public commit reaches the security event lane",
+        "we leaked an AWS key in a public commit",
+        "dispatch",
+        "security-event-response",
+        "prepare_security_event_response",
+        "security_event_response",
+    ),
+    RoutingInterventionCase(
+        "npm-audit-critical-reaches-security-event-response",
+        "A critical from npm audit reaches the security event lane",
+        "npm audit flagged a critical in a package we use",
+        "dispatch",
+        "security-event-response",
+        "prepare_security_event_response",
+        "security_event_response",
     ),
 )
 

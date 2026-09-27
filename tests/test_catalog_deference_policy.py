@@ -202,9 +202,14 @@ NON_SKILL_BACKTICKS = frozenset(
 # `relational-db` (#1692) defers to `backend`, `ultraperf`, `data-analysis`,
 # and `deploy-and-monitor`, and `backend` gains the statement pointing back.
 # Five cases, five pairs, one owner.
-EXPECTED_DEFERENCE_CASES = 282
-EXPECTED_DEFERENCE_PAIRS = 293
-EXPECTED_DEFERRING_OWNERS = 82
+# `security-event-response` (#1694) defers to `security-safety-review`,
+# `application-threat-model`, `github-event-ops`, `legal-compliance-review`,
+# and `live-incident-response`; `security-safety-review` gains the statement
+# pointing back, and `github-event-ops` gains its first backticked statement
+# (a new owner). Seven cases, seven pairs, two owners.
+EXPECTED_DEFERENCE_CASES = 289
+EXPECTED_DEFERENCE_PAIRS = 300
+EXPECTED_DEFERRING_OWNERS = 84
 
 # The ratchet. Recording a new inversion must be a visible edit to this number,
 # not one more dict line with a plausible sentence attached.

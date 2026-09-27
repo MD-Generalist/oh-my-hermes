@@ -82,7 +82,7 @@
     "omh-frontend/references/web-vitals-budgets.md": "7905f7913ff835eb84e7b9bd88059d52d7ede370312f2e24df8cb7ebf407a29b",
     "omh-git-workflow/SKILL.md": "60eb92b8c4626ee655d92cd61a617b656d5ae16d550bce79c555cfaa7d2e66b0",
     "omh-git-workflow/references/git-repair-method.md": "7c5b14e1d8972467fc7a59e84bbd7c200106e983d7ef277d147ddb5792b7980e",
-    "omh-github-event-ops/SKILL.md": "71dde037dd2587a0dd1f8843bbab1427c1ed41a8fac7c134f2b32409513b29b1",
+    "omh-github-event-ops/SKILL.md": "275e335cb4bb04351cfd787bfd198256e97f7de5396867a8092c3b546e99f0b4",
     "omh-github-issue-intake/SKILL.md": "e284354c8060b6f7920ff40bd96a9e51163c8905b78528a2448104491cc442f6",
     "omh-harness-session-inventory/SKILL.md": "31d3f8b655da88fd3f85ef3369c617171a087c476de8de34febda38eaf00f330",
     "omh-idea-to-deploy/SKILL.md": "257991874db928786d1a4b0f36d8b96e12dcea15836aaf4738436917ce2a88cd",
@@ -144,7 +144,9 @@
     "omh-sales-development/references/procedure.md": "0ed747dc7a21bee8931023e4f7d78f65a7a9845ccf40cd6b754eeecc2a6aea70",
     "omh-sales-pipeline-review/SKILL.md": "c9810cba52449018ce6b9b7ef120d452475daeb3cf8678cd52cf19d75b626e40",
     "omh-sales-pipeline-review/references/procedure.md": "ae092ea4d9363da82d23620f33a2f83e8a3dd42f4a8d69fd08b92cb2989fa138",
-    "omh-security-safety-review/SKILL.md": "e3c537212eca2f2e70cdaf919616ab845a4c743a8411b24ad516970bc8666b85",
+    "omh-security-event-response/SKILL.md": "d83c0427a2d1a10701f368a3fe1750f65459e2628dd2f9ddd074b2611750ef8f",
+    "omh-security-event-response/references/event-containment-order.md": "2ea0a28b9d22cb0fa3016617e3d52253bb30d82d30c4931437c60f6706213090",
+    "omh-security-safety-review/SKILL.md": "3e7f7fcd60fb8a6d05345a658efa09924c994f7fd1291058d0a4ae456ed67eb3",
     "omh-security-safety-review/references/credential-rotation.md": "2a4e1cacc2c10141a1aaff437353150696c397f5fec0b41536eb5d946ebff065",
     "omh-skill-health/SKILL.md": "d5e7902955edfe18b0edeee031290d40b02bdb1d7eb40bbe08f5a039772ce1ed",
     "omh-skill-scout/SKILL.md": "d423f0de5e2b8cc0a643be7d169b20b4b83881af4b68005b532023fa5cd1d23f",
@@ -266,6 +268,7 @@
     "omh-rust",
     "omh-sales-development",
     "omh-sales-pipeline-review",
+    "omh-security-event-response",
     "omh-security-safety-review",
     "omh-skill-health",
     "omh-skill-scout",
@@ -290,7 +293,7 @@
     "ulw-work"
   ],
   "source": "agent-skills",
-  "source_digest": "f3cd353092b2541d82725ec294e2e69e56d05fcc60af2d003b79873005588cde",
+  "source_digest": "20d5db215984e50bb28f0cff3c311a2db544dd1a8171e4743cb06c8e5a8f8d6c",
   "targets": {
     "repo": ".claude/skills",
     "user": ".claude/skills"

@@ -2129,6 +2129,20 @@ EVERYDAY_SENSE_PHRASES: dict[str, tuple[tuple[str, ...], frozenset[str]]] = {
     # "what index fund should I buy", "the table in the kitchen needs a new
     # partition" and "alter the table setting" are not database work; each
     # phrase keeps this route only beside a word of the database.
+    # "the travel security advisory for mexico", "the leaked secret ending of
+    # the film" and "is my driver's license ok abroad" are not security events;
+    # each phrase keeps this route only beside a word of code.
+    "security-event-response": (
+        ("security advisory", "leaked secret", "leaked a secret", "license ok", "license compatibility"),
+        frozenset(
+            {
+                "cargo", "code", "codebase", "commit", "committed", "credential", "credentials", "cve", "dependabot",
+                "dependencies", "dependency", "ghsa", "git", "github", "gitlab", "gpl", "library",
+                "libraries", "lockfile", "maven", "npm", "package", "packages", "pip", "push", "pushed", "pypi",
+                "repo", "repository", "token", "tokens",
+            }
+        ),
+    ),
     "relational-db": (
         (
             "what index", "which index", "missing index", "index size", "alter table", "table lock",
@@ -2824,6 +2838,18 @@ _CODING_PROGRESS_STATUS_TOKENS = _normalized_token_set(
         "핸드오프",
     }
 )
+# A security advisory or a leaked secret is an event on shipped code owned by
+# `security-event-response` (#1694), even when it arrives as an opened PR: the
+# PR is the carrier, and the advisory decides the containment order.
+_SECURITY_EVENT_OVER_GITHUB_EVENT_PHRASES = (
+    "security advisory",
+    "dependabot alert",
+    "dependabot security",
+    "leaked secret",
+    "leaked credential",
+    "committed a secret",
+)
+
 _GITHUB_EVENT_OPS_PHRASES = (
     "github event ops",
     "github events",
@@ -8471,6 +8497,8 @@ def _github_event_ops_guard_applies(normalized_query: str, query_tokens: set[str
     if {"plan", "spec", "roadmap"} & query_tokens and _contains_phrase(normalized_query, ("into a", "into the")):
         return False
     if _github_issue_intake_guard_applies(normalized_query, query_tokens):
+        return False
+    if _contains_phrase(normalized_query, _SECURITY_EVENT_OVER_GITHUB_EVENT_PHRASES):
         return False
     if _contains_phrase(normalized_query, _GITHUB_EVENT_OPS_PHRASES):
         return True
