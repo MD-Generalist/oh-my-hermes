@@ -149,7 +149,10 @@ ROLE_CONTEXT_CHAR_LIMIT = 2600
 # producer.
 # 11411 -> 11497: one index line for the new `app-debugging` skill (#1709); the
 # name and the visible description window. Re-derived from the producer.
-SKILL_INDEX_CHAR_LIMIT = 11497
+# 11497 -> 11589: one index line for the new `commit-pr-authoring` skill
+# (#1711); the name and the visible description window. Re-derived from the
+# producer.
+SKILL_INDEX_CHAR_LIMIT = 11589
 # The longest single skill line in that index. Every description is already cut
 # to 60 characters, so what moves this is a longer skill name.
 SKILL_INDEX_LINE_CHAR_LIMIT = 100
@@ -501,7 +504,9 @@ PRE_LLM_CALL_CONTEXT_FALLBACK_CHAR_LIMIT = 6917
 # 441698 -> 445370: one capability row for the new `app-debugging` skill
 # (#1709) plus the reciprocal boundary lines its siblings gained. Re-derived
 # from the producer.
-FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 445370
+# 445370 -> 448864: one capability row for the new `commit-pr-authoring` skill
+# (#1711); it adds no sibling boundary line. Re-derived from the producer.
+FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 448864
 FULL_CAPABILITY_SKILL_ITEM_CHAR_LIMIT = 9000
 # 100000 -> 102070: the same three domain workflows each add one standalone
 # capability row, again measured on the merged tree; warranted growth for three
@@ -555,7 +560,10 @@ FULL_CAPABILITY_SKILL_ITEM_CHAR_LIMIT = 9000
 # 122889 -> 123824: one standalone capability row for the new `app-debugging`
 # skill (#1709) plus its siblings' reciprocal boundary lines; warranted growth.
 # Re-derived from the producer.
-STANDALONE_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 123824
+# 123824 -> 124777: one standalone capability row for the new
+# `commit-pr-authoring` skill (#1711); warranted growth. Re-derived from the
+# producer.
+STANDALONE_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 124777
 STANDALONE_CAPABILITY_SKILL_ITEM_CHAR_LIMIT = 2200
 # ULW fold context ceiling (issue #954, PR D). The limit is the pre-D measured
 # value of the full profile's `skill_body` chars on `main` @ acb9a060, in the

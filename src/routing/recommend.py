@@ -318,6 +318,27 @@ _APP_DEBUGGING_EXPLICIT_PHRASES = tuple(
     )
 )
 
+# `commit-pr-authoring` holds back every token of its phrases, which leaves a
+# complete phrase at +6: "fill in the pull request description for this
+# branch, the unit tests passed" then went to `verification-gate` on "tests
+# passed". Listed are the phrases that name the text being written. The PR
+# phrases are safe to boost because `EVERYDAY_SENSE_PHRASES` has already
+# dropped this skill when nothing beside them is code.
+_COMMIT_PR_AUTHORING_EXPLICIT_PHRASES = tuple(
+    normalized_phrase(phrase)
+    for phrase in (
+        "commit-pr-authoring",
+        "commit message",
+        "commit messages",
+        "squash message",
+        "pr body",
+        "pr description",
+        "pull request body",
+        "pull request description",
+        "pr template",
+    )
+)
+
 _LLM_APP_DEV_EXPLICIT_PHRASES = tuple(
     normalized_phrase(phrase)
     for phrase in (
@@ -794,6 +815,18 @@ _SKILL_POLICIES = {
             "Prepare native_fault_statement/v1, hypothesis_set/v1 with at least three hypotheses on distinct axes, "
             "distinguishing_observation_plan/v1, and debugger_session_plan/v1 naming the DAP adapter, breakpoints, "
             "watchpoints, threads, frames, and values the executor reads at each stop."
+        ),
+    ),
+    "commit-pr-authoring": RecommendationPolicy(
+        next_action="prepare_commit_pr_text",
+        evidence_boundary=(
+            "Drafted commit and PR text is not a commit, a push, an opened pull request, a test pass, or CI evidence; "
+            "`Tested:` carries only commands the evidence ledger records as observed."
+        ),
+        wrapper_guidance=(
+            "Prepare repo_convention_read/v1 from the PR template and the recent log, evidence_ledger/v1 with every command "
+            "observed or not_observed, then commit_message_draft/v1 and pr_body_draft/v1 whose `Tested:` and validation "
+            "sections project only observed rows; prepared or skipped commands go under `Not-tested:`."
         ),
     ),
     "app-debugging": RecommendationPolicy(
@@ -2424,6 +2457,34 @@ _WHOLE_PHRASE_ONLY_TRIGGER_TOKENS = {
     # (`EVERYDAY_SENSE_PHRASES`). Two tokens stay creditable because nothing
     # else means them: `app-debugging`, which appears only when someone writes
     # the skill name, and `heisenbug`.
+    # `commit-pr-authoring` is built from "commit", "message", "body",
+    # "description", "draft", "write", "template", "pull", "tested" and
+    # "lore" -- a wedding speech, a cover letter, a nurse's job description and
+    # a sourdough recipe all reached it as bare tokens. Only the complete
+    # phrases score, and the PR phrases additionally need a code word beside
+    # them (`EVERYDAY_SENSE_PHRASES`: "PR" is also public relations). Two
+    # tokens stay creditable: `commit-pr`, which appears only in the skill
+    # name, and `not-tested`, the trailer itself.
+    "commit-pr-authoring": frozenset(
+        {
+            "authoring",
+            "body",
+            "commit",
+            "description",
+            "draft",
+            "lore",
+            "message",
+            "messages",
+            "not",
+            "pull",
+            "squash",
+            "template",
+            "tested",
+            "trailer",
+            "trailers",
+            "write",
+        }
+    ),
     "app-debugging": frozenset(
         {
             "add",
@@ -3291,6 +3352,9 @@ def _score_definition(
     if definition.name == "todo-checklist" and _todo_checklist_explicit_match(normalized_query):
         score += 30
         matched.add("direct:todo_checklist")
+    if definition.name == "commit-pr-authoring" and _commit_pr_authoring_explicit_match(normalized_query):
+        score += 30
+        matched.add("direct:commit_pr_authoring")
     if definition.name == "app-debugging" and _app_debugging_explicit_match(normalized_query):
         score += 30
         matched.add("direct:app_debugging")
@@ -4064,6 +4128,10 @@ def _contains_any_phrase(normalized_query: str, phrases: tuple[str, ...]) -> boo
 
 def _todo_checklist_explicit_match(normalized_query: str) -> bool:
     return any(_explicit_phrase_match(normalized_query, phrase) for phrase in _TODO_CHECKLIST_EXPLICIT_PHRASES)
+
+
+def _commit_pr_authoring_explicit_match(normalized_query: str) -> bool:
+    return any(_explicit_phrase_match(normalized_query, phrase) for phrase in _COMMIT_PR_AUTHORING_EXPLICIT_PHRASES)
 
 
 def _app_debugging_explicit_match(normalized_query: str) -> bool:

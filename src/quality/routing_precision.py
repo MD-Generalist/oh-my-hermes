@@ -2879,6 +2879,41 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
         "direct_answer",
         "app-debugging",
     ),
+    # `commit-pr-authoring` phrases outside a repository: a public-relations
+    # description, a landlord's request, a speech, and a cover letter each carry a
+    # phrase or token the lane triggers on.
+    RoutingPrecisionCase(
+        "press-release-pr-description-is-not-commit-pr-authoring",
+        "A PR description for the press is public relations, not a pull request",
+        "write a PR description of our product launch for the press release",
+        "answer_clarification",
+        "",
+        "commit-pr-authoring",
+    ),
+    RoutingPrecisionCase(
+        "landlord-pull-request-is-not-commit-pr-authoring",
+        "Asking a landlord for more time is not a pull request",
+        "write a message to my landlord about the pull request for more time",
+        "answer_clarification",
+        "",
+        "commit-pr-authoring",
+    ),
+    RoutingPrecisionCase(
+        "wedding-speech-message-is-not-commit-pr-authoring",
+        "Committing to a speech message is not a commit message",
+        "I need to commit to a message for my wedding speech",
+        "answer_clarification",
+        "",
+        "commit-pr-authoring",
+    ),
+    RoutingPrecisionCase(
+        "cover-letter-body-is-not-commit-pr-authoring",
+        "The body of a cover letter is not a PR body",
+        "draft the body of my cover letter",
+        "answer_clarification",
+        "",
+        "commit-pr-authoring",
+    ),
 )
 
 
@@ -8265,6 +8300,53 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "app-debugging",
         "prepare_root_cause_investigation",
         "root_cause_investigation",
+    ),
+    # #1711: the commit message and the PR body dispatch to the authoring lane
+    # instead of `backend`, `content-operator`, or `verification-gate`.
+    RoutingInterventionCase(
+        "write-the-commit-message-reaches-commit-pr-authoring",
+        "Writing the commit message reaches the authoring lane",
+        "write the commit message",
+        "dispatch",
+        "commit-pr-authoring",
+        "prepare_commit_pr_text",
+        "commit_pr_draft",
+    ),
+    RoutingInterventionCase(
+        "draft-the-pr-body-reaches-commit-pr-authoring",
+        "Drafting the PR body reaches the authoring lane",
+        "draft the PR body",
+        "dispatch",
+        "commit-pr-authoring",
+        "prepare_commit_pr_text",
+        "commit_pr_draft",
+    ),
+    RoutingInterventionCase(
+        "pr-description-with-skipped-suite-reaches-commit-pr-authoring",
+        "A PR description with a skipped suite reaches the authoring lane, not the gate",
+        "fill in the pull request description for this branch, the unit tests passed but I skipped the e2e suite",
+        "dispatch",
+        "commit-pr-authoring",
+        "prepare_commit_pr_text",
+        "commit_pr_draft",
+    ),
+    RoutingInterventionCase(
+        "refactor-commit-message-reaches-commit-pr-authoring",
+        "A commit message for a refactor reaches the authoring lane",
+        "what should the commit message say for this refactor",
+        "dispatch",
+        "commit-pr-authoring",
+        "prepare_commit_pr_text",
+        "commit_pr_draft",
+    ),
+    RoutingInterventionCase(
+        "staged-changes-commit-message-reaches-commit-pr-authoring",
+        "A commit message for staged changes reaches the authoring lane",
+        "write a commit message for the staged changes",
+        "dispatch",
+        "commit-pr-authoring",
+        "prepare_commit_pr_text",
+        "commit_pr_draft",
     ),
 )
 

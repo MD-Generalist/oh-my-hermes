@@ -41,6 +41,8 @@
     "omh-codebase-onboarding/SKILL.md": "ae5e53abdfc76068267d343ccf616bf3f58472b04cdc5e3bae2b627fabdfc664",
     "omh-codebase-uml/SKILL.md": "860a6ecc873ae3c74738b22a3e07d5098c33f5bc24a943a25cefa978a1e2f77e",
     "omh-codegraph-refresh/SKILL.md": "0acee30c5a57ac0281eeaf3cd5c5ac2727a8dd5c1d2c49ac0a901dc74d332e76",
+    "omh-commit-pr-authoring/SKILL.md": "213e91118e81c262733f57b5fce3188e59de7e8d0dffe0364544ae0cb5bbcc1a",
+    "omh-commit-pr-authoring/references/commit-and-pr-conventions.md": "1ff3ade943d6d24a90e1ace1e1eefa4ffb9d9e48e41e71856d346b420aac8c99",
     "omh-content-operator/SKILL.md": "550b759352204a8d80ba6d749c6f945e3b30f556a8f62c3b096eff0b57e60e53",
     "omh-context-budget-review/SKILL.md": "a7574676b6830fb2a41aa32410265d5ebc7ea011a3c83fa403865c94f7d00226",
     "omh-context-budget-review/references/cache-placement.md": "bdac27120964aa692bd9b47f107fc9f19105d87f362e787e41c217d7a38d7590",
@@ -197,6 +199,7 @@
     "omh-codebase-onboarding",
     "omh-codebase-uml",
     "omh-codegraph-refresh",
+    "omh-commit-pr-authoring",
     "omh-content-operator",
     "omh-context-budget-review",
     "omh-cto-loop",
@@ -281,7 +284,7 @@
     "ulw-work"
   ],
   "source": "agent-skills",
-  "source_digest": "0f33116691e66dcbb26d4bf585253430cc818dd1f7e6ced2aa7e6ac1b3209314",
+  "source_digest": "ac13e4b8adde9aaf2398fb0893606f8f3c037cfb6e6adeae53e31ea4c1a7e35e",
   "targets": {
     "repo": ".agents/skills",
     "user": ".agents/skills"

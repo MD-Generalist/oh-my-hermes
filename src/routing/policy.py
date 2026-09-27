@@ -2119,6 +2119,19 @@ EVERYDAY_SENSE_PHRASES: dict[str, tuple[tuple[str, ...], frozenset[str]]] = {
     # reset" and "the race condition at the track" are not requests to debug
     # code; the phrase keeps its route only beside a word of the code being
     # debugged.
+    # "write a PR description of our product launch for the press release" is
+    # public relations, and "a message to my landlord about the pull request
+    # for more time" is not a repository.
+    "commit-pr-authoring": (
+        ("pr body", "pr description", "pr template", "pull request body", "pull request description"),
+        frozenset(
+            {
+                "branch", "bug", "code", "commit", "commits", "diff", "e2e", "feature", "fix",
+                "git", "github", "merge", "not-tested", "patch", "refactor", "repo", "repository",
+                "staged", "test", "tested", "tests", "trailer", "trailers",
+            }
+        ),
+    ),
     "app-debugging": (
         ("root cause", "root-cause", "update is lost", "lost update", "race condition"),
         frozenset(
@@ -2146,7 +2159,11 @@ EVERYDAY_SENSE_PHRASES: dict[str, tuple[tuple[str, ...], frozenset[str]]] = {
     ),
 }
 # Words a bare request wraps around the phrase without adding a sense of its own.
-_EVERYDAY_SENSE_FILLER_TOKENS = frozenset({"again", "can", "could", "just", "now", "please", "would", "you"})
+# "draft" and "write" are the request verbs of a writing phrase ("draft the PR
+# body"): alone beside the phrase they ask for it, and add no sense of their own.
+_EVERYDAY_SENSE_FILLER_TOKENS = frozenset(
+    {"again", "can", "could", "draft", "just", "now", "please", "would", "write", "you"}
+)
 
 
 def everyday_sense_phrase_unanchored(skill: str, normalized_query: str) -> bool:

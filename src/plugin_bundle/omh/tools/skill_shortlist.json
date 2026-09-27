@@ -53,7 +53,7 @@
 }
 },
 {
-"anchors":"agree align alignment domain drift glossary inconsistent languag mean name naming repo term terminology ulw",
+"anchors":"agree align alignment domain drift glossary inconsistent languag mean name naming term terminology ulw",
 "hangul":"",
 "hangul_anchors":"",
 "label":"ulw-context",
@@ -183,7 +183,7 @@
 }
 },
 {
-"anchors":"acquisition area arxiv benchmark collect dataset download evaluat finder gather github intak link list oss paper presentation public repo slid spec worth",
+"anchors":"acquisition area arxiv benchmark collect dataset download evaluat finder gather github intak link list oss paper presentation public slid spec worth",
 "hangul":"공개 깃허 논문 데이 링크 문서 발표 스펙 이터 자료 장소 저장 찾아 출처 터셋 표자 허브 후보",
 "hangul_anchors":"공개 깃허 논문 데이 링크 문서 발표 스펙 이터 자료 장소 저장 찾아 출처 터셋 표자 허브 후보",
 "label":"omh-source-finder",
@@ -709,7 +709,7 @@
 }
 },
 {
-"anchors":"config configur gap hook inventory list mcp plugin repo repository workspac",
+"anchors":"config configur gap hook inventory list mcp plugin repository workspac",
 "hangul":"감사 레포 벤토 설정 스킬 스페 워크 이스 인벤 크스 토리 페이",
 "hangul_anchors":"감사 레포 벤토 설정 스킬 스페 워크 이스 인벤 크스 토리 페이",
 "label":"omh-workspace-audit",
@@ -791,7 +791,7 @@
 }
 },
 {
-"anchors":"codebas explain join onboard organiz orientation repo repository runway structur tour understand",
+"anchors":"codebas explain join onboard organiz orientation repository runway structur tour understand",
 "hangul":"개발 구조 드베 레포 발자 베이 보는 보딩 설명 온보 이스 처음 코드",
 "hangul_anchors":"개발 구조 드베 레포 발자 베이 보는 보딩 설명 온보 이스 처음",
 "label":"omh-codebase-onboarding",
@@ -905,7 +905,7 @@
 }
 },
 {
-"anchors":"bootstrap complet deployment empty end idea launch mvp repo scaffold scratch take",
+"anchors":"bootstrap complet deployment empty end idea launch mvp scaffold scratch take",
 "hangul":"가보 기획 까지 디어 루프 배포 보자 부터 비스 서비 스로 시까 아이 어를 어부 완제 운영 이디 제품 출시 포까 획부",
 "hangul_anchors":"가보 기획 까지 디어 루프 배포 보자 부터 비스 서비 스로 시까 아이 어를 어부 완제 운영 이디 제품 출시 포까 획부",
 "label":"omh-idea-to-deploy",
@@ -1449,6 +1449,24 @@
 }
 },
 {
+"anchors":"branch describ fill log put reviewer say word",
+"hangul":"",
+"hangul_anchors":"",
+"label":"omh-commit-pr-authoring",
+"name":"commit-pr-authoring",
+"situation":"Commit message or pull-request body to write for a change",
+"terms":{
+"1":"executor first line push read ready recent record repo requir subject text user want written",
+"2":"branch command convention describ description diff everyth fill list lore observ prepar put repository reviewer run say squash summariz word",
+"3":"draft log trailer writ",
+"4":"body chang messag test",
+"5":"author templat",
+"6":"pull request",
+"8":"pr",
+"9":"commit"
+}
+},
+{
 "anchors":"assumption choic concept decid disposabl experiment feasibility library performanc prob proof prototyp quick quickly risky small solution spik throwaway timing try uncertain",
 "hangul":"",
 "hangul_anchors":"",
@@ -1617,7 +1635,7 @@
 }
 },
 {
-"anchors":"analysis arriv auto branch brok ci event github incom label main ops pull repo sort triag webhook",
+"anchors":"analysis arriv auto branch brok ci event github incom label main ops pull sort triag webhook",
 "hangul":"깃허 드오 라벨 리뷰 실패 어온 오프 이슈 픽스 핸드 허브",
 "hangul_anchors":"깃허 드오 라벨 실패 어온 오프 이슈 픽스 핸드 허브",
 "label":"omh-github-event-ops",
