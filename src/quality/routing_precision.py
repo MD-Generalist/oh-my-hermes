@@ -2486,6 +2486,138 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
         "direct_answer",
         "browser-operator",
     ),
+    # A cadence phrase is `automation-blueprint`'s own trigger, and it used to
+    # dispatch on it alone. In a report it says when something happens, not
+    # what to schedule (#1892). Each opens on a subject after the cadence; the
+    # positive half is `cadence-request-still-dispatches-automation`. The
+    # candidate stays `automation-blueprint` (the route asks with it first),
+    # so no forbidden candidate.
+    RoutingPrecisionCase(
+        "cadence-commute-report-is-not-a-schedule",
+        "A daily habit told as a report does not open a scheduled blueprint",
+        "every day the train to work is late",
+        "answer_clarification",
+        "",
+    ),
+    RoutingPrecisionCase(
+        "cadence-neighbor-dog-report-is-not-a-schedule",
+        "What a neighbor's dog does every morning is not a scheduled job",
+        "every morning my neighbor's dog barks at the mail carrier",
+        "answer_clarification",
+        "",
+    ),
+    RoutingPrecisionCase(
+        "cadence-lunch-habit-is-not-a-schedule",
+        "Where we eat every day is not a recurring workflow",
+        "every day we eat lunch at the same noodle shop",
+        "answer_clarification",
+        "",
+    ),
+    RoutingPrecisionCase(
+        "cadence-sunlight-report-is-not-a-schedule",
+        "The morning light on a desk is not a morning digest",
+        "every morning the sun hits my desk around nine",
+        "answer_clarification",
+        "",
+    ),
+    # A modal said of a person is advice or narration, not a schedule: the
+    # directive-modal reading counts only on a noun-phrase subject.
+    RoutingPrecisionCase(
+        "cadence-self-advice-modal-is-not-a-schedule",
+        "Advice to oneself with a modal is not a scheduled job",
+        "every morning I should really drink less coffee, haha",
+        "answer_clarification",
+        "",
+    ),
+    RoutingPrecisionCase(
+        "cadence-obligation-narration-is-not-a-schedule",
+        "A daily obligation told about ourselves is not a scheduled job",
+        "every day we have to walk past that awful construction site",
+        "answer_clarification",
+        "",
+    ),
+    RoutingPrecisionCase(
+        "cadence-epistemic-modal-is-not-a-schedule",
+        "An epistemic `must` about other people is not a scheduled job",
+        "every morning they must think I'm crazy for jogging in the rain",
+        "answer_clarification",
+        "",
+    ),
+    # A modal past a subordinator or a reporting verb belongs to the embedded
+    # clause, not to the thing the main clause is about (#1893 re-review).
+    # The first three are the review's; the last two share the shape.
+    RoutingPrecisionCase(
+        "cadence-modal-after-complementizer-is-not-a-schedule",
+        "A modal inside a `that` clause belongs to that clause",
+        "every morning the team notices that karen should call the client",
+        "answer_clarification",
+        "",
+    ),
+    RoutingPrecisionCase(
+        "cadence-modal-after-reporting-verb-is-not-a-schedule",
+        "A modal in what someone says is not a directive about the subject",
+        "every day the manager says someone must fix the printer",
+        "answer_clarification",
+        "",
+    ),
+    RoutingPrecisionCase(
+        "cadence-modal-after-until-is-not-a-schedule",
+        "A modal in an `until` clause is not a scheduled job",
+        "every morning the office is quiet until someone must leave early",
+        "answer_clarification",
+        "",
+    ),
+    RoutingPrecisionCase(
+        "cadence-modal-after-thinks-is-not-a-schedule",
+        "A modal in what someone thinks is not a scheduled job",
+        "every morning the barista thinks the espresso machine should be replaced",
+        "answer_clarification",
+        "",
+    ),
+    RoutingPrecisionCase(
+        "cadence-modal-after-because-is-not-a-schedule",
+        "A modal in a `because` clause is not a scheduled job",
+        "every day the hallway smells of paint because the landlord must repaint it",
+        "answer_clarification",
+        "",
+    ),
+    # `fix` plus a product noun and a defect noun made the feedback guard read
+    # a command as a customer report (#1892). None of these is code and none
+    # hands over a report; the positive halves are
+    # `commanded-payment-crash-fix-asks-with-coding-first` and
+    # `checkout-crash-report-still-triages`.
+    RoutingPrecisionCase(
+        "fix-shopping-cart-wheel-is-not-feedback-triage",
+        "Fixing a broken cart wheel is not a product-feedback report",
+        "fix the broken wheel on my shopping cart",
+        "answer_clarification",
+        "",
+        "feedback-triage",
+    ),
+    RoutingPrecisionCase(
+        "fix-gym-subscription-is-not-feedback-triage",
+        "Sorting out a gym subscription is not a product-feedback report",
+        "fix the problem with my gym subscription renewal",
+        "answer_clarification",
+        "",
+        "feedback-triage",
+    ),
+    RoutingPrecisionCase(
+        "fix-crash-barrier-is-not-feedback-triage",
+        "A crash barrier outside an office is not a crash report",
+        "fix the crash barrier outside the payment office",
+        "answer_clarification",
+        "",
+        "feedback-triage",
+    ),
+    RoutingPrecisionCase(
+        "fix-garage-cart-latch-is-not-feedback-triage",
+        "A broken latch on a garage cart is not a product-feedback report",
+        "fix the broken latch on the cart in the garage",
+        "answer_clarification",
+        "",
+        "feedback-triage",
+    ),
 )
 
 
@@ -7309,6 +7441,105 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "prepare_browser_operator_card",
         "browser_operator",
         "browser-operator",
+    ),
+    # The positive halves of the #1892 negative controls. A cadence phrase in a
+    # request still dispatches on its own; a command to fix a product defect
+    # asks with the coding lane first instead of triaging it as feedback; and
+    # a report of the same defect, with no command, still triages.
+    RoutingInterventionCase(
+        "cadence-request-still-dispatches-automation",
+        "A request that opens on its cadence still opens automation blueprint",
+        "every morning send me the build status",
+        "dispatch",
+        "automation-blueprint",
+        "prepare_scheduled_ops_blueprint",
+        "automation_blueprint",
+    ),
+    # Subject-initial and passive scheduling requests (#1893 review): a clause
+    # about a thing that carries a directive modal or a passive of a delivery
+    # verb reads as a request, so the cadence phrase keeps its evidence.
+    # The first four are the review's sentences; the last three share the shape.
+    RoutingInterventionCase(
+        "cadence-modal-passive-email-dispatches",
+        "A thing that should be emailed every morning is a schedule",
+        "every morning the sales numbers should be emailed to the team",
+        "dispatch",
+        "automation-blueprint",
+        "prepare_scheduled_ops_blueprint",
+        "automation_blueprint",
+    ),
+    RoutingInterventionCase(
+        "cadence-get-passive-send-dispatches",
+        "A snapshot that gets sent every morning is a schedule",
+        "every morning our dashboard snapshot gets sent to leadership",
+        "dispatch",
+        "automation-blueprint",
+        "prepare_scheduled_ops_blueprint",
+        "automation_blueprint",
+    ),
+    RoutingInterventionCase(
+        "cadence-modal-post-dispatches",
+        "Results that should post every day are a schedule",
+        "every day the CI results should post to the team channel",
+        "dispatch",
+        "automation-blueprint",
+        "prepare_scheduled_ops_blueprint",
+        "automation_blueprint",
+    ),
+    RoutingInterventionCase(
+        "cadence-modal-go-to-dispatches",
+        "A report that should go to Slack every morning is a schedule",
+        "every morning the report should go to Slack",
+        "dispatch",
+        "automation-blueprint",
+        "prepare_scheduled_ops_blueprint",
+        "automation_blueprint",
+    ),
+    RoutingInterventionCase(
+        "cadence-get-passive-post-dispatches",
+        "A summary that gets posted every morning is a schedule",
+        "every morning the overnight error summary gets posted to the ops channel",
+        "dispatch",
+        "automation-blueprint",
+        "prepare_scheduled_ops_blueprint",
+        "automation_blueprint",
+    ),
+    RoutingInterventionCase(
+        "cadence-needs-to-dispatches",
+        "A report that needs to go out every day is a schedule",
+        "every day the backlog report needs to go to the product leads",
+        "dispatch",
+        "automation-blueprint",
+        "prepare_scheduled_ops_blueprint",
+        "automation_blueprint",
+    ),
+    RoutingInterventionCase(
+        "cadence-must-be-shared-dispatches",
+        "Numbers that must be shared every morning are a schedule",
+        "every morning the uptime numbers must be shared with the on-call team",
+        "dispatch",
+        "automation-blueprint",
+        "prepare_scheduled_ops_blueprint",
+        "automation_blueprint",
+    ),
+    RoutingInterventionCase(
+        "commanded-payment-crash-fix-asks-with-coding-first",
+        "A command to fix a checkout crash asks with the coding lane first",
+        "fix the checkout crash in the payment service",
+        "clarify",
+        "oh-my-hermes",
+        "answer_clarification",
+        "clarification",
+        "ultrawork",
+    ),
+    RoutingInterventionCase(
+        "checkout-crash-report-still-triages",
+        "A report that the checkout page crashes still routes to triage",
+        "the checkout page crashes on submit",
+        "dispatch",
+        "feedback-triage",
+        "triage_feedback",
+        "feedback_triage",
     ),
 )
 

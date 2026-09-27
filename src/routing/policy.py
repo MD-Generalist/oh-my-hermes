@@ -5574,7 +5574,7 @@ GUARD_DISPATCH_TRUST: dict[str, tuple[str, str]] = {
     "doctor_health_before_skill_catalog": (GUARD_TRUSTED, "OMH install or setup health named as the problem; no measured record as a winner, keeps its shape label"),
     "durable_research_goal_before_wiki": (GUARD_TRUSTED, "keep-researching-until-closed shape; no measured record as a winner, keeps its shape label"),
     "executor_runtime_readiness_before_generic_advice": (GUARD_TRUSTED, "an executor named with a can-it-run or connect question; narrowed off comparisons and session inventories; no measured record as a winner, keeps its shape label"),
-    "feedback_before_coding": (GUARD_TRUSTED, "a customer or user report of a defect handed over for triage; narrowed off replies, filing, test commands, and system memory; measured 1 right / 1 wrong; kept trusted: demoting it breaks the known-lanes baseline and route-hint alignment"),
+    "feedback_before_coding": (GUARD_TRUSTED, "a customer or user report of a defect handed over for triage; narrowed off replies, filing, test commands, system memory, and a product-plus-defect topic under an edit command (#1892); measured 1 right / 1 wrong; kept trusted: demoting it breaks the known-lanes baseline and route-hint alignment"),
     "gateway_intent_before_feedback_triage": (GUARD_TRUSTED, "messenger thread or delivery policy named as the task; measured 2 right / 0 wrong"),
     "generated_artifact_provenance_before_deliverable_package": (GUARD_TRUSTED, "asks whether a change touches a generated file; no measured record as a winner, keeps its shape label"),
     "github_event_ops_before_generic_planning": (GUARD_TRUSTED, "an explicit PR, CI, or issue-to-PR event; measured 0 right / 1 wrong; kept trusted: demoting it removes no measured wrong dispatch and moves canonical pins"),
@@ -6376,6 +6376,104 @@ def has_cadence(normalized_query: str, query_tokens: set[str]) -> bool:
     return False
 
 
+_CADENCE_ADVERBS = frozenset({"every", "each", "daily", "weekly", "monthly", "hourly", "nightly"})
+# Closed-class words that open a clause as its subject. A personal pronoun
+# makes the clause about a person (`I`, `we`); a possessive or an article opens
+# a noun phrase about a thing (`the report`, `our dashboard`). An imperative
+# opens on its verb instead.
+_PERSONAL_SUBJECTS = frozenset({"i", "we", "he", "she", "they", "you", "it"})
+_NOUN_PHRASE_OPENERS = frozenset(
+    {"my", "our", "his", "her", "their", "its", "the", "a", "an", "this", "that", "these", "those", "there"}
+)
+# A directive modal puts an obligation on the subject: `the report should go
+# out`. Said of a person it is advice or narration (`I should drink less`), so
+# it counts only on a noun-phrase subject.
+_DIRECTIVE_MODALS = frozenset({"should", "must"})
+_DIRECTIVE_MODAL_PAIRS = frozenset(
+    {("needs", "to"), ("need", "to"), ("has", "to"), ("have", "to"), ("is", "to"), ("are", "to")}
+)
+# A passive of a delivery verb (`gets sent`, `be emailed`) schedules a thing to
+# reach someone. Other passives (`the road is blocked`) describe a state.
+# Where the main clause ends: a subordinator or complementizer opens another
+# clause, and a reporting verb hands over to the clause it reports. A modal
+# past either belongs to that clause (`the team notices that karen should
+# call`), not to the thing the main clause is about.
+_CLAUSE_BOUNDARIES = frozenset(
+    {"that", "until", "because", "when", "while", "if", "unless", "after", "before", "since", "so"}
+)
+_REPORTING_VERBS = frozenset(
+    {"say", "says", "said", "notice", "notices", "noticed", "think", "thinks", "thought",
+     "feel", "feels", "felt", "know", "knows", "knew"}
+)
+_PASSIVE_AUXILIARIES = frozenset({"get", "gets", "got", "be", "is", "are", "being"})
+_DELIVERY_PARTICIPLES = frozenset(
+    {"sent", "emailed", "mailed", "posted", "delivered", "shared", "published", "forwarded"}
+)
+# A request put to the assistant in so many words, whatever the clause opens on.
+_REQUEST_FRAMES = (
+    "please", "can you", "could you", "would you", "will you", "i want", "we want", "i need", "we need",
+    "i would like", "i'd like", "remind me", "help me", "let us", "let's",
+)
+
+
+def is_cadence_phrase(phrase: str) -> bool:
+    """A phrase made only of a frequency and its time (`every morning`, `each monday`).
+
+    It says when something happens and nothing about what; `daily digest`
+    names a job and is not one.
+    """
+    words = normalized_phrase(phrase).split()
+    return (
+        bool(words)
+        and all(word in _CADENCE_ADVERBS or word in _CADENCE_TIME_WORDS for word in words)
+        and has_cadence(" ".join(words), set(words))
+    )
+
+
+def reads_as_a_request(message: str) -> bool:
+    """True when the message puts something to the assistant rather than reporting.
+
+    A request frame (`can you`, `remind me`) anywhere is a request. Otherwise
+    the main clause decides, after a courtesy opener and a leading cadence
+    (`every morning, ...`):
+
+    - an imperative opens on its verb: a request;
+    - a clause about a person (`every morning I ...`) is a report, even with a
+      modal (`I should really ...`);
+    - a clause about a thing (`the report ...`, `our snapshot ...`) is a
+      request only when it carries a directive modal (`should`, `needs to`)
+      or a passive of a delivery verb (`gets sent`) in its own main clause,
+      before any subordinator or reporting verb; otherwise it reports
+      (`each day the bus is late`).
+
+    A question is left to the rest of the router, which already reads it.
+    ASCII only: a message with no Latin words has no words here and reads as
+    no request, so callers must exempt non-ASCII input before asking.
+    """
+    normalized = normalized_phrase(message)
+    if "?" in message or contains_boundary_phrase(normalized, _REQUEST_FRAMES):
+        return True
+    words = _command_words(normalized)
+    while words and words[0] in _CADENCE_ADVERBS:
+        words = words[2:] if words[0] in {"every", "each"} else words[1:]
+    if not words or words[0] in _PERSONAL_SUBJECTS:
+        return False
+    if words[0] not in _NOUN_PHRASE_OPENERS:
+        return True
+    # Only the main clause. The opener itself may be `that` (`that report
+    # should ...`), so the cut starts after it.
+    for index in range(1, len(words)):
+        if words[index] in _CLAUSE_BOUNDARIES or words[index] in _REPORTING_VERBS:
+            words = words[:index]
+            break
+    pairs = list(zip(words, words[1:]))
+    return (
+        bool(_DIRECTIVE_MODALS & set(words))
+        or any(pair in _DIRECTIVE_MODAL_PAIRS for pair in pairs)
+        or any(first in _PASSIVE_AUXILIARIES and second in _DELIVERY_PARTICIPLES for first, second in pairs)
+    )
+
+
 def _direct_coding_task_guard_applies(
     normalized_query: str,
     query_tokens: set[str],
@@ -6598,7 +6696,16 @@ def _feedback_before_coding_guard_applies(
     product_context = bool(_FEEDBACK_TRIAGE_PRODUCT_TOKENS & query_tokens)
     issue_signal = bool(_FEEDBACK_TRIAGE_ISSUE_TOKENS & query_tokens)
     decision_signal = bool(_FEEDBACK_TRIAGE_DECISION_TOKENS & query_tokens)
-    return (source_signal and (issue_signal or decision_signal)) or (product_context and issue_signal)
+    # A product noun beside a defect noun is a topic, not a report: nobody in
+    # it handed anything over. It stands in for a report only while the
+    # message is not itself a command to change something -- "fix the crash
+    # in checkout" asks for the edit, whoever turns out to own it. A named
+    # reporter (`users`, `customer`) or a feedback phrase stays a report.
+    command = _command_words(normalized_query)[:1] if normalized_query.isascii() else []
+    commanded_edit = bool(command) and command[0] in _DIRECT_CODING_EDIT_VERBS
+    return (source_signal and (issue_signal or decision_signal)) or (
+        product_context and issue_signal and not commanded_edit
+    )
 
 
 def _workflow_learning_guard_applies(normalized_query: str, query_tokens: set[str]) -> bool:
