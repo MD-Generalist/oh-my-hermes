@@ -270,6 +270,8 @@ VISIBLE_ACTIONS = (
     "prepare_native_debug_plan",
     "prepare_root_cause_investigation",
     "show_reproduction_record",
+    "prepare_commit_pr_text",
+    "show_evidence_ledger",
     "show_frontend_handoff",
     "record_browser_capture",
     "record_accessibility_check",
@@ -1099,6 +1101,8 @@ _ACK_PRIMARY_ACTIONS_BY_NEXT_ACTION = {
     "prepare_native_debug_plan": ("prepare_native_debug_plan", "Prepare debug plan"),
     "prepare_root_cause_investigation": ("prepare_root_cause_investigation", "Find the root cause"),
     "show_reproduction_record": ("show_reproduction_record", "Show reproduction"),
+    "prepare_commit_pr_text": ("prepare_commit_pr_text", "Draft the text"),
+    "show_evidence_ledger": ("show_evidence_ledger", "Show evidence ledger"),
     "prepare_accessibility_audit": ("prepare_accessibility_audit", "Audit accessibility"),
     "prepare_visual_qa": ("prepare_visual_qa", "Prepare visual QA"),
     "prepare_deliverable_package": ("prepare_deliverable_package", "Prepare deliverable"),
@@ -2174,6 +2178,38 @@ _WORKFLOW_OPERATIONS_CHAT_CARDS: dict[str, dict[str, object]] = {
             "miri run",
             "sanitizer run",
             "concurrency model check",
+        ],
+    },
+    "commit-pr-authoring": {
+        "kind": "commit_pr_draft",
+        "headline": "I can draft the commit message and PR body in this repository's own convention.",
+        "body": (
+            "I will read the PR template and the recent log first, build an evidence ledger of every command with observed or "
+            "not_observed, and draft the text from it: `Tested:` lists only commands observed to run, and everything prepared, "
+            "planned, or skipped goes under `Not-tested:` with its reason. I will not commit, push, or open the PR."
+        ),
+        "phase": "commit_pr_draft_prepared",
+        "next_action": "prepare_commit_pr_text",
+        "artifact_schema": "evidence_ledger/v1",
+        "claim_boundary_suffix": "It is not a commit, a push, an opened PR, a test pass, or CI evidence.",
+        "actions": [
+            {"id": "prepare_commit_pr_text", "label": "Draft the text", "style": "primary"},
+            {"id": "show_evidence_ledger", "label": "Show evidence ledger", "style": "secondary"},
+            {"id": "prepare_review_or_followup_handoff", "label": "Review first", "style": "secondary"},
+            {"id": "show_status", "label": "Show status", "style": "secondary"},
+        ],
+        "recommended_flow": [
+            "read_the_template_and_recent_log",
+            "build_the_evidence_ledger",
+            "draft_subject_and_body_in_the_repo_convention",
+            "project_tested_and_not_tested_from_the_ledger",
+        ],
+        "evidence_not_observed": [
+            "commit",
+            "push",
+            "pull request opened",
+            "test run",
+            "CI run",
         ],
     },
     "app-debugging": {

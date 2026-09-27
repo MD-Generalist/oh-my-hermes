@@ -1339,6 +1339,7 @@ _WORKFLOW_CONTEXT_CARD_BY_WORKFLOW = {
     "rust": "coding_handoff",
     "native-debugging": "coding_handoff",
     "app-debugging": "coding_handoff",
+    "commit-pr-authoring": "coding_handoff",
     # ULW fold (issue #954, PR D): the four contracts folding into
     # `ulw-work` share its coding-handoff lane so their capability family is
     # lane-derived (`delegate_coding_and_ship`) like their fold target.
@@ -1388,6 +1389,12 @@ _AWARENESS_MESSAGE_MARKERS = (
     "lost update",
     "one update is lost",
     "heisenbug",
+    # Commit and PR text: "message" and "body" alone are everywhere.
+    "commit message",
+    "commit-pr-authoring",
+    "pr body",
+    "pull request body",
+    "pull request description",
     "codebase onboarding",
     "performance bottleneck",
     "\uba54\ubaa8\ub9ac \ub204\uc218",
@@ -2524,6 +2531,34 @@ _ROUTE_HINT_RULES = (
         ),
         "tokens": (),
         "adjacent_workflows": ("native-debugging", "build-failure-triage", "verification-gate", "ultrawork"),
+    },
+    {
+        "id": "commit_pr_authoring",
+        "workflow": "commit-pr-authoring",
+        "lane": "coding_handoff",
+        "next_action": "prepare_commit_pr_text",
+        "reason": "The user wants the commit message or pull-request body written in the repository's own convention, with Tested listing only commands observed to run.",
+        "fallback_action": "ask_for_the_diff_and_the_commands_that_ran",
+        "not_evidence_yet": (
+            "commit",
+            "push",
+            "pull request opened",
+            "test pass",
+            "CI pass",
+        ),
+        # "pr description" is absent: "a PR description of our product launch
+        # for the press release" is public relations, and this table matches
+        # substrings with no code-word anchor.
+        "phrases": (
+            "commit-pr-authoring",
+            "commit message",
+            "squash message",
+            "pr body",
+            "pull request body",
+            "pull request description",
+        ),
+        "tokens": (),
+        "adjacent_workflows": ("code-review", "github-event-ops", "verification-gate", "ultrawork"),
     },
     {
         "id": "build_failure_triage",
@@ -6375,6 +6410,7 @@ def awareness_primer_payload() -> dict[str, object]:
                 "rust",
                 "native-debugging",
                 "app-debugging",
+                "commit-pr-authoring",
                 "ai-slop-cleaner",
                 "frontend-refactor",
                 "tech-debt-audit",
@@ -6742,6 +6778,7 @@ _DIRECT_WORKFLOW_NEXT_ACTIONS = {
     "rust": "prepare_rust_handoff",
     "native-debugging": "prepare_native_debug_plan",
     "app-debugging": "prepare_root_cause_investigation",
+    "commit-pr-authoring": "prepare_commit_pr_text",
     "accessibility-audit": "prepare_accessibility_audit",
     "visual-qa": "prepare_visual_qa",
     "workspace-file-operator": "prepare_workspace_file_operator_card",

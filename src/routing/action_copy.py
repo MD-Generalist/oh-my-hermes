@@ -78,6 +78,8 @@ NEXT_ACTION_LABELS: dict[str, str] = {
     "prepare_native_debug_plan": "preparing a native debugging plan",
     "prepare_root_cause_investigation": "preparing a root-cause investigation",
     "show_reproduction_record": "showing the reproduction record",
+    "prepare_commit_pr_text": "drafting the commit and PR text",
+    "show_evidence_ledger": "showing the evidence ledger",
     "prepare_accessibility_audit": "preparing an accessibility audit",
     "prepare_build_failure_triage": "preparing build failure triage",
     "prepare_browser_operator_card": "preparing a browser operator card",

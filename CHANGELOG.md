@@ -4,6 +4,18 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **Commit messages and PR bodies have an author: `omh-commit-pr-authoring`.**
+  "write the commit message" and "draft the PR body" used to ask a question
+  led by `backend` or `content-operator`. They now dispatch to a skill that reads
+  the repository's own PR template and recent log first, builds an evidence
+  ledger of every command as observed or not_observed, and drafts the text
+  from it. `Tested:` lists only rows observed to run; everything prepared,
+  planned, or skipped goes under `Not-tested:`, and no wording promotes a
+  row. OMH drafts the text only, and never commits, pushes, or opens the PR.
+  The PR phrases keep this route only beside a code word, so "a PR
+  description of our product launch for the press release" stays out
+  (#1711).
+
 - **Application-code debugging has an owner: `omh-app-debugging`.** A wrong
   value, a flaky test, or a lost update in a Python or TypeScript service
   used to dispatch to an execution lane that skipped the diagnosis ("a test
