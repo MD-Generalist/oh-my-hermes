@@ -45,7 +45,8 @@ so. Both triggers below are structured facts.
   and ask mode without a notifier. On an interactive gateway the call blocks
   in `_await_gateway_decision` and a timeout returns `status="blocked"`
   instead, so this cause does NOT cover the interactive approval stall the
-  issue measured at 168 minutes. That half of #1721 stays open.
+  issue measured at 168 minutes, and neither does the end-of-turn sentence
+  below, which keys on the unarmed-wait latch alone.
 
 Why this seam and not `pre_verify`
 ----------------------------------
@@ -64,6 +65,12 @@ loop -- so both exits the directive offers are actually reachable from it. The
 directive is delivered on the call that starts the remote work rather than at
 the turn's end, which is the earliest point at which the fact is known and the
 last point at which the model can still act on it cheaply.
+
+A turn that receives the directive, arms nothing anyway, and ends is caught
+once more at `transform_llm_output`, the one host seam after the tool loop:
+`honest_stop_output` appends a sentence telling the person the session has
+stopped. It keys on the directive's own per-turn latch and a fresh read of
+the process record, never on the final response's wording.
 
 The directive drives to neither exit by force. It names arming a watcher and
 telling the person plainly, and it says not to poll in the foreground -- a
@@ -216,8 +223,10 @@ APPROVAL_GATE_CAUSE: Final = "remote_wait_approval"
 #
 # The residual is stated rather than hidden: a session that arms a watcher for
 # one piece of work and later pushes a second without arming gets nothing.
-# That is a directive not issued, which is the direction this module fails in,
-# and it is the same turn the unshipped end-of-turn half of #1721 would catch.
+# That is a directive not issued, which is the direction this module fails in.
+# The end-of-turn sentence (`honest_stop_output`) does not catch it either: it
+# speaks only on a turn whose directive was delivered, and it honours the same
+# latch, for the reason given there.
 ARMS_WATCHERS_LATCH: Final = "remote_wait_arms_watchers"
 
 # ---------------------------------------------------------------------------
@@ -341,6 +350,21 @@ APPROVAL_GATE_TEXT: Final = (
 # host swallows exceptions from this seam: without this, a module that broke
 # would be indistinguishable from a session that had nothing to say.
 _declines: "Counter[str]" = Counter()
+
+
+# The end-of-turn half (#1721). The directive above rides a tool result while
+# the model can still act on it; this sentence is for the turn that received
+# the directive, armed nothing anyway, and ended. It is written to the PERSON
+# reading the final response, and it states only what the records show: this
+# turn started remote work, nothing is armed, and a session resumes only on a
+# message. It deliberately does not say the remote work is still running --
+# a foreground poll may already have seen it finish -- and it does not say the
+# model claimed to be waiting, because nothing here reads what the model said.
+HONEST_STOP_TEXT: Final = (
+    "[OMH] This turn started remote work and armed nothing to wake the session "
+    "when it finishes, so the session has stopped here: it resumes only when "
+    "someone sends it a message."
+)
 
 
 def remote_wait_declines() -> dict[str, int]:
@@ -509,6 +533,82 @@ def _consider_unarmed_wait(
         cause=UNARMED_WAIT_CAUSE,
         text=UNARMED_WAIT_TEXT.format(command=started),
     )
+
+
+def honest_stop_output(
+    *, response_text: object, session_id: object, turn_id: object, hermes_home: str = ""
+) -> str | None:
+    """Return *response_text* ending in the honest-stop sentence, or ``None``.
+
+    Hermes fires ``transform_llm_output`` once per turn, after the tool loop,
+    with the final response and the turn's own ``turn_id`` -- the same value
+    every tool hook of that turn received (`agent/turn_context.py` binds it
+    once as ``agent._current_turn_id``). It can replace the text; it cannot
+    re-enter the loop, so it can deliver the honest stop and never the
+    arm-a-watcher half. Those are the two honest exits the directive named,
+    and this is the only one still reachable once the turn has ended.
+
+    The decision reads two records and never ``response_text``:
+
+    * this turn's per-turn latch for ``UNARMED_WAIT_CAUSE``, recorded only when
+      the in-loop directive was actually carried onto a result, so it means
+      "this turn started remote work while nothing was armed";
+    * the process record, re-read now, through the same
+      ``armed_waiter_present`` the directive used. Arming a watcher after the
+      directive is exactly the exit it asked for, and that turn is left alone.
+
+    A session observed arming a notifying watcher at any point is also left
+    alone, even when that watcher has already exited: a process that finished
+    during the turn queued a completion notice that will still wake it, and
+    the record no longer shows it. That is ``ARMS_WATCHERS_LATCH``, the same
+    evidence the directive honours.
+
+    Appended rather than rewritten, because the CLI prints only the suffix of
+    a transformed response when the new text starts with the streamed one
+    (`cli.py::_post_stream_transform_output`); anything else re-prints the
+    whole response under a "transformed" banner. Fail-open like every other
+    entry here: any failure is counted and the response passes through.
+    """
+    try:
+        return _honest_stop(
+            response_text=response_text,
+            session_id=session_id,
+            turn_id=turn_id,
+            hermes_home=hermes_home,
+        )
+    except Exception as exc:  # noqa: BLE001 - the host swallows and
+        # debug-logs anything a transform raises, so a raise here would be a
+        # silent disappearance. Recorded by type; the response passes through.
+        _declines[f"error:{type(exc).__name__}"] += 1
+        return None
+
+
+def _honest_stop(
+    *, response_text: object, session_id: object, turn_id: object, hermes_home: str
+) -> str | None:
+    if not isinstance(response_text, str) or not response_text.strip():
+        _declines["end_of_turn_no_response"] += 1
+        return None
+    session, turn = _tracked_key(session_id), _tracked_key(turn_id)
+    if not session or not turn:
+        # `turn_cause_fired` answers True for an unkeyed pair, which is the
+        # right answer for suppressing a repeat and the wrong one here.
+        _declines["end_of_turn_unkeyed"] += 1
+        return None
+    if not turn_cause_fired(session_id=session, turn_id=turn, cause=UNARMED_WAIT_CAUSE):
+        _declines["end_of_turn_no_unarmed_wait"] += 1
+        return None
+    if engagement_count(session, ARMS_WATCHERS_LATCH):
+        _declines["end_of_turn_session_arms_watchers"] += 1
+        return None
+    armed = armed_waiter_present(session_id=session, hermes_home=hermes_home)
+    if armed is None:
+        _declines["end_of_turn_record_unreadable"] += 1
+        return None
+    if armed:
+        _declines["end_of_turn_waiter_armed"] += 1
+        return None
+    return f"{response_text}\n\n{HONEST_STOP_TEXT}"
 
 
 def _observe_background_spawn(session: str, result: object) -> bool | None:

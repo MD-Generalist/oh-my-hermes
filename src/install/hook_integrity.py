@@ -197,6 +197,18 @@ HOOK_REVIEWS: dict[str, dict[str, Any]] = {
             "spawned it (no file write, no runtime read, never blocks a spawn)"
         ),
     },
+    "transform_llm_output": {
+        "source_path": "hooks/result_transforms.py",
+        "event_scope": ("transform_llm_output",),
+        "reviewed_timeout_ms": 1000,
+        "capability": (
+            "one appended sentence on a turn's final response telling the "
+            "person the session has stopped, only when that turn started "
+            "remote work, received the unarmed-wait directive, and the live "
+            "process record still shows nothing armed to wake it (every "
+            "other response passes through untouched)"
+        ),
+    },
     "transform_tool_result": {
         "source_path": "hooks/result_transforms.py",
         "event_scope": ("transform_tool_result",),

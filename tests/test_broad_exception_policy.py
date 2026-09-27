@@ -432,6 +432,18 @@ CLASSIFIED_SITES: tuple[ClassifiedSite, ...] = (
         "accusing a session that may well be watching something.",
     ),
     ClassifiedSite(
+        "src/plugin_bundle/omh/remote_wait_nudge.py",
+        "honest_stop_output",
+        INTENTIONAL,
+        "The end-of-turn half of `annotate_remote_wait`, on `transform_llm_output`, which "
+        "the host also runs inside its own swallow (`agent/turn_finalizer.py::"
+        "_invoke_hook_safely`), so a raise would vanish. The handler records the failure by "
+        "type in the same decline tally `remote_wait_declines()` reads and returns None, "
+        "which the seam contract defines as 'leave the response alone'. It cannot "
+        "manufacture the sentence: that is returned only from the success path, after the "
+        "per-turn latch and a readable process record showing nothing armed.",
+    ),
+    ClassifiedSite(
         "src/plugin_bundle/omh/hooks/session_hooks.py",
         "subagent_start",
         INTENTIONAL,
@@ -450,8 +462,8 @@ CLASSIFIED_SITES: tuple[ClassifiedSite, ...] = (
 # function. `_write_candidate_batch`, `_is_catalog_question`, `pre_llm_call`,
 # `_resume_unlocked`, and `_execute_cell` each hold two handlers, so the handler
 # count is five above the anchor count.
-EXPECTED_HANDLER_COUNT = 47
-EXPECTED_ANCHOR_COUNT = 42
+EXPECTED_HANDLER_COUNT = 48
+EXPECTED_ANCHOR_COUNT = 43
 
 
 class DerivedSite(NamedTuple):

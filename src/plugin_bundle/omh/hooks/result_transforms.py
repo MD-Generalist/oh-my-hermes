@@ -1,4 +1,5 @@
-"""Composed ``transform_tool_result`` seam.
+"""Composed ``transform_tool_result`` seam, and the ``transform_llm_output``
+half of unarmed remote waits.
 
 This is the single registered entry for the hook; it chains the six OMH
 result transforms in a fixed order:
@@ -77,7 +78,7 @@ from typing import Any
 from ..code_mode_guidance import annotate_execute_code_result
 from ..engagement_nudges import annotate_engagement_nudge
 from ..kanban_readback import KANBAN_READBACK_TOOLS, transform_kanban_readback
-from ..remote_wait_nudge import annotate_remote_wait
+from ..remote_wait_nudge import annotate_remote_wait, honest_stop_output
 from ..truncated_read_recovery import annotate_truncated_read_recovery
 from .diff_presentation import transform_tool_result as _pad_diff_result
 
@@ -157,3 +158,22 @@ def transform_tool_result(**kwargs: Any) -> str | None:
     if padded is not None:
         return padded
     return annotated
+
+
+def transform_llm_output(**kwargs: Any) -> str | None:
+    """The end-of-turn half of unarmed remote waits (``remote_wait_nudge.py``).
+
+    Hermes fires this once per turn after the tool loop with ``response_text``,
+    ``session_id``, ``model``, ``platform`` and ``turn_id``
+    (`agent/turn_finalizer.py::_apply_output_hooks`); the first plugin to
+    return a non-empty string wins. It is composed here, beside the tool-result
+    seam, because the one pass it runs is the same pass's second half and
+    reads the latch the tool-result half records. The host passes no home, so
+    the process record resolves the way the tool-result half resolves it.
+    """
+    return honest_stop_output(
+        response_text=kwargs.get("response_text"),
+        session_id=kwargs.get("session_id"),
+        turn_id=kwargs.get("turn_id"),
+        hermes_home=str(kwargs.get("hermes_home", "") or ""),
+    )
