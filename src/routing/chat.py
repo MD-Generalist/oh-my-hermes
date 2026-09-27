@@ -69,6 +69,7 @@ from .policy import _github_event_ops_guard_applies
 from .policy import _github_issue_intake_guard_applies
 from .policy import _invocation_token
 from .recommend import (
+    everyday_sense_withheld,
     has_strong_named_catalog_owner,
     recommendation_for_definition,
     recommend_skills,
@@ -4662,6 +4663,11 @@ def _operator_surface_fast_path_decision(
         return None
     selected_skill, phrase, marker, reason = match
     if only_skill is not None and selected_skill != only_skill:
+        return None
+    # The fast path matched a phrase the scorer would have withdrawn the skill
+    # for ("what is media input on an old VCR"); see `EVERYDAY_SENSE_PHRASES`
+    # in `policy.py`.
+    if everyday_sense_withheld(routing_message, selected_skill):
         return None
     if selected_skill == "ralplan" and _is_fast_plain_direct_answer_question(routing_message):
         return None

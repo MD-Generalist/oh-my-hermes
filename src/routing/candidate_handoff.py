@@ -34,7 +34,7 @@ from .dispatch_evidence import OWN_EVIDENCE_FLOOR, own_evidence_score
 from .input_language import SUPPORT_MODEL_SELECTION_REQUIRED
 from .lexical_shortlist import LEXICAL_SCORE_FLOOR, lexical_anchor_terms, lexical_ranking, only_held_back_overlap
 from .policy import skill_is_negated
-from .recommend import offers_itself_withheld, recommendation_for_definition
+from .recommend import everyday_sense_withheld, offers_itself_withheld, recommendation_for_definition
 from ..skills.catalog import routable_definitions
 from ..workflows.hermes_planning import is_coding_shaped_task
 
@@ -230,6 +230,11 @@ def _lexical_shortlist(
         # A skill the user named in order to decline it ("don't use ultraqa")
         # is not offered back.
         if definition is None or skill in named or skill.startswith("jev-") or skill_is_negated(message, skill):
+            continue
+        # A skill whose only shared words are an everyday-English phrase of
+        # its own is not offered back by word overlap either; see
+        # `EVERYDAY_SENSE_PHRASES` in `policy.py`.
+        if everyday_sense_withheld(message, skill):
             continue
         # After a declined dispatch the ranking is admitted as it stands --
         # the router was confident enough to have dispatched, and the ranking
