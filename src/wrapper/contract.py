@@ -272,6 +272,8 @@ VISIBLE_ACTIONS = (
     "show_reproduction_record",
     "prepare_commit_pr_text",
     "show_evidence_ledger",
+    "prepare_git_repair_plan",
+    "show_pushed_state",
     "show_frontend_handoff",
     "record_browser_capture",
     "record_accessibility_check",
@@ -1103,6 +1105,8 @@ _ACK_PRIMARY_ACTIONS_BY_NEXT_ACTION = {
     "show_reproduction_record": ("show_reproduction_record", "Show reproduction"),
     "prepare_commit_pr_text": ("prepare_commit_pr_text", "Draft the text"),
     "show_evidence_ledger": ("show_evidence_ledger", "Show evidence ledger"),
+    "prepare_git_repair_plan": ("prepare_git_repair_plan", "Plan the git repair"),
+    "show_pushed_state": ("show_pushed_state", "Show what is pushed"),
     "prepare_accessibility_audit": ("prepare_accessibility_audit", "Audit accessibility"),
     "prepare_visual_qa": ("prepare_visual_qa", "Prepare visual QA"),
     "prepare_deliverable_package": ("prepare_deliverable_package", "Prepare deliverable"),
@@ -2178,6 +2182,39 @@ _WORKFLOW_OPERATIONS_CHAT_CARDS: dict[str, dict[str, object]] = {
             "miri run",
             "sanitizer run",
             "concurrency model check",
+        ],
+    },
+    "git-workflow": {
+        "kind": "git_repair_plan",
+        "headline": "I can plan this git repair, starting with what is already pushed.",
+        "body": (
+            "I will list each branch with its local head, its remote head, and who may have fetched it, then order the steps "
+            "for the conflict, the bisect, or the rewrite with a recovery point in front of every step that rewrites history. "
+            "Every force-push uses `--force-with-lease`, and counted or generated files are re-derived rather than picked."
+        ),
+        "phase": "git_repair_plan_prepared",
+        "next_action": "prepare_git_repair_plan",
+        "artifact_schema": "pushed_state_inventory/v1",
+        "claim_boundary_suffix": "It is not a resolved conflict, a bisect verdict, a rewritten history, or a push until the output is observed.",
+        "actions": [
+            {"id": "prepare_git_repair_plan", "label": "Plan the git repair", "style": "primary"},
+            {"id": "show_pushed_state", "label": "Show what is pushed", "style": "secondary"},
+            {"id": "prepare_commit_pr_text", "label": "Draft the text", "style": "secondary"},
+            {"id": "show_status", "label": "Show status", "style": "secondary"},
+        ],
+        "recommended_flow": [
+            "inventory_what_is_already_pushed",
+            "mark_every_rewriting_step",
+            "name_the_recovery_point_before_each_rewrite",
+            "force_push_only_with_force_with_lease",
+            "report_each_step_from_observed_output",
+        ],
+        "evidence_not_observed": [
+            "conflict resolution",
+            "bisect verdict",
+            "history rewrite",
+            "force-push",
+            "collaborator re-fetch",
         ],
     },
     "commit-pr-authoring": {

@@ -152,7 +152,9 @@ ROLE_CONTEXT_CHAR_LIMIT = 2600
 # 11497 -> 11589: one index line for the new `commit-pr-authoring` skill
 # (#1711); the name and the visible description window. Re-derived from the
 # producer.
-SKILL_INDEX_CHAR_LIMIT = 11589
+# 11589 -> 11674: one index line for the new `git-workflow` skill (#1695); the
+# name and the visible description window. Re-derived from the producer.
+SKILL_INDEX_CHAR_LIMIT = 11674
 # The longest single skill line in that index. Every description is already cut
 # to 60 characters, so what moves this is a longer skill name.
 SKILL_INDEX_LINE_CHAR_LIMIT = 100
@@ -506,7 +508,9 @@ PRE_LLM_CALL_CONTEXT_FALLBACK_CHAR_LIMIT = 6917
 # from the producer.
 # 445370 -> 448864: one capability row for the new `commit-pr-authoring` skill
 # (#1711); it adds no sibling boundary line. Re-derived from the producer.
-FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 448864
+# 448864 -> 452456: one capability row for the new `git-workflow` skill (#1695);
+# it adds no sibling boundary line. Re-derived from the producer.
+FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 452456
 FULL_CAPABILITY_SKILL_ITEM_CHAR_LIMIT = 9000
 # 100000 -> 102070: the same three domain workflows each add one standalone
 # capability row, again measured on the merged tree; warranted growth for three
@@ -563,7 +567,9 @@ FULL_CAPABILITY_SKILL_ITEM_CHAR_LIMIT = 9000
 # 123824 -> 124777: one standalone capability row for the new
 # `commit-pr-authoring` skill (#1711); warranted growth. Re-derived from the
 # producer.
-STANDALONE_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 124777
+# 124777 -> 125709: one standalone capability row for the new `git-workflow`
+# skill (#1695); warranted growth. Re-derived from the producer.
+STANDALONE_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 125709
 STANDALONE_CAPABILITY_SKILL_ITEM_CHAR_LIMIT = 2200
 # ULW fold context ceiling (issue #954, PR D). The limit is the pre-D measured
 # value of the full profile's `skill_body` chars on `main` @ acb9a060, in the

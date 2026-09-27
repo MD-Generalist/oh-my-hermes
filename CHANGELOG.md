@@ -4,6 +4,22 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **Git branch repair has an owner: `omh-git-workflow`.** "resolve this merge
+  conflict", "bisect to find which commit broke it" and "clean up this
+  branch's history before review" used to ask a question led by `memory-sync`,
+  `github-event-ops` or `code-review`. They now dispatch to a skill that first
+  inventories what is already pushed: each branch's local head, its remote head,
+  and whether others may have fetched it. It then orders the conflict
+  resolution, the bisect, or the rewrite, with a recovery point in front of
+  every step that rewrites history. Every force-push in the plan uses
+  `--force-with-lease`. Counted and generated files in a conflict are
+  re-derived from their producer, never picked. The conflict, bisect,
+  rewrite, stacked-branch and shared-checkout procedures load on demand from
+  `references/git-repair-method.md`. "bisect", "force push", "cherry-pick" and
+  "resolve the conflict" keep this route only beside a repository word, so an
+  angle, a car in the snow, an orchard and two teams in conflict stay out
+  (#1695).
+
 - **Commit messages and PR bodies have an author: `omh-commit-pr-authoring`.**
   "write the commit message" and "draft the PR body" used to ask a question
   led by `backend` or `content-operator`. They now dispatch to a skill that reads

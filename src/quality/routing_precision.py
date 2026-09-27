@@ -2914,6 +2914,41 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
         "",
         "commit-pr-authoring",
     ),
+    # `git-workflow` phrases outside a repository: an angle bisected with a
+    # compass, a car forced out of the snow, a conflict between two teams, and
+    # apples picked at an orchard.
+    RoutingPrecisionCase(
+        "bisect-an-angle-is-not-git-workflow",
+        "Bisecting an angle is geometry, not git bisect",
+        "how do I bisect an angle with a compass",
+        "answer_directly",
+        "direct_answer",
+        "git-workflow",
+    ),
+    RoutingPrecisionCase(
+        "force-push-a-car-is-not-git-workflow",
+        "Forcing a car out of the snow is not a force-push",
+        "force push the car out of the snow",
+        "answer_clarification",
+        "",
+        "git-workflow",
+    ),
+    RoutingPrecisionCase(
+        "team-conflict-is-not-git-workflow",
+        "A conflict between two teams is not a merge conflict",
+        "we need to resolve the conflict between the two teams",
+        "answer_clarification",
+        "",
+        "git-workflow",
+    ),
+    RoutingPrecisionCase(
+        "orchard-cherry-pick-is-not-git-workflow",
+        "Picking apples at an orchard is not a cherry-pick",
+        "cherry-pick the best apples at the orchard",
+        "answer_clarification",
+        "",
+        "git-workflow",
+    ),
 )
 
 
@@ -8347,6 +8382,54 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "commit-pr-authoring",
         "prepare_commit_pr_text",
         "commit_pr_draft",
+    ),
+    # #1695: conflict resolution, bisect, and history repair dispatch to the git
+    # lane. The first three are the issue's rows (memory-sync, github-event-ops,
+    # and code-review led the question before).
+    RoutingInterventionCase(
+        "resolve-merge-conflict-reaches-git-workflow",
+        "Resolving a merge conflict reaches the git lane",
+        "resolve this merge conflict",
+        "dispatch",
+        "git-workflow",
+        "prepare_git_repair_plan",
+        "git_repair_plan",
+    ),
+    RoutingInterventionCase(
+        "bisect-breaking-commit-reaches-git-workflow",
+        "Bisecting to the breaking commit reaches the git lane",
+        "bisect to find which commit broke it",
+        "dispatch",
+        "git-workflow",
+        "prepare_git_repair_plan",
+        "git_repair_plan",
+    ),
+    RoutingInterventionCase(
+        "branch-history-cleanup-reaches-git-workflow",
+        "Cleaning up a branch's history reaches the git lane, not review",
+        "clean up this branch's history before review",
+        "dispatch",
+        "git-workflow",
+        "prepare_git_repair_plan",
+        "git_repair_plan",
+    ),
+    RoutingInterventionCase(
+        "lockfile-rebase-conflict-reaches-git-workflow",
+        "A lockfile rebase conflict reaches the git lane",
+        "I have a rebase conflict in the lockfile, how do I resolve it",
+        "dispatch",
+        "git-workflow",
+        "prepare_git_repair_plan",
+        "git_repair_plan",
+    ),
+    RoutingInterventionCase(
+        "stacked-branch-restack-reaches-git-workflow",
+        "Restacking branches after the base merged reaches the git lane",
+        "rebase my stacked branches after the base merged",
+        "dispatch",
+        "git-workflow",
+        "prepare_git_repair_plan",
+        "git_repair_plan",
     ),
 )
 

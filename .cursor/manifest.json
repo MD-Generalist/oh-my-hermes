@@ -80,6 +80,8 @@
     "omh-frontend/references/taste-foundations.md": "2d4552c2ae32e0e1a18517d3faf74c016cdc1c946263201118cd27ccfb2a68d7",
     "omh-frontend/references/tui-craft.md": "13153858bf9da970915003cb22b42ff714fdfd351458f1a0cac20fd789fb477e",
     "omh-frontend/references/web-vitals-budgets.md": "7905f7913ff835eb84e7b9bd88059d52d7ede370312f2e24df8cb7ebf407a29b",
+    "omh-git-workflow/SKILL.md": "60eb92b8c4626ee655d92cd61a617b656d5ae16d550bce79c555cfaa7d2e66b0",
+    "omh-git-workflow/references/git-repair-method.md": "7c5b14e1d8972467fc7a59e84bbd7c200106e983d7ef277d147ddb5792b7980e",
     "omh-github-event-ops/SKILL.md": "71dde037dd2587a0dd1f8843bbab1427c1ed41a8fac7c134f2b32409513b29b1",
     "omh-github-issue-intake/SKILL.md": "e284354c8060b6f7920ff40bd96a9e51163c8905b78528a2448104491cc442f6",
     "omh-harness-session-inventory/SKILL.md": "31d3f8b655da88fd3f85ef3369c617171a087c476de8de34febda38eaf00f330",
@@ -220,6 +222,7 @@
     "omh-finance-analysis",
     "omh-frontend",
     "omh-frontend-refactor",
+    "omh-git-workflow",
     "omh-github-event-ops",
     "omh-github-issue-intake",
     "omh-harness-session-inventory",
@@ -284,7 +287,7 @@
     "ulw-work"
   ],
   "source": "agent-skills",
-  "source_digest": "ac13e4b8adde9aaf2398fb0893606f8f3c037cfb6e6adeae53e31ea4c1a7e35e",
+  "source_digest": "d87e0a4cd10890f3fc85d2ade5a858376cb4ca73398823523de6da92066787d3",
   "targets": {
     "repo": ".agents/skills",
     "user": ".agents/skills"
