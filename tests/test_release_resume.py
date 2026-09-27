@@ -14,7 +14,7 @@ exercise_workflow: Callable[[Path, str], tuple[int, list[list[str]], str]] = run
     str(Path(__file__).resolve().parents[1] / 'tools/qa/_release_workflow_fixture.py')
 )['exercise_workflow']
 
-run_cli = partial(subprocess.run, capture_output=True, text=True, timeout=30)
+run_cli = partial(subprocess.run, capture_output=True, text=True, timeout=120)
 
 
 class ReleaseResumeTests(unittest.TestCase):

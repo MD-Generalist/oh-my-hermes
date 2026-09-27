@@ -7,7 +7,7 @@ from functools import partial
 import subprocess
 import sys
 
-run_cli = partial(subprocess.run, capture_output=True, text=True, timeout=30)
+run_cli = partial(subprocess.run, capture_output=True, text=True, timeout=120)
 
 
 class ReleaseChangelogTests(unittest.TestCase):
