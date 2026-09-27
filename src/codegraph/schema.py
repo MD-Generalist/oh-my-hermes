@@ -12,6 +12,9 @@ CODEGRAPH_SCHEMA_VERSION = "omh_codegraph/v1"
 CODEGRAPH_CONTEXT_SCHEMA_VERSION = "omh_codegraph_context/v1"
 CODEGRAPH_SUMMARY_SCHEMA_VERSION = "omh_codegraph_summary/v1"
 CODEGRAPH_ARTIFACT_RELATIVE_PATH = Path(".omh") / "codegraph" / "codegraph.json"
+# The truth level a codegraph-derived handoff context item carries: a static
+# reading of local source, below anything observed at run time.
+CODEGRAPH_CONTEXT_TRUTH_LEVEL = "static_analysis_hint"
 CLAIM_BOUNDARY = (
     "Static local analysis is prepared context only. "
     "Static local analysis is not execution/review/CI/merge evidence. "

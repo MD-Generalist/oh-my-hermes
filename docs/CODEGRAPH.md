@@ -127,9 +127,31 @@ The repo's own `omh codegraph` index is stdlib-`ast` and Python-only; for multi-
 | --- | --- |
 | `omh codegraph build [--write]` | The full graph (`omh_codegraph/v1`: files, symbols, import edges); `--write` stores it at `.omh/codegraph/codegraph.json`. |
 | `omh codegraph summary` | Stats, entrypoint files, and warnings (`omh_codegraph_summary/v1`). |
-| `omh codegraph handoff --task <text>` | Task-ranked focus files and symbols (`omh_codegraph_context/v1`). |
+| `omh codegraph handoff --task <text> [--changed <paths...>]` | Structurally ranked focus files and task-matched symbols (`omh_codegraph_context/v1`). |
 | `omh codegraph uml` | An interface-level PlantUML diagram plus a render plan (`codebase_uml/v1`). |
 | `omh codegraph tests --changed <paths...>` | The test modules the recorded import edges reach from the changed files (`codegraph_test_selection/v1`). |
+
+### How focus files are ranked, and where they go
+
+`omh codegraph handoff` ranks files with a personalized PageRank over the
+graph's `imports_internal` edges. Rank flows from an importer to what it
+imports, and the walk restarts at the files whose path, definitions, or imports
+contain a task term (a term carried by few files weighs more than one carried
+by many; the twelve strongest matches seed) and at every `--changed` path. A
+module the task's files depend on therefore outranks a file that only shares a
+word with the task. With no match and no changed path the restart is uniform,
+which ranks the repository's most-imported modules first. The order is
+deterministic: fixed damping (0.85), iteration cap, and tolerance, with equal
+ranks broken by path.
+
+A coding handoff built with a project root (`omh coding delegate --project-root`)
+reads `.omh/codegraph/codegraph.json` when it exists and attaches the ranked
+files as the handoff's context pack (`source: omh_codegraph`, truth level
+`static_analysis_hint`); files the caller put in the input manifest seed the
+ranking. The handoff never builds a graph itself, so refresh the artifact with
+`omh codegraph build --write` when the tree has moved. A context pack the
+caller supplies wins, and an artifact that cannot be read or has another schema
+is reported under `codegraph_context_not_attached`.
 
 ### Selecting tests from a changed file set
 
