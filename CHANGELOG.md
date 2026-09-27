@@ -14,7 +14,8 @@ All notable changes will be documented here.
   `I want`), a main clause after the cadence that opens on its verb, or a
   clause about a thing (`the report`, `our snapshot`) that carries a
   directive modal (`should`, `needs to`) or a passive of a delivery verb
-  (`gets sent`). A clause about a person (`every morning I ...`) reads as a
+  (`gets sent`) in its main clause, before any subordinator (`that`,
+  `until`, `because`) or reporting verb (`says`, `thinks`). A clause about a person (`every morning I ...`) reads as a
   report even with a modal (`I should really ...`). Separately, the feedback-triage guard's weakest branch
   (a product noun beside a defect noun, no reporter) read "fix the null
   pointer crash in the checkout service" as a customer report and dispatched
@@ -25,7 +26,7 @@ All notable changes will be documented here.
   Slack ...") and defect reports ("the checkout page crashes on submit")
   still dispatch, and so do subject-initial and passive scheduling requests
   ("every morning the report should go to Slack", "every morning our
-  dashboard snapshot gets sent to leadership"). Eleven negative controls and
+  dashboard snapshot gets sent to leadership"). Sixteen negative controls and
   ten intervention cases pin both sides; no existing corpus case moved. Known
   limit: a thing-subject habit with a modal ("every morning my dog needs to
   go out") still dispatches, as on main; separating it needs noun vocabulary.

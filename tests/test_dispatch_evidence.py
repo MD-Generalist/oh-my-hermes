@@ -297,6 +297,17 @@ class CadencePhraseNeedsARequestTests(unittest.TestCase):
             with self.subTest(message=message):
                 self.assertFalse(policy.reads_as_a_request(message))
 
+    def test_only_the_main_clause_carries_the_modal(self) -> None:
+        for message in (
+            "every week the coach feels the goalkeeper should train harder",
+            "every morning the kettle whistles while the kids must find their shoes",
+            "every night the neighbours know the band must stop at ten",
+        ):
+            with self.subTest(message=message):
+                self.assertFalse(policy.reads_as_a_request(message))
+        # `that` as the opener is a determiner, not a boundary.
+        self.assertTrue(policy.reads_as_a_request("every morning that report should go to the leads"))
+
     def test_pure_non_ascii_input_reads_as_no_request(self) -> None:
         # `dispatch_evidence` must keep its non-ASCII exemption ahead of the
         # cadence branch; this is the reason.

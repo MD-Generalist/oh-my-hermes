@@ -331,7 +331,9 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # non-code fix commands on a product noun and a defect noun.
             # The #1893 review adds three: modals said of a person (advice,
             # obligation, belief), which stay narration.
-            expected=324,
+            # The #1893 re-review adds five: a modal inside a subordinate or
+            # reported clause, which does not make the main clause a request.
+            expected=329,
             sites=(
                 "tests/test_cli.py",
                 "tests/test_hermes_ux_quality.py",

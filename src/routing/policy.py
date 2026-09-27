@@ -6394,6 +6394,17 @@ _DIRECTIVE_MODAL_PAIRS = frozenset(
 )
 # A passive of a delivery verb (`gets sent`, `be emailed`) schedules a thing to
 # reach someone. Other passives (`the road is blocked`) describe a state.
+# Where the main clause ends: a subordinator or complementizer opens another
+# clause, and a reporting verb hands over to the clause it reports. A modal
+# past either belongs to that clause (`the team notices that karen should
+# call`), not to the thing the main clause is about.
+_CLAUSE_BOUNDARIES = frozenset(
+    {"that", "until", "because", "when", "while", "if", "unless", "after", "before", "since", "so"}
+)
+_REPORTING_VERBS = frozenset(
+    {"say", "says", "said", "notice", "notices", "noticed", "think", "thinks", "thought",
+     "feel", "feels", "felt", "know", "knows", "knew"}
+)
 _PASSIVE_AUXILIARIES = frozenset({"get", "gets", "got", "be", "is", "are", "being"})
 _DELIVERY_PARTICIPLES = frozenset(
     {"sent", "emailed", "mailed", "posted", "delivered", "shared", "published", "forwarded"}
@@ -6431,7 +6442,8 @@ def reads_as_a_request(message: str) -> bool:
       modal (`I should really ...`);
     - a clause about a thing (`the report ...`, `our snapshot ...`) is a
       request only when it carries a directive modal (`should`, `needs to`)
-      or a passive of a delivery verb (`gets sent`); otherwise it reports
+      or a passive of a delivery verb (`gets sent`) in its own main clause,
+      before any subordinator or reporting verb; otherwise it reports
       (`each day the bus is late`).
 
     A question is left to the rest of the router, which already reads it.
@@ -6448,6 +6460,12 @@ def reads_as_a_request(message: str) -> bool:
         return False
     if words[0] not in _NOUN_PHRASE_OPENERS:
         return True
+    # Only the main clause. The opener itself may be `that` (`that report
+    # should ...`), so the cut starts after it.
+    for index in range(1, len(words)):
+        if words[index] in _CLAUSE_BOUNDARIES or words[index] in _REPORTING_VERBS:
+            words = words[:index]
+            break
     pairs = list(zip(words, words[1:]))
     return (
         bool(_DIRECTIVE_MODALS & set(words))

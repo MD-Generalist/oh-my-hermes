@@ -2543,6 +2543,44 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
         "answer_clarification",
         "",
     ),
+    # A modal past a subordinator or a reporting verb belongs to the embedded
+    # clause, not to the thing the main clause is about (#1893 re-review).
+    # The first three are the review's; the last two share the shape.
+    RoutingPrecisionCase(
+        "cadence-modal-after-complementizer-is-not-a-schedule",
+        "A modal inside a `that` clause belongs to that clause",
+        "every morning the team notices that karen should call the client",
+        "answer_clarification",
+        "",
+    ),
+    RoutingPrecisionCase(
+        "cadence-modal-after-reporting-verb-is-not-a-schedule",
+        "A modal in what someone says is not a directive about the subject",
+        "every day the manager says someone must fix the printer",
+        "answer_clarification",
+        "",
+    ),
+    RoutingPrecisionCase(
+        "cadence-modal-after-until-is-not-a-schedule",
+        "A modal in an `until` clause is not a scheduled job",
+        "every morning the office is quiet until someone must leave early",
+        "answer_clarification",
+        "",
+    ),
+    RoutingPrecisionCase(
+        "cadence-modal-after-thinks-is-not-a-schedule",
+        "A modal in what someone thinks is not a scheduled job",
+        "every morning the barista thinks the espresso machine should be replaced",
+        "answer_clarification",
+        "",
+    ),
+    RoutingPrecisionCase(
+        "cadence-modal-after-because-is-not-a-schedule",
+        "A modal in a `because` clause is not a scheduled job",
+        "every day the hallway smells of paint because the landlord must repaint it",
+        "answer_clarification",
+        "",
+    ),
     # `fix` plus a product noun and a defect noun made the feedback guard read
     # a command as a customer report (#1892). None of these is code and none
     # hands over a report; the positive halves are
