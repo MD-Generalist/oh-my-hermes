@@ -126,7 +126,7 @@ jobs:
       - name: Unit tests (shard ${{ matrix.shard }})
         run: >-
           python tools/test_sharding/run.py --plan shard-plan/plan.json
-          --lane linux-${{ matrix.python-version }} --shard ${{ matrix.shard }}
+          --lane linux-${{ matrix.python-version }} --shard ${{ matrix.shard }} --workers 2
           --out results/result-linux-${{ matrix.python-version }}-${{ matrix.shard }}.json
       - name: Upload shard result
         if: always()
@@ -284,7 +284,7 @@ jobs:
           PYTHONPATH: tests
         run: >-
           python tools/test_sharding/run.py --plan shard-plan/plan-windows.json
-          --lane windows-3.12 --shard ${{ matrix.shard }}
+          --lane windows-3.12 --shard ${{ matrix.shard }} --workers 2
           --out results/result-windows-3.12-${{ matrix.shard }}.json
       - name: Upload shard result
         if: always()
