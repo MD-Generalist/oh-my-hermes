@@ -44,6 +44,7 @@ class ShardResult:
     lane: str
     kind: str
     shard: int
+    attempt: int
     planned: tuple[str, ...]
     executed: tuple[str, ...]
     skipped: tuple[str, ...]
@@ -94,6 +95,9 @@ def load_result(path: Path) -> ShardResult:
             raise ShardingError(f"result {path.name} quarantine must not carry a shard")
         case _:
             raise ShardingError(f"result {path.name} has an unknown kind: {kind}")
+    attempt = payload.get("attempt")
+    if isinstance(attempt, bool) or not isinstance(attempt, int) or attempt < 1:
+        raise ShardingError(f"result {path.name} has a malformed attempt")
     durations = payload.get("durations")
     if not isinstance(durations, dict) or not all(
         isinstance(test_id, str)
@@ -107,6 +111,7 @@ def load_result(path: Path) -> ShardResult:
         lane=lane,
         kind=kind,
         shard=shard_key,
+        attempt=attempt,
         planned=_string_list(payload, "planned", path),
         executed=_string_list(payload, "executed", path),
         skipped=_string_list(payload, "skipped", path),
@@ -208,6 +213,34 @@ def parse_lane_plan(raw: str) -> tuple[str, Path]:
     return lane.strip(), Path(path.strip())
 
 
+def newest_attempts(results: list[ShardResult]) -> tuple[list[ShardResult], list[str]]:
+    """Keep each lane shard's newest-attempt result; two in one attempt fail closed.
+
+    "Re-run failed jobs" re-executes only the failed shards, so the results
+    directory holds the earlier attempt's result for a re-run shard beside the
+    new one (issue #1894). The newest attempt is the one that ran last on this
+    commit, so it wins in both directions: a fresh green replaces a stale red,
+    and a fresh red is never hidden behind a stale green.
+    """
+
+    seen: set[tuple[str, int, int]] = set()
+    newest: dict[tuple[str, int], ShardResult] = {}
+    for result in results:
+        label = "quarantine" if result.shard == QUARANTINE_KEY else f"shard {result.shard}"
+        if (result.lane, result.shard, result.attempt) in seen:
+            raise ShardingError(f"duplicate result for {result.lane} {label} in attempt {result.attempt}")
+        seen.add((result.lane, result.shard, result.attempt))
+        current = newest.get((result.lane, result.shard))
+        if current is None or result.attempt > current.attempt:
+            newest[result.lane, result.shard] = result
+    notes = [
+        f"superseded: {lane} {'quarantine' if shard == QUARANTINE_KEY else f'shard {shard}'} attempt {attempt} by attempt {newest[lane, shard].attempt}"
+        for lane, shard, attempt in sorted(seen)
+        if attempt < newest[lane, shard].attempt
+    ]
+    return list(newest.values()), notes
+
+
 def reconcile(plans: dict[str, dict[int, tuple[str, ...]]], results: list[ShardResult]) -> list[str]:
     """Prove each lane executes every ID of its own plan once and no lane is absent."""
 
@@ -303,8 +336,8 @@ def main(argv: list[str] | None = None) -> int:
         paths = sorted(args.results_dir.glob("*.json"))
         if not paths:
             raise ShardingError(f"no shard results found in {args.results_dir}")
-        results = [load_result(path) for path in paths]
-        lines = reconcile(plans, results)
+        results, superseded = newest_attempts([load_result(path) for path in paths])
+        lines = reconcile(plans, results) + superseded
         if args.timings_out is not None:
             write_timings(args.timings_out, results, {test_id for plan in plans.values() for tests in plan.values() for test_id in tests})
     except ShardingError as exc:

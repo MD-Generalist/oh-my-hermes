@@ -150,6 +150,50 @@ Nothing depends on every main run completing:
 goes red at its first step. That costs one short job, and it keeps a skipped
 `aggregate` from ever standing in for a green one.
 
+## Re-running Failed Jobs
+
+"Re-run failed jobs" (`gh run rerun --failed`) re-executes only the failed
+shard jobs and the jobs that depend on them, `aggregate` among them. The
+shards that passed are carried over, and so are their result artifacts. The
+re-run shard uploads a new result into the same run. The earlier attempt's
+artifact stays: GitHub numbers the new attempt `github.run_attempt` 2 (the
+[`github` context](https://docs.github.com/en/actions/reference/workflows-and-actions/contexts#github-context)),
+and `upload-artifact`'s one-artifact-per-name rule did not stop attempt 2
+from uploading a second `shard-result-windows-3.12-0` in run 36302750878.
+
+Before #1894, both attempts used the same artifact name. `download-artifact`
+downloads a pattern with `latest: true`, which keeps one artifact per name,
+choosing the highest artifact ID
+(`filterLatest` in [`actions/toolkit` `list-artifacts.ts`](https://github.com/actions/toolkit/blob/main/packages/artifact/src/internal/find/list-artifacts.ts)).
+Artifact IDs are not issued in creation order. In run 36302750878, attempt 2's
+green result got ID 10926093432, lower than attempt 1's red result at
+10926586117. `aggregate` therefore reconciled the stale red result and
+reported "windows-3.12 shard 0 reports 0 failures, 1 errors" over a green
+re-run. `overwrite: true` was rejected. Its delete filters by the current job
+run's backend ID and picks among same-name artifacts by the same ID order
+(`deleteArtifactInternal` in
+[`delete-artifact.ts`](https://github.com/actions/toolkit/blob/main/packages/artifact/src/internal/delete/delete-artifact.ts)).
+Nobody has observed what that filter returns across attempts. Where it does
+remove the earlier artifact, it also erases that attempt's record.
+
+Now every shard and quarantine result carries the attempt in three places: the
+artifact name (`...-attempt-${{ github.run_attempt }}`), the file name, and
+the result JSON (`run.py --attempt`). No two attempts share a name, so the
+download keeps them all. `aggregate.py` keeps each lane shard's newest
+attempt, and every other check stays fail-closed:
+
+- The newest attempt wins in both directions. A fresh green result replaces a
+  stale red one, and a stale green result can never hide a fresh red one.
+- A shard with no result in any attempt is red (`missing result`).
+- Two results for one shard in the same attempt are red (`duplicate result
+  ... in attempt N`).
+- A result without a positive integer `attempt` is red at the JSON boundary.
+- A re-run shard job that fails before it uploads is still red, because
+  `Require green shard jobs` reads the job's result for this attempt.
+
+A green `aggregate` lists each superseded result as
+`superseded: <lane> shard <n> attempt 1 by attempt 2`.
+
 ## Repository Settings
 
 Read-only inspection of `rlaope/oh-my-hermes` on 2026-09-04:

@@ -3,6 +3,7 @@
 # python tools/test_sharding/run.py --plan plan.json --lane linux-3.12 --shard 0 --out result.json
 # python tools/test_sharding/run.py --plan plan.json --lane linux-3.12 --shard 0 --workers 4 --out result.json
 # python tools/test_sharding/run.py --plan plan.json --lane linux-3.12 --quarantine --out result.json
+# (CI adds --attempt ${{ github.run_attempt }} so a re-run's result supersedes the earlier attempt's)
 """Run exactly one planned shard or quarantine and record its lane-local result.
 
 With `--workers N` (N > 1) a shard's tests run in N worker processes, one test
@@ -52,6 +53,7 @@ class ShardTarget:
     lane: str
     kind: str
     shard: int | None
+    attempt: int
 
 
 def flatten_suite(suite: unittest.TestSuite) -> list[unittest.TestCase]:
@@ -152,6 +154,7 @@ def result_payload(target: ShardTarget, planned: list[str], recorded: dict[str, 
         "lane": target.lane,
         "kind": target.kind,
         "shard": target.shard,
+        "attempt": target.attempt,
         "planned": sorted(planned),
         "executed": sorted(outcomes["passed"]),
         "skipped": sorted(outcomes["skipped"]),
@@ -372,6 +375,12 @@ def _parser() -> argparse.ArgumentParser:
     target.add_argument("--shard", type=int)
     target.add_argument("--quarantine", action="store_true")
     parser.add_argument("--out", type=Path, required=True)
+    parser.add_argument(
+        "--attempt",
+        type=int,
+        default=1,
+        help="workflow run attempt that produced this result (CI passes github.run_attempt); the aggregate reconciles each shard's newest attempt",
+    )
     parser.add_argument("--start-dir", type=Path, default=Path("tests"))
     parser.add_argument(
         "-j",
@@ -395,6 +404,9 @@ def main(argv: list[str] | None = None) -> int:
     if not args.lane.strip():
         print("test sharding: lane must be non-empty", file=sys.stderr)
         return 2
+    if args.attempt < 1:
+        print("test sharding: --attempt must be at least 1", file=sys.stderr)
+        return 2
     if args.workers < 1:
         print("test sharding: --workers must be at least 1", file=sys.stderr)
         return 2
@@ -405,7 +417,7 @@ def main(argv: list[str] | None = None) -> int:
     except ShardingError as exc:
         print(f"test sharding: {exc}", file=sys.stderr)
         return 2
-    target = ShardTarget(args.lane, kind, shard)
+    target = ShardTarget(args.lane, kind, shard, args.attempt)
     if args.workers == 1 or kind == "quarantine":
         result = unittest.TextTestRunner(resultclass=RecordingResult, verbosity=1).run(suite)
         payload = result_payload(target, planned, result.outcomes, result.durations)
