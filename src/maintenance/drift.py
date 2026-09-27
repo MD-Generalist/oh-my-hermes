@@ -327,7 +327,9 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # Strict guard trust adds one: a question about what a Playwright
             # task costs, the negative half of browser-operator's own-phrase
             # intervention case.
-            expected=313,
+            # #1892 adds eight: four habits told with a cadence phrase and four
+            # non-code fix commands on a product noun and a defect noun.
+            expected=321,
             sites=(
                 "tests/test_cli.py",
                 "tests/test_hermes_ux_quality.py",
@@ -394,7 +396,10 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # Strict guard trust adds one: a Playwright task reaching
             # browser-operator on its own phrase, once its guard-carried case
             # became a clarify.
-            expected=486,
+            # #1892 adds three: a cadence request that still dispatches, a
+            # command to fix a product crash that asks with the coding lane
+            # first, and a report of the same crash that still triages.
+            expected=489,
             sites=(
                 "tests/test_cli.py",
                 "tests/test_hermes_ux_quality.py",

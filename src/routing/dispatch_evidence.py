@@ -25,7 +25,9 @@ Strong evidence:
   (`code review`, `ulw-context`, `$ulw`), or its multi-word name, unless
   another scored skill said as many phrases of its own and the winner's own
   evidence does not lead it by `PHRASE_LEAD` -- two even phrases are a
-  choice, not a decision;
+  choice, not a decision. A phrase that is only a cadence (`every morning`)
+  counts only when the message reads as a request: it says when something
+  happens, so in a report (`every morning I ...`) it names no job;
 - a trusted intent guard: one that matches an intent shape and, where it was
   measured deciding dispatches, was right at least three times for every
   wrong. The table is `GUARD_DISPATCH_TRUST` in `routing/policy.py`;
@@ -40,6 +42,8 @@ fires on co-occurring topic words rather than an intent shape.
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+
+from .policy import is_cadence_phrase, reads_as_a_request
 
 
 EVIDENCE_EXPLICIT = "explicit"
@@ -171,6 +175,11 @@ def dispatch_evidence(
     if any(guard_trust.get(label) == GUARD_TRUSTED for label in labels if _kind(label) == "guard"):
         return EVIDENCE_TRUSTED_GUARD
     phrases = phrase_count(labels)
+    if phrases and not reads_as_a_request(message):
+        # A cadence phrase says when, never what: `every morning` is the
+        # skill's own phrase in a request and a habit in a report. Without a
+        # request shape it is not a phrase the skill can dispatch on.
+        phrases -= sum(1 for label in labels if _kind(label) == "trigger" and is_cadence_phrase(_value(label)))
     if phrases:
         own = own_evidence_score(labels)
         if not any(

@@ -234,5 +234,102 @@ class RecurringIssueDigestTests(unittest.TestCase):
                 self.assertEqual(route["selected_skill"], "github-issue-intake")
 
 
+class CadencePhraseNeedsARequestTests(unittest.TestCase):
+    """#1892: a cadence phrase says when, not what.
+
+    `every morning` is `automation-blueprint`'s own trigger. In a request it
+    names the schedule; in a report it names a habit, and the own-phrase rule
+    dispatched on it either way.
+    """
+
+    def test_the_classifier_drops_a_cadence_phrase_only_outside_a_request(self) -> None:
+        labels = ["trigger:every morning", "trigger:morning"]
+        self.assertEqual(_classify(labels, message="every morning send me the build status"), EVIDENCE_TRIGGER_PHRASE)
+        self.assertEqual(_classify(labels, message="every morning the bus is late"), EVIDENCE_WEAK)
+        # A phrase that names a job is not a cadence, request or not.
+        self.assertEqual(_classify(["trigger:daily digest"], message="the daily digest was late"), EVIDENCE_TRIGGER_PHRASE)
+
+    def test_cadence_phrase_is_frequency_and_time_only(self) -> None:
+        for phrase in ("every morning", "every day", "each monday"):
+            with self.subTest(phrase=phrase):
+                self.assertTrue(policy.is_cadence_phrase(phrase))
+        for phrase in ("daily digest", "every morning digest", "code review", "every"):
+            with self.subTest(phrase=phrase):
+                self.assertFalse(policy.is_cadence_phrase(phrase))
+
+    def test_a_request_is_an_imperative_or_a_request_frame(self) -> None:
+        for message in (
+            "every morning send me the build status",
+            "send me the open incidents every morning",
+            "please, every day, summarize the new tickets",
+            "I want a digest of failed deploys every morning",
+            "remind me every day to stretch",
+            "can the report go out every morning?",
+        ):
+            with self.subTest(message=message):
+                self.assertTrue(policy.reads_as_a_request(message))
+        for message in (
+            "every morning I drink tea on the balcony",
+            "every day my sister texts me a crossword clue",
+            "each morning the office smells of toast",
+            "we meet every morning at nine",
+        ):
+            with self.subTest(message=message):
+                self.assertFalse(policy.reads_as_a_request(message))
+
+    def test_the_issue_sentence_asks_with_automation_first(self) -> None:
+        route = route_chat_message("every morning I drink coffee before checking email", source="discord")
+        self.assertEqual(route["action"], "clarify")
+        self.assertEqual(route["candidate_skill"], "automation-blueprint")
+
+    def test_the_recurring_request_still_dispatches(self) -> None:
+        route = route_chat_message(
+            "every morning check release risk and tell me on Slack only if something changed", source="discord"
+        )
+        self.assertEqual(route["action"], "dispatch")
+        self.assertEqual(route["selected_skill"], "automation-blueprint")
+
+
+class CommandedEditIsNotAFeedbackReportTests(unittest.TestCase):
+    """#1892: a product noun beside a defect noun is a topic, not a report.
+
+    The feedback guard's co-occurrence branch read "fix the ... crash in the
+    checkout ..." as a customer report and dispatched triage on trust earned by
+    the reporter-shaped branches. A command to change something is not a
+    report; a named reporter still is.
+    """
+
+    def _guard(self, message: str) -> bool:
+        from omh.routing.localization import normalized_phrase, routing_tokens
+
+        normalized = normalized_phrase(message)
+        return policy._feedback_before_coding_guard_applies(normalized, set(routing_tokens(normalized)))
+
+    def test_a_commanded_edit_does_not_fire_the_co_occurrence_branch(self) -> None:
+        for message in (
+            "fix the null pointer crash in the checkout service",
+            "fix the broken wheel on my shopping cart",
+            "update my billing address because the old one keeps failing at the bank",
+        ):
+            with self.subTest(message=message):
+                self.assertFalse(self._guard(message))
+
+    def test_a_report_still_fires_it(self) -> None:
+        for message in (
+            "the checkout page crashes on submit",
+            "checkout keeps crashing for users since yesterday",
+            "users report the checkout crashes after login, fix it",
+            "customers say billing fails, fix the refund issue",
+        ):
+            with self.subTest(message=message):
+                self.assertTrue(self._guard(message))
+
+    def test_the_issue_sentence_asks_with_a_coding_skill_first(self) -> None:
+        route = route_chat_message("fix the null pointer crash in the checkout service", source="discord")
+        self.assertEqual(route["action"], "clarify")
+        self.assertNotEqual(route["candidate_skill"], "feedback-triage")
+        self.assertEqual(route["candidate_skill"], "native-debugging")
+
+
 if __name__ == "__main__":
     unittest.main()

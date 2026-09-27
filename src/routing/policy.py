@@ -5574,7 +5574,7 @@ GUARD_DISPATCH_TRUST: dict[str, tuple[str, str]] = {
     "doctor_health_before_skill_catalog": (GUARD_TRUSTED, "OMH install or setup health named as the problem; no measured record as a winner, keeps its shape label"),
     "durable_research_goal_before_wiki": (GUARD_TRUSTED, "keep-researching-until-closed shape; no measured record as a winner, keeps its shape label"),
     "executor_runtime_readiness_before_generic_advice": (GUARD_TRUSTED, "an executor named with a can-it-run or connect question; narrowed off comparisons and session inventories; no measured record as a winner, keeps its shape label"),
-    "feedback_before_coding": (GUARD_TRUSTED, "a customer or user report of a defect handed over for triage; narrowed off replies, filing, test commands, and system memory; measured 1 right / 1 wrong; kept trusted: demoting it breaks the known-lanes baseline and route-hint alignment"),
+    "feedback_before_coding": (GUARD_TRUSTED, "a customer or user report of a defect handed over for triage; narrowed off replies, filing, test commands, system memory, and a product-plus-defect topic under an edit command (#1892); measured 1 right / 1 wrong; kept trusted: demoting it breaks the known-lanes baseline and route-hint alignment"),
     "gateway_intent_before_feedback_triage": (GUARD_TRUSTED, "messenger thread or delivery policy named as the task; measured 2 right / 0 wrong"),
     "generated_artifact_provenance_before_deliverable_package": (GUARD_TRUSTED, "asks whether a change touches a generated file; no measured record as a winner, keeps its shape label"),
     "github_event_ops_before_generic_planning": (GUARD_TRUSTED, "an explicit PR, CI, or issue-to-PR event; measured 0 right / 1 wrong; kept trusted: demoting it removes no measured wrong dispatch and moves canonical pins"),
@@ -6376,6 +6376,55 @@ def has_cadence(normalized_query: str, query_tokens: set[str]) -> bool:
     return False
 
 
+_CADENCE_ADVERBS = frozenset({"every", "each", "daily", "weekly", "monthly", "hourly", "nightly"})
+# Closed-class words that open a clause as its subject: a pronoun, a
+# possessive, or an article. A clause that opens on one says what someone or
+# something does; an imperative opens on its verb.
+_CLAUSE_SUBJECT_OPENERS = frozenset(
+    {
+        "i", "we", "he", "she", "they", "it", "my", "our", "his", "her", "their", "its",
+        "the", "a", "an", "this", "that", "these", "those", "there",
+    }
+)
+# A request put to the assistant in so many words, whatever the clause opens on.
+_REQUEST_FRAMES = (
+    "please", "can you", "could you", "would you", "will you", "i want", "we want", "i need", "we need",
+    "i would like", "i'd like", "remind me", "help me", "let us", "let's",
+)
+
+
+def is_cadence_phrase(phrase: str) -> bool:
+    """A phrase made only of a frequency and its time (`every morning`, `each monday`).
+
+    It says when something happens and nothing about what; `daily digest`
+    names a job and is not one.
+    """
+    words = normalized_phrase(phrase).split()
+    return (
+        bool(words)
+        and all(word in _CADENCE_ADVERBS or word in _CADENCE_TIME_WORDS for word in words)
+        and has_cadence(" ".join(words), set(words))
+    )
+
+
+def reads_as_a_request(message: str) -> bool:
+    """True when the message puts something to the assistant rather than reporting.
+
+    A request frame (`can you`, `remind me`) anywhere is a request. Otherwise
+    the main clause decides: after a courtesy opener and a leading cadence
+    (`every morning, ...`), an imperative opens on its verb, while a report
+    opens on its subject (`every morning I ...`, `each day the bus ...`).
+    A question is left to the rest of the router, which already reads it.
+    """
+    normalized = normalized_phrase(message)
+    if "?" in message or contains_boundary_phrase(normalized, _REQUEST_FRAMES):
+        return True
+    words = _command_words(normalized)
+    while words and words[0] in _CADENCE_ADVERBS:
+        words = words[2:] if words[0] in {"every", "each"} else words[1:]
+    return bool(words) and words[0] not in _CLAUSE_SUBJECT_OPENERS
+
+
 def _direct_coding_task_guard_applies(
     normalized_query: str,
     query_tokens: set[str],
@@ -6598,7 +6647,16 @@ def _feedback_before_coding_guard_applies(
     product_context = bool(_FEEDBACK_TRIAGE_PRODUCT_TOKENS & query_tokens)
     issue_signal = bool(_FEEDBACK_TRIAGE_ISSUE_TOKENS & query_tokens)
     decision_signal = bool(_FEEDBACK_TRIAGE_DECISION_TOKENS & query_tokens)
-    return (source_signal and (issue_signal or decision_signal)) or (product_context and issue_signal)
+    # A product noun beside a defect noun is a topic, not a report: nobody in
+    # it handed anything over. It stands in for a report only while the
+    # message is not itself a command to change something -- "fix the crash
+    # in checkout" asks for the edit, whoever turns out to own it. A named
+    # reporter (`users`, `customer`) or a feedback phrase stays a report.
+    command = _command_words(normalized_query)[:1] if normalized_query.isascii() else []
+    commanded_edit = bool(command) and command[0] in _DIRECT_CODING_EDIT_VERBS
+    return (source_signal and (issue_signal or decision_signal)) or (
+        product_context and issue_signal and not commanded_edit
+    )
 
 
 def _workflow_learning_guard_applies(normalized_query: str, query_tokens: set[str]) -> bool:
