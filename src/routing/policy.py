@@ -2126,6 +2126,23 @@ EVERYDAY_SENSE_PHRASES: dict[str, tuple[tuple[str, ...], frozenset[str]]] = {
     # the snow", "cherry-pick the best apples" and "bisect an angle with a
     # compass" are not git; each phrase keeps this route only beside a word of
     # the repository.
+    # "what index fund should I buy", "the table in the kitchen needs a new
+    # partition" and "alter the table setting" are not database work; each
+    # phrase keeps this route only beside a word of the database.
+    "relational-db": (
+        (
+            "what index", "which index", "missing index", "index size", "alter table", "table lock",
+            "took a lock", "need to shard", "partition the table", "table partitioning",
+        ),
+        frozenset(
+            {
+                "column", "columns", "constraint", "database", "deploy", "endpoint", "foreign", "join",
+                "joins", "key", "migration", "mysql", "orm", "postgres", "postgresql", "queries", "query",
+                "row", "rows", "scan", "scans", "schema", "seq-scans", "sql", "sqlite", "transaction",
+                "users", "writes",
+            }
+        ),
+    ),
     "git-workflow": (
         (
             "resolve the conflict", "resolve this conflict", "bisect", "force push", "cherry-pick",

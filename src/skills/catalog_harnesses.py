@@ -3372,6 +3372,7 @@ _PRIMARY_HARNESSES = {
     "maestro": "coding-handling",
     "native-debugging": "coding-handling",
     "app-debugging": "coding-handling",
+    "relational-db": "coding-handling",
     "rust": "coding-handling",
     "model-setup": "hermes-setup",
     "parallel-tools": "hermes-setup",

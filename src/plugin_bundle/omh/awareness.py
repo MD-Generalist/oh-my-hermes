@@ -1341,6 +1341,7 @@ _WORKFLOW_CONTEXT_CARD_BY_WORKFLOW = {
     "app-debugging": "coding_handoff",
     "commit-pr-authoring": "coding_handoff",
     "git-workflow": "coding_handoff",
+    "relational-db": "coding_handoff",
     # ULW fold (issue #954, PR D): the four contracts folding into
     # `ulw-work` share its coding-handoff lane so their capability family is
     # lane-derived (`delegate_coding_and_ship`) like their fold target.
@@ -1403,6 +1404,16 @@ _AWARENESS_MESSAGE_MARKERS = (
     "git bisect",
     "force-with-lease",
     "interactive rebase",
+    # Relational database work: "index", "table" and "lock" alone are
+    # everywhere, so only database phrases arm awareness.
+    "relational-db",
+    "online migration",
+    "alter table",
+    "seq-scans",
+    "sequential scan",
+    "explain analyze",
+    "n+1 quer",
+    "create index concurrently",
     "codebase onboarding",
     "performance bottleneck",
     "\uba54\ubaa8\ub9ac \ub204\uc218",
@@ -2567,6 +2578,44 @@ _ROUTE_HINT_RULES = (
         ),
         "tokens": (),
         "adjacent_workflows": ("code-review", "github-event-ops", "verification-gate", "ultrawork"),
+    },
+    {
+        "id": "relational_db",
+        "workflow": "relational-db",
+        "lane": "coding_handoff",
+        "next_action": "prepare_db_change_plan",
+        "reason": "The user has relational database work: a slow query and its index, an online migration, DDL that locks a live table, N+1 queries, or when to shard; plan it with its lock behaviour, rollback, and the checks that prove it safe.",
+        "fallback_action": "ask_for_the_engine_version_and_table_sizes",
+        "not_evidence_yet": (
+            "query plan",
+            "index built",
+            "migration applied",
+            "lock wait",
+        ),
+        # Only database phrases. "what index", "took a lock" and "need to
+        # shard" are absent: this table is a substring match with no
+        # database-word anchor, and "what index fund" is investing.
+        "phrases": (
+            "relational-db",
+            "online migration",
+            "lock-safe ddl",
+            "alter table",
+            "create index concurrently",
+            "seq-scans",
+            "seq scan",
+            "sequential scan",
+            "explain analyze",
+            "missing index",
+            "n+1 in",
+            "n+1 quer",
+            "shard the database",
+            "database sharding",
+            "table partitioning",
+            "index bloat",
+            "mysql online ddl",
+        ),
+        "tokens": (),
+        "adjacent_workflows": ("backend", "ultraperf", "data-analysis", "deploy-and-monitor"),
     },
     {
         "id": "git_workflow",
@@ -6457,6 +6506,7 @@ def awareness_primer_payload() -> dict[str, object]:
                 "app-debugging",
                 "commit-pr-authoring",
                 "git-workflow",
+                "relational-db",
                 "ai-slop-cleaner",
                 "frontend-refactor",
                 "tech-debt-audit",
@@ -6826,6 +6876,7 @@ _DIRECT_WORKFLOW_NEXT_ACTIONS = {
     "app-debugging": "prepare_root_cause_investigation",
     "commit-pr-authoring": "prepare_commit_pr_text",
     "git-workflow": "prepare_git_repair_plan",
+    "relational-db": "prepare_db_change_plan",
     "accessibility-audit": "prepare_accessibility_audit",
     "visual-qa": "prepare_visual_qa",
     "workspace-file-operator": "prepare_workspace_file_operator_card",

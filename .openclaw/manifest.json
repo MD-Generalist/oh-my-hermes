@@ -27,7 +27,7 @@
     "omh-ask/SKILL.md": "30285742b9ccd95b3bca9617bef5ad5d6d1e17a135550d486d6bd3c7d405708c",
     "omh-award-bar-score/SKILL.md": "66cd3b39500f16e05ffcd45510602af5dd0af30b7e6e574a0f0384367971c35c",
     "omh-award-bar-score/references/award-judging-model.md": "3eb04c94402da5efaa2d3bc18bb66acd1121b234a8b82a47a878c5d01725be50",
-    "omh-backend/SKILL.md": "5d692b4c33abd37755739db341a4a93c3e29325f263b28ed359b4778c5724f34",
+    "omh-backend/SKILL.md": "c12e6b0ed7484c9dbc2740f3a831dc28f7975acf647d0c8985c12a98564be4d0",
     "omh-backend/references/consumer-impact.md": "843ec98391847e3de4e28057ab4aeb95d24a4d8e593b1c812e630723a4f006b9",
     "omh-backend/references/schema-migration.md": "e20aebd284f51d18962e28959b2e35702c9662e4d3d13fb1854c60f1279a6054",
     "omh-backend/references/service-contract.md": "984cd9cb634b88a505cbd76214e281b2e22edf3d75fc6a3b9a0a88fcc4a265f5",
@@ -129,6 +129,8 @@
     "omh-refactor-plan/SKILL.md": "84fac6c63c1dcbe04969404ea475da7d9527e1ca8a229c908cd63361c04b9646",
     "omh-refactor-plan/references/dependency-upgrade.md": "b754550de95896a85e541b5e8f7d46a45696dfa1f73afe57bf7de4df114ebac0",
     "omh-refactor-plan/references/refactor-phases.md": "492cfcd81b1b44ffb54bcb16b6dc319549a7ee868d95b21176fa9cc0fa06f035",
+    "omh-relational-db/SKILL.md": "7362d2fae8e47976c70e0174044d813a8a9f4a276b4f0d1d30ecdd5c3dcbc710",
+    "omh-relational-db/references/engine-lock-tables.md": "c5a495fec865b028c18882f3a4102d491610945edd23a109fac49b8f914fb6b4",
     "omh-reliability-review/SKILL.md": "540a7a047731302e62247e73344623c94d637b4c6c6ebd48c2b45dae21800aa8",
     "omh-report-package/SKILL.md": "30961aadf27e70b3f1965b479095eec0c4c271aa45d27647aaf5fa9a870f2b85",
     "omh-research-brief/SKILL.md": "ac278f436c4d3b271a389804f388700dd88a54e319c01e45737f5cbfc599a2f1",
@@ -254,6 +256,7 @@
     "omh-production-audit",
     "omh-provider-profile-posture",
     "omh-refactor-plan",
+    "omh-relational-db",
     "omh-reliability-review",
     "omh-report-package",
     "omh-research-brief",
@@ -287,7 +290,7 @@
     "ulw-work"
   ],
   "source": "agent-skills",
-  "source_digest": "d87e0a4cd10890f3fc85d2ade5a858376cb4ca73398823523de6da92066787d3",
+  "source_digest": "f3cd353092b2541d82725ec294e2e69e56d05fcc60af2d003b79873005588cde",
   "targets": {
     "repo": ".agents/skills",
     "user": ".agents/skills"

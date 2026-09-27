@@ -1484,6 +1484,23 @@
 }
 },
 {
+"anchors":"column db ddl endpoint enough grew hundr hung item million mysql order postgr row slow wait year",
+"hangul":"",
+"hangul_anchors":"",
+"label":"omh-relational-db",
+"name":"relational-db",
+"situation":"Database work on a relational store -- a slow query, an index to size, a migration on a big table, a lock taken during deploy, N+1 queries",
+"terms":{
+"1":"behaviour big call connect engin fix itself output plus ready rollback stor take taken without",
+"2":"add alter analyz bloat check column concurrently creat enough explain grew hundr hung item million miss never next order prov row scan seq sequential wait work year",
+"3":"ddl endpoint larg mysql onlin partition run shard size took",
+"4":"during index migration plan safe slow",
+"5":"db postgr",
+"6":"databas deploy lock query tabl",
+"7":"relational"
+}
+},
+{
 "anchors":"assumption choic concept decid disposabl experiment feasibility library performanc prob proof prototyp quick quickly risky small solution spik throwaway timing try uncertain",
 "hangul":"",
 "hangul_anchors":"",

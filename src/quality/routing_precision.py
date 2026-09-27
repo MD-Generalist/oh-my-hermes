@@ -2197,8 +2197,11 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
     # The remaining rows of the #1688 survey reach their wrong skill through
     # the metadata fold and a curation guard rather than through a name.
     # Those three already clarify; pinned so a later widening cannot quietly
-    # turn an operational sentence into a workflow dispatch. No
-    # `forbidden_candidate` on any of the five below: the field also reads the
+    # turn an operational sentence into a workflow dispatch. The missing-index
+    # row ("this query seq-scans 40M rows, what index") left this list when
+    # #1692 gave it an owner: it is now an intervention dispatching to
+    # `relational-db`, which still pins it away from `workflow-learning`. No
+    # `forbidden_candidate` on any of the four below: the field also reads the
     # clarify's own shortlist, and a clarification that offers the skill among
     # its options is the correct outcome here, not the defect. The claim is
     # the ACTION.
@@ -2206,13 +2209,6 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
         "node-memory-pressure-is-not-memory-curation",
         "A pod running out of memory is not a request to curate stored memories",
         "node memory climbs until the pod gets OOMKilled",
-        "answer_clarification",
-        "",
-    ),
-    RoutingPrecisionCase(
-        "database-index-question-is-not-workflow-learning",
-        "A missing database index is not a workflow-learning request",
-        "this query seq-scans 40M rows, what index",
         "answer_clarification",
         "",
     ),
@@ -2948,6 +2944,40 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
         "answer_clarification",
         "",
         "git-workflow",
+    ),
+    # `relational-db` phrases outside a database: an index fund, a kitchen
+    # table's partition, a dinner-party table setting, and a front-door lock.
+    RoutingPrecisionCase(
+        "index-fund-is-not-relational-db",
+        "An index fund is investing, not a database index",
+        "what index fund should I buy",
+        "answer_clarification",
+        "",
+        "relational-db",
+    ),
+    RoutingPrecisionCase(
+        "kitchen-table-partition-is-not-relational-db",
+        "A kitchen table's partition is not table partitioning",
+        "the table in the kitchen needs a new partition",
+        "answer_clarification",
+        "",
+        "relational-db",
+    ),
+    RoutingPrecisionCase(
+        "dinner-table-setting-is-not-relational-db",
+        "Altering a dinner table setting is not ALTER TABLE",
+        "alter the table setting for the dinner party",
+        "answer_clarification",
+        "",
+        "relational-db",
+    ),
+    RoutingPrecisionCase(
+        "front-door-lock-is-not-relational-db",
+        "A broken front-door lock is not a table lock",
+        "the lock on the front door is broken",
+        "answer_clarification",
+        "",
+        "relational-db",
     ),
 )
 
@@ -8430,6 +8460,65 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "git-workflow",
         "prepare_git_repair_plan",
         "git_repair_plan",
+    ),
+    # #1692: relational database work dispatches to the database lane. The first
+    # four are the issue's rows; the missing-index row was a negative control
+    # against `workflow-learning` while it had no owner. "ALTER TABLE took a lock
+    # during deploy" is a settled report with no ask, so the narration guard
+    # answers it directly; the request form is pinned instead.
+    RoutingInterventionCase(
+        "online-migration-large-table-reaches-relational-db",
+        "An online migration on a large table reaches the database lane",
+        "write an online migration for a 200M row table",
+        "dispatch",
+        "relational-db",
+        "prepare_db_change_plan",
+        "db_change_plan",
+    ),
+    RoutingInterventionCase(
+        "seq-scan-index-question-reaches-relational-db",
+        "A seq-scanning query asking for an index reaches the database lane, not workflow-learning",
+        "this query seq-scans 40M rows, what index",
+        "dispatch",
+        "relational-db",
+        "prepare_db_change_plan",
+        "db_change_plan",
+    ),
+    RoutingInterventionCase(
+        "n-plus-one-endpoint-reaches-relational-db",
+        "N+1 queries from an endpoint reach the database lane",
+        "N+1 in the orders endpoint",
+        "dispatch",
+        "relational-db",
+        "prepare_db_change_plan",
+        "db_change_plan",
+    ),
+    RoutingInterventionCase(
+        "when-to-shard-reaches-relational-db",
+        "When to shard reaches the database lane",
+        "when do we need to shard",
+        "dispatch",
+        "relational-db",
+        "prepare_db_change_plan",
+        "db_change_plan",
+    ),
+    RoutingInterventionCase(
+        "alter-table-lock-request-reaches-relational-db",
+        "A lock taken by ALTER TABLE, asked about, reaches the database lane",
+        "ALTER TABLE took a lock during deploy, help me make the migration lock-safe",
+        "dispatch",
+        "relational-db",
+        "prepare_db_change_plan",
+        "db_change_plan",
+    ),
+    RoutingInterventionCase(
+        "explain-analyze-index-reaches-relational-db",
+        "A sequential scan in EXPLAIN ANALYZE reaches the database lane",
+        "explain analyze shows a sequential scan on the users table, which index should I add",
+        "dispatch",
+        "relational-db",
+        "prepare_db_change_plan",
+        "db_change_plan",
     ),
 )
 

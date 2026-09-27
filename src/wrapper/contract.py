@@ -274,6 +274,8 @@ VISIBLE_ACTIONS = (
     "show_evidence_ledger",
     "prepare_git_repair_plan",
     "show_pushed_state",
+    "prepare_db_change_plan",
+    "show_migration_readiness",
     "show_frontend_handoff",
     "record_browser_capture",
     "record_accessibility_check",
@@ -1107,6 +1109,8 @@ _ACK_PRIMARY_ACTIONS_BY_NEXT_ACTION = {
     "show_evidence_ledger": ("show_evidence_ledger", "Show evidence ledger"),
     "prepare_git_repair_plan": ("prepare_git_repair_plan", "Plan the git repair"),
     "show_pushed_state": ("show_pushed_state", "Show what is pushed"),
+    "prepare_db_change_plan": ("prepare_db_change_plan", "Plan the database change"),
+    "show_migration_readiness": ("show_migration_readiness", "Show migration readiness"),
     "prepare_accessibility_audit": ("prepare_accessibility_audit", "Audit accessibility"),
     "prepare_visual_qa": ("prepare_visual_qa", "Prepare visual QA"),
     "prepare_deliverable_package": ("prepare_deliverable_package", "Prepare deliverable"),
@@ -2182,6 +2186,39 @@ _WORKFLOW_OPERATIONS_CHAT_CARDS: dict[str, dict[str, object]] = {
             "miri run",
             "sanitizer run",
             "concurrency model check",
+        ],
+    },
+    "relational-db": {
+        "kind": "db_change_plan",
+        "headline": "I can plan this database work with the checks that prove it safe to run.",
+        "body": (
+            "I will state the engine, the version, and the table sizes, cite the observed query plan before proposing an index, "
+            "and give every migration step the lock it takes, its `lock_timeout`, and its rollback. A migration plan reads ready "
+            "only when no step lacks lock behaviour or a rollback. OMH never connects to the database."
+        ),
+        "phase": "db_change_plan_prepared",
+        "next_action": "prepare_db_change_plan",
+        "artifact_schema": "online_migration_plan/v1",
+        "claim_boundary_suffix": "It is not a query plan, a built index, an applied migration, or a measured lock wait until the output is observed.",
+        "actions": [
+            {"id": "prepare_db_change_plan", "label": "Plan the database change", "style": "primary"},
+            {"id": "show_migration_readiness", "label": "Show migration readiness", "style": "secondary"},
+            {"id": "prepare_backend_handoff", "label": "Prepare backend contract", "style": "secondary"},
+            {"id": "show_status", "label": "Show status", "style": "secondary"},
+        ],
+        "recommended_flow": [
+            "state_engine_version_and_table_sizes",
+            "cite_the_observed_query_plan",
+            "size_the_index_and_its_write_cost",
+            "give_every_migration_step_its_lock_and_rollback",
+            "issue_the_readiness_verdict",
+        ],
+        "evidence_not_observed": [
+            "query plan",
+            "index build",
+            "migration applied",
+            "lock wait",
+            "row count",
         ],
     },
     "git-workflow": {
