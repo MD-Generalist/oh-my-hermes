@@ -4,6 +4,23 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **Application-code debugging has an owner: `omh-app-debugging`.** A wrong
+  value, a flaky test, or a lost update in a Python or TypeScript service
+  used to dispatch to an execution lane that skipped the diagnosis ("a test
+  fails one run in five in CI" went to `command-operator`, "two workers
+  write the same row, one update is lost" to `ultrawork`), because the three
+  debugging skills each scoped this case out. The new skill records an
+  observed reproduction with its hit rate first, writes at least three
+  competing hypotheses on distinct axes, orders observations cheapest first
+  by which hypotheses each eliminates, and keeps `fix_handoff/v1` blocked
+  until `reproduction_record/v1` reads observed. The hypothesis table,
+  flaky-test tactics and race patterns load on demand from
+  `references/hypothesis-and-race-method.md`. `native-debugging` and
+  `build-failure-triage` each name the boundary back. "Root cause", "race
+  condition" and "update is lost" keep this route only beside a word of the
+  code being debugged, so "the root cause of my back pain" and "my phone
+  update is lost" stay out (#1709).
+
 - **A debugging-shaped fanout now holds its edit units until the dispatcher
   has watched the failure reproduce.** A split declares itself
   debugging-shaped with a `kind: "reproduction"` unit carrying a

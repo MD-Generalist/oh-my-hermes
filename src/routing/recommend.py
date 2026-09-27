@@ -284,6 +284,40 @@ _TODO_CHECKLIST_EXPLICIT_PHRASES = tuple(
 )
 
 
+# `app-debugging` holds back every token its phrases are built from (see
+# `_WHOLE_PHRASE_ONLY_TRIGGER_TOKENS`), which leaves a complete phrase at the
+# bare +6 credit. That lost "a test fails one run in five in CI" to
+# `command-operator` and "two workers write the same row, one update is lost"
+# to `ultrawork` -- both execution lanes, which is the misroute #1709 names.
+# Listed are the phrases that say a fault's cause is unknown. "root cause" and
+# "update is lost" are boosted too, because `EVERYDAY_SENSE_PHRASES` has
+# already dropped this skill for a sentence in which none of the words beside
+# them is code. "race condition" is not: "watch out for the race condition in
+# this handler" is a warning, not a request, and stays a clarify.
+_APP_DEBUGGING_EXPLICIT_PHRASES = tuple(
+    normalized_phrase(phrase)
+    for phrase in (
+        "app-debugging",
+        "application debugging",
+        "root cause",
+        "root-cause",
+        "flaky test",
+        "flaky tests",
+        "test is flaky",
+        "intermittent test failure",
+        "fails intermittently",
+        "fails one run in",
+        "passes locally but fails in ci",
+        "heisenbug",
+        "bug disappears",
+        "disappears when i add a print",
+        "lost update",
+        "update is lost",
+        "wrong return value",
+        "returns the wrong value",
+    )
+)
+
 _LLM_APP_DEV_EXPLICIT_PHRASES = tuple(
     normalized_phrase(phrase)
     for phrase in (
@@ -760,6 +794,19 @@ _SKILL_POLICIES = {
             "Prepare native_fault_statement/v1, hypothesis_set/v1 with at least three hypotheses on distinct axes, "
             "distinguishing_observation_plan/v1, and debugger_session_plan/v1 naming the DAP adapter, breakpoints, "
             "watchpoints, threads, frames, and values the executor reads at each stop."
+        ),
+    ),
+    "app-debugging": RecommendationPolicy(
+        next_action="prepare_root_cause_investigation",
+        evidence_boundary=(
+            "A root-cause investigation is not a reproduction, a probe result, a root cause, or a fix until observed "
+            "executor or wrapper evidence exists, and no fix is prepared while the reproduction reads not_observed."
+        ),
+        wrapper_guidance=(
+            "Prepare reproduction_record/v1 with the command, observed and expected output, and hit rate; "
+            "competing_hypotheses/v1 with at least three hypotheses on distinct axes; "
+            "discriminating_observation_plan/v1 ordered cheapest first with the hypotheses each result eliminates; "
+            "and fix_handoff/v1 only after the reproduction reads observed."
         ),
     ),
     "accessibility-audit": RecommendationPolicy(
@@ -2365,6 +2412,59 @@ _WHOLE_PHRASE_ONLY_TRIGGER_TOKENS = {
     # them: `live-incident`, which appears only when someone writes the skill
     # name, and `sev1`/`sev2`/`sev3`, which are severity levels and never
     # ordinary words.
+    # `app-debugging` is built from words every other sentence uses: "root",
+    # "cause", "test", "fails", "print", "race", "condition", "lost",
+    # "update", "wrong", "value", "flaky", "reproduce", "competing". Credited
+    # as bare tokens they dispatched "the root cause of my back pain is bad
+    # posture", "my phone update is lost after the reset" and "competing
+    # hypotheses about the origin of the universe" here, and led the clarify
+    # for "the snow is flaky today". The intent lives in the complete phrases
+    # ("flaky test", "race condition", "lost update", "root cause", ...), and
+    # "root cause" additionally needs a code word beside it
+    # (`EVERYDAY_SENSE_PHRASES`). Two tokens stay creditable because nothing
+    # else means them: `app-debugging`, which appears only when someone writes
+    # the skill name, and `heisenbug`.
+    "app-debugging": frozenset(
+        {
+            "add",
+            "analysis",
+            "app",
+            "application",
+            "bug",
+            "but",
+            "cause",
+            "competing",
+            "condition",
+            "debugging",
+            "disappears",
+            "fails",
+            "failure",
+            "find",
+            "flaky",
+            "hypotheses",
+            "intermittent",
+            "intermittently",
+            "locally",
+            "lost",
+            "minimal",
+            "one",
+            "passes",
+            "print",
+            "race",
+            "reproduce",
+            "reproduction",
+            "return",
+            "returns",
+            "root",
+            "root-cause",
+            "run",
+            "test",
+            "tests",
+            "update",
+            "value",
+            "wrong",
+        }
+    ),
     "live-incident-response": frozenset(
         {
             "active",
@@ -3191,6 +3291,9 @@ def _score_definition(
     if definition.name == "todo-checklist" and _todo_checklist_explicit_match(normalized_query):
         score += 30
         matched.add("direct:todo_checklist")
+    if definition.name == "app-debugging" and _app_debugging_explicit_match(normalized_query):
+        score += 30
+        matched.add("direct:app_debugging")
     if definition.name == "inference-serving" and _inference_serving_explicit_match(
         normalized_query, query_tokens
     ):
@@ -3961,6 +4064,10 @@ def _contains_any_phrase(normalized_query: str, phrases: tuple[str, ...]) -> boo
 
 def _todo_checklist_explicit_match(normalized_query: str) -> bool:
     return any(_explicit_phrase_match(normalized_query, phrase) for phrase in _TODO_CHECKLIST_EXPLICIT_PHRASES)
+
+
+def _app_debugging_explicit_match(normalized_query: str) -> bool:
+    return any(_explicit_phrase_match(normalized_query, phrase) for phrase in _APP_DEBUGGING_EXPLICIT_PHRASES)
 
 
 def _llm_app_dev_explicit_match(normalized_query: str) -> bool:

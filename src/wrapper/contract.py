@@ -268,6 +268,8 @@ VISIBLE_ACTIONS = (
     "prepare_backend_handoff",
     "prepare_rust_handoff",
     "prepare_native_debug_plan",
+    "prepare_root_cause_investigation",
+    "show_reproduction_record",
     "show_frontend_handoff",
     "record_browser_capture",
     "record_accessibility_check",
@@ -1095,6 +1097,8 @@ _ACK_PRIMARY_ACTIONS_BY_NEXT_ACTION = {
     "prepare_backend_handoff": ("prepare_backend_handoff", "Prepare backend contract"),
     "prepare_rust_handoff": ("prepare_rust_handoff", "Prepare Rust contract"),
     "prepare_native_debug_plan": ("prepare_native_debug_plan", "Prepare debug plan"),
+    "prepare_root_cause_investigation": ("prepare_root_cause_investigation", "Find the root cause"),
+    "show_reproduction_record": ("show_reproduction_record", "Show reproduction"),
     "prepare_accessibility_audit": ("prepare_accessibility_audit", "Audit accessibility"),
     "prepare_visual_qa": ("prepare_visual_qa", "Prepare visual QA"),
     "prepare_deliverable_package": ("prepare_deliverable_package", "Prepare deliverable"),
@@ -2170,6 +2174,39 @@ _WORKFLOW_OPERATIONS_CHAT_CARDS: dict[str, dict[str, object]] = {
             "miri run",
             "sanitizer run",
             "concurrency model check",
+        ],
+    },
+    "app-debugging": {
+        "kind": "root_cause_investigation",
+        "headline": "I can take this to a demonstrated root cause before anyone changes the code.",
+        "body": (
+            "I will record the reproduction first -- the command, the observed and expected output, and the hit rate -- then write "
+            "at least three competing hypotheses on distinct axes and order the observations cheapest first by which hypotheses "
+            "each one eliminates. No fix is prepared while the reproduction reads not_observed."
+        ),
+        "phase": "root_cause_investigation_prepared",
+        "next_action": "prepare_root_cause_investigation",
+        "artifact_schema": "reproduction_record/v1",
+        "claim_boundary_suffix": "It is not a reproduction, a probe result, a root cause, or a fix until the executor's run is observed.",
+        "actions": [
+            {"id": "prepare_root_cause_investigation", "label": "Find the root cause", "style": "primary"},
+            {"id": "show_reproduction_record", "label": "Show reproduction", "style": "secondary"},
+            {"id": "prepare_verification_gate", "label": "Prepare gate", "style": "secondary"},
+            {"id": "show_status", "label": "Show status", "style": "secondary"},
+        ],
+        "recommended_flow": [
+            "record_the_reproduction_with_its_hit_rate",
+            "write_three_hypotheses_on_distinct_axes",
+            "order_observations_cheapest_first",
+            "record_which_hypotheses_each_observation_eliminates",
+            "hand_off_the_fix_with_the_reproduction_as_its_regression_test",
+        ],
+        "evidence_not_observed": [
+            "reproduction",
+            "probe result",
+            "root cause",
+            "fix",
+            "regression test pass",
         ],
     },
     "native-debugging": {

@@ -592,7 +592,7 @@
 }
 },
 {
-"anchors":"800 behavior big boolean break chain clean colocation drill everywher front frontend giant larg line pass prop react restructur ui useeffect usestat",
+"anchors":"800 behavior big boolean break chain clean colocation drill everywher front frontend giant larg line prop react restructur ui useeffect usestat",
 "hangul":"관리 넌트 론트 리뷰 리팩 분리 상태 엔드 정리 컴포 터링 토링 트가 트엔 팩터 팩토 포넌 프론",
 "hangul_anchors":"관리 넌트 론트 리팩 분리 상태 엔드 정리 컴포 터링 토링 트가 트엔 팩터 팩토 포넌 프론",
 "label":"omh-frontend-refactor",
@@ -659,7 +659,7 @@
 }
 },
 {
-"anchors":"400 a11y aa accessibility accessibl ada against appearanc architect aria background blind color complianc contrast focus hard keyboard launch name navigation order pass ratio reader reflow role screen screenreader size tab target text touch trap usabl valu wcag websit zoom",
+"anchors":"400 a11y aa accessibility accessibl ada against appearanc architect aria background blind color complianc contrast focus hard keyboard launch name navigation order ratio reader reflow role screen screenreader size tab target text touch trap usabl valu wcag websit zoom",
 "hangul":"감사 검사 검토 게이 근성 내비 대비 리더 린리 명도 보드 비게 순서 스크 이션 접근 커스 크기 크린 키보 타깃 터치 포커 표시",
 "hangul_anchors":"감사 검사 검토 게이 근성 내비 대비 리더 린리 명도 보드 비게 순서 스크 이션 접근 커스 크기 크린 키보 타깃 터치 포커 표시",
 "label":"omh-accessibility-audit",
@@ -743,7 +743,7 @@
 }
 },
 {
-"anchors":"checklist clos definition deriv lint longer match merg pass prov their typecheck",
+"anchors":"checklist clos definition deriv lint longer match merg prov their typecheck",
 "hangul":"검증 게이 린트 머지 빌드 스트 이트 테스 품질",
 "hangul_anchors":"검증 게이 린트 머지 빌드 이트 테스 품질",
 "label":"omh-verification-gate",
@@ -807,7 +807,7 @@
 }
 },
 {
-"anchors":"big codegraph codemap date index intelligenc map merg navigation pack pass rebuild refresh stal symbol",
+"anchors":"big codegraph codemap date index intelligenc map merg navigation pack rebuild refresh stal symbol",
 "hangul":"갱신 그래 덱스 드그 드맵 래프 인덱 코드",
 "hangul_anchors":"갱신 그래 덱스 드그 드맵 래프 인덱",
 "label":"omh-codegraph-refresh",
@@ -1433,6 +1433,22 @@
 }
 },
 {
+"anchors":"answer away cannot ci fifth figur function give goes heisenbug log negativ number overwrit",
+"hangul":"",
+"hangul_anchors":"",
+"label":"omh-app-debugging",
+"name":"app-debugging",
+"situation":"Application code misbehaves -- a wrong value, a flaky test, a lost update",
+"terms":{
+"1":"behav dependent discriminat first form jvm library misbehav move observ order python separat servic typescript unknown wrongly",
+"2":"analysis answer away cannot cheapest code compet condition demonstrat disappear failur fifth figur find fix function give goes heisenbug hypothes intermittently log minimal negativ number observation overwrit pass print request return",
+"3":"flaky intermittent race reproduc reproduction work",
+"4":"add application caus ci fail locally lost root run updat valu",
+"5":"app bug debug",
+"6":"test wrong"
+}
+},
+{
 "anchors":"assumption choic concept decid disposabl experiment feasibility library performanc prob proof prototyp quick quickly risky small solution spik throwaway timing try uncertain",
 "hangul":"",
 "hangul_anchors":"",
@@ -1988,7 +2004,7 @@
 }
 },
 {
-"anchors":"ai blocker ce codex dashboard est good ist los manager ops pass productiv productivity progress qu qui se throughput view week",
+"anchors":"ai blocker ce codex dashboard est good ist los manager ops productiv productivity progress qu qui se throughput view week",
 "hangul":"관리 까지 는지 덱스 됐는 됐어 되었 디까 리량 리뷰 리서 리자 리핑 무슨 뭐해 뭔일 브리 상황 서치 슨일 어디 업상 업이 었는 이노 이야 일이 일임 입장 작업 진행 처리 코덱 코딩 품질 행됐 행되 행상",
 "hangul_anchors":"관리 까지 는지 덱스 됐는 됐어 되었 디까 리량 리서 리자 리핑 무슨 뭐해 뭔일 브리 상황 서치 슨일 어디 업상 업이 었는 이노 이야 일이 일임 입장 작업 진행 처리 코덱 코딩 품질 행됐 행되 행상",
 "label":"omh-agent-ops-review",
@@ -2020,7 +2036,7 @@
 }
 },
 {
-"anchors":"bad broken catch consol dangerous empty exception fallback fals green hidden hide hunter ignor mask network nobody pass propagation say see silent swallow",
+"anchors":"bad broken catch consol dangerous empty exception fallback fals green hidden hide hunter ignor mask network nobody propagation say see silent swallow",
 "hangul":"감사 무음 백이 삼킨 삼킴 숨김 숨은 신호 실패 에러 용한 위험 조용 폴백 험한",
 "hangul_anchors":"감사 무음 백이 삼킨 삼킴 숨김 숨은 신호 실패 에러 용한 위험 조용 폴백 험한",
 "label":"omh-failure-signal-audit",

@@ -2843,6 +2843,42 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
         "direct_answer",
         "doctor",
     ),
+    # `app-debugging` phrases are ordinary English beside anything that is not
+    # code: a root cause of back pain, a phone update that was lost, flaky
+    # snow, and a race run in the mud. Each holds a phrase or token the lane
+    # triggers on.
+    RoutingPrecisionCase(
+        "root-cause-of-back-pain-is-not-app-debugging",
+        "A root cause outside code is not an application debugging request",
+        "the root cause of my back pain is bad posture",
+        "answer_clarification",
+        "",
+        "app-debugging",
+    ),
+    RoutingPrecisionCase(
+        "lost-phone-update-is-not-app-debugging",
+        "A phone update that was lost is not a lost-update race",
+        "my phone update is lost after the reset",
+        "answer_clarification",
+        "",
+        "app-debugging",
+    ),
+    RoutingPrecisionCase(
+        "flaky-snow-is-not-app-debugging",
+        "Flaky snow is not a flaky test",
+        "the snow is flaky today",
+        "answer_clarification",
+        "",
+        "app-debugging",
+    ),
+    RoutingPrecisionCase(
+        "marathon-race-condition-is-not-app-debugging",
+        "The race conditions of a marathon are not a concurrency fault",
+        "the race condition at the marathon was muddy and slow",
+        "answer_directly",
+        "direct_answer",
+        "app-debugging",
+    ),
 )
 
 
@@ -8180,6 +8216,55 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "answer_clarification",
         "clarification",
         "doctor",
+    ),
+    # #1709: application-code faults whose cause is unknown dispatch to the
+    # root-cause lane instead of an execution lane that skips the diagnosis.
+    # The first three are the issue's measured rows (command-operator, plan,
+    # and ultrawork before).
+    RoutingInterventionCase(
+        "flaky-ci-test-reaches-app-debugging",
+        "A test that fails one run in five reaches the root-cause lane",
+        "a test fails one run in five in CI, how do I find out why",
+        "dispatch",
+        "app-debugging",
+        "prepare_root_cause_investigation",
+        "root_cause_investigation",
+    ),
+    RoutingInterventionCase(
+        "print-statement-heisenbug-reaches-app-debugging",
+        "A bug that moves when observed reaches the root-cause lane",
+        "the bug disappears when I add a print statement",
+        "dispatch",
+        "app-debugging",
+        "prepare_root_cause_investigation",
+        "root_cause_investigation",
+    ),
+    RoutingInterventionCase(
+        "lost-row-update-reaches-app-debugging",
+        "Two writers losing an update reaches the root-cause lane",
+        "two workers write the same row, one update is lost",
+        "dispatch",
+        "app-debugging",
+        "prepare_root_cause_investigation",
+        "root_cause_investigation",
+    ),
+    RoutingInterventionCase(
+        "wrong-return-value-reaches-app-debugging",
+        "A wrong return value with an unknown cause reaches the root-cause lane",
+        "this function returns the wrong value for negative inputs, help me find the root cause",
+        "dispatch",
+        "app-debugging",
+        "prepare_root_cause_investigation",
+        "root_cause_investigation",
+    ),
+    RoutingInterventionCase(
+        "locally-green-ci-red-test-reaches-app-debugging",
+        "A test green locally and red in CI reaches the root-cause lane",
+        "the integration test is flaky, it passes locally but fails in ci",
+        "dispatch",
+        "app-debugging",
+        "prepare_root_cause_investigation",
+        "root_cause_investigation",
     ),
 )
 

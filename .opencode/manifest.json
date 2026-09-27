@@ -13,6 +13,8 @@
     "omh-ai-slop-cleaner/SKILL.md": "fe8c6ee82fe3f8b2b701fd11a176285338f36224ae46e607f94066037f77cbb0",
     "omh-ai-slop-cleaner/references/cleanup-passes.md": "d713b686c3cc076cbba63aa278176581dc09aae94c07697c3413e8d124c5845d",
     "omh-ai-slop-cleaner/references/prose-lexicon.md": "efd209984c3e5823995484dd5b6e38e3161a059db9e841b4599dbbd330417ee5",
+    "omh-app-debugging/SKILL.md": "c4ac0cd297778055bdaf90b92f4e70964c47dabbe25337546639a648926caeca",
+    "omh-app-debugging/references/hypothesis-and-race-method.md": "eedd02bb16543252085d9df2d4d2c922ab423a3e5e488f73edf70875af432beb",
     "omh-apple-design/SKILL.md": "4d0c71399fe3a06eef17bbe0fcbaad81aa2157f2be74e4be860572e476ed0b34",
     "omh-apple-design/references/materials-and-accessibility.md": "09588fbd807e527ed354fc317fc0fc3c654006878da42eb59461e45fb1ad9c26",
     "omh-apple-design/references/platform-foundations.md": "4984a8f9f3eb0b1876be5b4f4bc024b002c8738be53ccaa1dc29467d3aaeffa0",
@@ -29,7 +31,7 @@
     "omh-backend/references/consumer-impact.md": "843ec98391847e3de4e28057ab4aeb95d24a4d8e593b1c812e630723a4f006b9",
     "omh-backend/references/schema-migration.md": "e20aebd284f51d18962e28959b2e35702c9662e4d3d13fb1854c60f1279a6054",
     "omh-backend/references/service-contract.md": "984cd9cb634b88a505cbd76214e281b2e22edf3d75fc6a3b9a0a88fcc4a265f5",
-    "omh-build-failure-triage/SKILL.md": "091b9fda676c4be532e4bcc1fb2524bf9e2cdc8203711b1a9043e5128709080d",
+    "omh-build-failure-triage/SKILL.md": "dbd06d7785e0182a8c69b6890a039b377b67c2e1d483d9625c4c37dc3a38bf7d",
     "omh-cancel/SKILL.md": "e2ba8ebb45dfcafbf576ffd4ccce2c572751c839bbedb824d0008eb366b07b83",
     "omh-code-review/SKILL.md": "c05a6ed92db3649c6d04e306b7faa786304dddfc1332ae68aeca658e662b8947",
     "omh-code-review/references/review-dispatch.md": "6a155bc585a17cb85a5bea62c5b834657e308a3958c317d54657ab0f8fcab424",
@@ -105,7 +107,7 @@
     "omh-media-input/SKILL.md": "209bc122247681cc8219ec571fa7073e51479a9bff11eced33b7dd8e86cd4312",
     "omh-meeting-brief/SKILL.md": "fefee4ac21b0aee86f37c82421571296c0588cb123cc6fd1289770fe02207ccf",
     "omh-memory-new/SKILL.md": "65e609a4f9009e78db0eee138f137112e59b2c5430ea15753f5ca330f2049e94",
-    "omh-native-debugging/SKILL.md": "010086d08f7bb67b79e4ff5eae312dfec2c5aa11c0e5fcf6d5b389c6e3da121f",
+    "omh-native-debugging/SKILL.md": "97820a1a3394088515416e63b77560be371900986ff13a16e10d72cfbb709dde",
     "omh-native-debugging/references/native-debug-loop.md": "3ce0f29395b8a1c71074ce2808d6d2497bef1ccbecbba179b74950055435430d",
     "omh-operating-rhythm/SKILL.md": "354028fabd45913ba2512a3ce157a8523846b375929ada94b1994c0aed219967",
     "omh-ops-observability-card/SKILL.md": "fa87af4b2b7052345449f93624c91d1f369d802b38ba58dc514d7ad274043539",
@@ -182,6 +184,7 @@
     "omh-agent-debug",
     "omh-agent-ops-review",
     "omh-ai-slop-cleaner",
+    "omh-app-debugging",
     "omh-apple-design",
     "omh-application-threat-model",
     "omh-apps",
@@ -278,7 +281,7 @@
     "ulw-work"
   ],
   "source": "agent-skills",
-  "source_digest": "ca51ee5a5189c3d6ffa05d7563d4e29d925a6173f523b0c0e944c00528969477",
+  "source_digest": "0f33116691e66dcbb26d4bf585253430cc818dd1f7e6ced2aa7e6ac1b3209314",
   "targets": {
     "repo": ".agents/skills",
     "user": ".agents/skills"

@@ -14,6 +14,7 @@ Trigger phrases and the role registry live in `references/workflow-registry.md`;
 - `omh-agent-evaluation`: [omh] Choosing between coding agents on evidence: compare executor or agent choices on reproducible tasks using quality, cost, time, tool, and evidence metrics.
 - `omh-agent-ops-review`: [omh] AI agent progress for managers: help managers inspect AI-agent progress, blockers, quality gates, and throughput levers.
 - `omh-ai-slop-cleaner`: [omh] Messy or AI-generated code to clean up: delete AI-generated slop, dead code, and duplication while observable behavior stays identical.
+- `omh-app-debugging`: [omh] Application code misbehaves -- a wrong value, a flaky test, a lost update: reproduce it first, form competing hypotheses, discriminate them with the cheapest observation, and only then fix the demonstrated root cause.
 - `omh-apple-design`: [omh] Designing or reviewing an iOS, macOS, or Apple-style UI: prepare native Apple UI or Apple marketing product-visual direction, review, and improvement briefs with evidence-backed remediation handoffs.
 - `omh-application-threat-model`: [omh] Attack paths into an operated system: turn a system's components and data flows into assets, trust boundaries, attack scenarios, controls, and the security test that proves each control holds.
 - `omh-ask`: [omh] Outside AI critique wanted: consulting an external advisor when configured.

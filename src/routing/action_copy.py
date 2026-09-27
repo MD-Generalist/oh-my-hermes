@@ -76,6 +76,8 @@ NEXT_ACTION_LABELS: dict[str, str] = {
     "prepare_backend_handoff": "preparing a backend service contract",
     "prepare_rust_handoff": "preparing a Rust change contract",
     "prepare_native_debug_plan": "preparing a native debugging plan",
+    "prepare_root_cause_investigation": "preparing a root-cause investigation",
+    "show_reproduction_record": "showing the reproduction record",
     "prepare_accessibility_audit": "preparing an accessibility audit",
     "prepare_build_failure_triage": "preparing build failure triage",
     "prepare_browser_operator_card": "preparing a browser operator card",
