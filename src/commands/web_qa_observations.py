@@ -14,6 +14,12 @@ from typing import Callable
 from omh.installer import OmhError
 from omh.workflows.browser_workflow_learning_store import resolved_browser_workflow_trace_reference
 from omh.workflows.web_qa_comparison import compare_web_qa_observations
+from omh.workflows.web_qa_motion_capture_store import (
+    MotionCaptureImportError,
+    import_motion_capture,
+    motion_capture_gate,
+    read_motion_capture,
+)
 from omh.workflows.web_qa_observation_store import (
     WebQaObservationStoreError,
     import_web_qa_observation,
@@ -27,6 +33,8 @@ from .common import _print_json
 
 _DIGEST = re.compile(r"^[a-f0-9]{64}$")
 _RUN_ID = re.compile(r"^web-qa-[a-f0-9]{24}$")
+_CAPTURE_ID = re.compile(r"^motion-[a-f0-9]{24}$")
+_CELL_ID = re.compile(r"^cell-[a-f0-9]{24}$")
 MAX_CLI_JSON_BYTES = 262_144
 
 
@@ -90,6 +98,38 @@ def cmd_web_qa_observation_compare(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_web_qa_motion_import(args: argparse.Namespace) -> int:
+    try:
+        result = import_motion_capture(args.project_root, _read_json_input(args.plan_json), _read_json_input(args.receipt_json))
+    except (OSError, ValueError, MotionCaptureImportError) as exc:
+        raise OmhError(str(exc)) from exc
+    _print_json(result)
+    return 0
+
+
+def cmd_web_qa_motion_show(args: argparse.Namespace) -> int:
+    try:
+        result = read_motion_capture(args.project_root, _valid_run_id(args.run_id), _valid_capture_id(args.capture_id))
+    except (OSError, ValueError, MotionCaptureImportError) as exc:
+        raise OmhError(str(exc)) from exc
+    _print_json(result)
+    return 0
+
+
+def cmd_web_qa_motion_gate(args: argparse.Namespace) -> int:
+    try:
+        result = motion_capture_gate(
+            args.project_root,
+            _valid_run_id(args.run_id),
+            [_valid_cell_id(value) for value in args.motion_cell],
+            trusted_trace_resolver=_trace_resolver(args.project_root),
+        )
+    except (OSError, ValueError, MotionCaptureImportError) as exc:
+        raise OmhError(str(exc)) from exc
+    _print_json(result)
+    return 0
+
+
 def add_web_qa_observation_commands(parent_subparsers) -> None:
     """Add ``observation plan/import/show/compare`` below an existing web-QA parser."""
     observation = parent_subparsers.add_parser(
@@ -121,6 +161,27 @@ def add_web_qa_observation_commands(parent_subparsers) -> None:
     compare.add_argument("--candidate-run-id", required=True, type=_valid_run_id)
     compare.add_argument("--deployment-observation-json", metavar="PATH", default="", help="Explicit host-observed closed deployment record for a canary candidate; never a success flag.")
     compare.set_defaults(func=cmd_web_qa_observation_compare)
+
+    motion = sub.add_parser(
+        "motion",
+        help="Agent/operator: import and gate metadata-only motion_interaction_capture/v1 records for one planned cell.",
+    )
+    motion_sub = motion.add_subparsers(dest="web_qa_motion_command", required=True)
+    motion_import = motion_sub.add_parser("import", help="Admit one host motion-capture receipt against a plan cell and the checkout revision; stores no media.")
+    _project_root(motion_import)
+    motion_import.add_argument("--plan-json", required=True, metavar="PATH")
+    motion_import.add_argument("--receipt-json", required=True, metavar="PATH", help="host_motion_capture_receipt/v1 JSON file, or - for stdin.")
+    motion_import.set_defaults(func=cmd_web_qa_motion_import)
+    motion_show = motion_sub.add_parser("show", help="Re-admit one stored motion capture record.")
+    _project_root(motion_show)
+    motion_show.add_argument("--run-id", required=True, type=_valid_run_id)
+    motion_show.add_argument("--capture-id", required=True, type=_valid_capture_id)
+    motion_show.set_defaults(func=cmd_web_qa_motion_show)
+    motion_gate = motion_sub.add_parser("gate", help="Project stored motion records onto a stored run's verdict for the named cells only; never raises it to PASS.")
+    _project_root(motion_gate)
+    motion_gate.add_argument("--run-id", required=True, type=_valid_run_id)
+    motion_gate.add_argument("--motion-cell", action="append", required=True, type=_valid_cell_id, metavar="CELL_ID", help="Planned matrix cell whose motion evidence is in scope; repeat per cell.")
+    motion_gate.set_defaults(func=cmd_web_qa_motion_gate)
 
 
 def _project_root(parser: argparse.ArgumentParser) -> None:
@@ -213,6 +274,18 @@ def _valid_run_id(value: str) -> str:
     return value
 
 
+def _valid_capture_id(value: str) -> str:
+    if not _CAPTURE_ID.fullmatch(value):
+        raise argparse.ArgumentTypeError("capture_id must be a motion capture identity")
+    return value
+
+
+def _valid_cell_id(value: str) -> str:
+    if not _CELL_ID.fullmatch(value):
+        raise argparse.ArgumentTypeError("cell_id must be a planned matrix cell identity")
+    return value
+
+
 def _unique_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
     result: dict[str, object] = {}
     for key, value in pairs:
@@ -232,4 +305,7 @@ __all__ = [
     "cmd_web_qa_observation_import",
     "cmd_web_qa_observation_plan",
     "cmd_web_qa_observation_show",
+    "cmd_web_qa_motion_gate",
+    "cmd_web_qa_motion_import",
+    "cmd_web_qa_motion_show",
 ]

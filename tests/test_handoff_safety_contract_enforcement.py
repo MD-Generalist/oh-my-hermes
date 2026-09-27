@@ -372,7 +372,8 @@ PROCESS_SPAWN_ALLOWLIST: dict[str, str] = {
     ),
     "src/workflows/browser_workflow_learning_store.py": (
         "the shared observed-Git-root boundary reached by explicit web-qa trace, observation, "
-        "and promotion commands; runs only bounded local rev-parse --show-toplevel with "
+        "and promotion commands; runs only bounded local rev-parse --show-toplevel (plus "
+        "rev-parse --verify HEAD for motion-capture checkout lineage) with "
         "fsmonitor disabled, optional locks suppressed and ambient GIT_* variables removed. "
         "It starts no browser, agent, model, or remote operation."
     ),
@@ -1217,6 +1218,12 @@ GIT_ARGV_ALLOWLIST: dict[tuple[str, tuple[str, ...]], str] = {
         "git -c core.fsmonitor=false --no-optional-locks rev-parse --show-toplevel resolves "
         "the explicitly named local project for browser evidence and promotion. This bounded "
         "identity read writes no index or remote and cannot invoke a configured fsmonitor hook."
+    ),
+    ("src/workflows/browser_workflow_learning_store.py", ("core.fsmonitor=false", "rev-parse", "HEAD^{commit}")): (
+        "git -c core.fsmonitor=false --no-optional-locks rev-parse --verify --quiet HEAD^{commit} "
+        "reads the checkout revision an explicit `omh web-qa observation motion import` must match; "
+        "read-only local object lookup, writes no index, names no remote, and cannot invoke a "
+        "configured fsmonitor hook."
     ),
     ("src/coding/fanout_artifact_sharing.py", ("check-ignore",)): (
         "`git check-ignore -q --` against the parent checkout, then again inside the fresh unit "

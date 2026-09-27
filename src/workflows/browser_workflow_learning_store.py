@@ -166,6 +166,30 @@ def _root(cwd: str | Path | None) -> Path:
     return root
 
 
+def observed_checkout_revision(root: Path) -> str:
+    """Return the full commit id HEAD names in an already-resolved Git root.
+
+    A bounded local identity read, like ``_root``: it writes no index, names no
+    remote, and raises ``BrowserTraceError`` when HEAD is unborn or unreadable.
+    """
+    import subprocess
+
+    environment = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+    environment["GIT_OPTIONAL_LOCKS"] = "0"
+    environment["GIT_TERMINAL_PROMPT"] = "0"
+    try:
+        completed = subprocess.run(
+            ["git", "-c", "core.fsmonitor=false", "--no-optional-locks", "rev-parse", "--verify", "--quiet", "HEAD^{commit}"],
+            cwd=root, env=environment, capture_output=True, check=True, timeout=5,
+        )
+        revision = completed.stdout.decode("ascii").strip()
+    except (OSError, ValueError, subprocess.SubprocessError) as exc:
+        raise BrowserTraceError("an observed checkout revision is required", "not_suitable") from exc
+    if len(revision) not in (40, 64) or any(char not in "0123456789abcdef" for char in revision):
+        raise BrowserTraceError("an observed checkout revision is required", "not_suitable")
+    return revision
+
+
 def _path(root: Path, trace_id: str) -> Path:
     if not trace_id.startswith("bwt-") or len(trace_id) != 28 or any(char not in "0123456789abcdef" for char in trace_id[4:]): raise BrowserTraceError("trace id is invalid", "not_suitable")
     directory = root / ".omh" / "web-visual-qa" / "traces"
