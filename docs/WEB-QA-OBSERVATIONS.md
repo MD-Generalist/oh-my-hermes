@@ -31,7 +31,9 @@ background. There is no launch, watch, or polling loop in core OMH.
 
 ### Commands as shipped
 
-Observed from `omh web-qa observation --help` and its four subcommands:
+Observed from `omh web-qa observation --help` and its subcommands (the
+`motion` group is covered under
+[Motion interaction captures](#motion-interaction-captures)):
 
 ```sh
 omh web-qa observation plan    --project-root PATH --plan-json PATH
@@ -314,6 +316,87 @@ reparse points (including junctions) in managed path components; it does not
 compare independently resolved spellings of concurrently created directories.
 Already completed imports are fully re-admitted before any directory creation,
 permission change, or lock-file write, and need no original capture files.
+
+### Motion interaction captures
+
+When transitions, hover, focus, loading, or scroll states are in scope,
+`visual-qa` asks for `motion_interaction_capture/v1`. The host records the
+motion (MP4 or WebM) and may derive a changed-frame contact sheet from it; OMH
+admits only the host's metadata about those artifacts:
+
+```sh
+omh web-qa observation motion import --project-root PATH --plan-json PATH --receipt-json PATH
+omh web-qa observation motion show   --project-root PATH --run-id RUN_ID --capture-id CAPTURE_ID
+omh web-qa observation motion gate   --project-root PATH --run-id RUN_ID --motion-cell CELL_ID [--motion-cell CELL_ID ...]
+```
+
+Audience: host adapters, wrappers, and operators, like the rest of this page.
+
+`import` takes the same plan as the observation import and one
+`host_motion_capture_receipt/v1` with `receipt_version: 1` and exactly these
+keys:
+
+- `run_id` and `cell_id`: one planned matrix cell.
+- `lineage`: the producer's own `repository`, `revision`, `route_id`,
+  `state_id`, `viewport_id`, and `browser_id`. Every field must equal the
+  plan's subject and that cell.
+- `producer`: `producer_id` and `version`.
+- `requested`: the settings asked for, `sampling_policy` (`every_frame`,
+  `fixed_interval`, `changed_frames`) and `max_duration_ms` (at most the plan's
+  `max_run_seconds`).
+- `observed`: the settings the producer attests it used, `sampling_policy`,
+  `started_at`, and `ended_at` (UTC).
+- `recording`: `sha256`, `byte_size` (up to 512 MiB), `media_type`
+  (`video/mp4` or `video/webm`), `width`, `height`, `duration_ms`, and
+  `frame_count` (at most 120 per second of duration). The duration must fit
+  both the requested bound and the observed window.
+- `contact_sheet`: `null`, or `sha256`, `byte_size`, `media_type`
+  (PNG/JPEG/WebP), `source_recording_sha256`, and up to 64 `tiles`. Each tile
+  has `tile_index`, its own `source_recording_sha256`, `start_ms`, and
+  `end_ms`.
+
+Each refusal raises an error whose message starts with one closed reason code:
+
+| Reason | Refused when |
+| --- | --- |
+| `lineage_mismatch` | The run, cell, repository, revision, route, state, viewport, or browser differs from the plan. |
+| `checkout_revision_mismatch` | The capture's revision isn't the project checkout's `HEAD`, so a capture of an older or newer revision is stale here. |
+| `contact_sheet_lineage_mismatch` | The sheet or any tile names a different recording digest, reuses the recording's digest as its own, or claims an interval outside the recording. |
+| `digest_invalid` | A digest is missing or isn't lowercase SHA-256. |
+| `unsupported_media_type` | The recording isn't MP4/WebM, or the sheet isn't PNG/JPEG/WebP. |
+| `metadata_limit_exceeded` | Size, duration, frame count, tile count, or receipt size exceeds its bound. |
+| `path_only_evidence` | Any key names a path, URI, URL, file, or location. Artifacts are admitted by digest only. |
+| `secret_bearing_metadata` | The store's privacy scan finds credentials, cookies, bearer tokens, URLs with userinfo or query, email addresses, or phone numbers. |
+| `malformed_receipt` | A key is missing or extra (inline media such as `data` or `frame` fields included), a type is wrong, or the schema is wrong. |
+| `plan_invalid` | The plan doesn't normalize. |
+| `stored_record_invalid` | A stored record no longer re-admits, or the store path is unsafe. |
+
+The admitted record is written to
+`.omh/web-visual-qa/motion-captures/<run_id>/<capture_id>.json` as
+`web_qa_motion_capture_store/v1`. The file holds the plan, the receipt, and the
+derived record, and never any media bytes or frames. `capture_id` is `motion-` plus
+24 hex characters of the record's canonical digest. Re-importing the same
+receipt returns the stored record and writes nothing. A different recording
+digest or a different cell gets a different identity, so earlier evidence is
+never overwritten. `show` and `gate` re-admit each record from its stored
+plan and receipt.
+
+`gate` re-admits the stored observation run and every stored motion record
+for it. It then marks each `--motion-cell` `observed`, citing its
+`capture_ids`, only when a record matches that cell's run, plan digest,
+repository, revision, round, route, state, viewport, and browser exactly. Any
+other cell gets `motion_interaction_capture_missing`, and the result is
+`BLOCK`. A covered cell keeps the observation's own verdict, so the recording
+never turns a `BLOCK` or `REVISE` into `PASS`. Screenshot, console, network,
+flow, accessibility, keyboard, and performance evidence remain required
+exactly as before.
+
+A motion record proves only that the host declared the named recording, and
+any contact sheet derived from it, for the named condition. It doesn't prove
+visual correctness, complete interaction coverage, delivery, or PASS, and each
+record says so in `does_not_prove`. OMH never records, decodes, or inspects
+the media. `import` runs one read-only `git rev-parse --verify HEAD` in the
+named project; it launches no browser and makes no network call.
 
 ### Comparing runs
 

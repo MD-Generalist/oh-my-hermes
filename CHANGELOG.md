@@ -40,6 +40,26 @@ All notable changes will be documented here.
   `omh codegraph handoff` gains `--changed <paths...>` to seed the walk, and
   its JSON gains `changed_paths`; focus-symbol ranking is unchanged. Closes
   #1696.
+- **Visual QA can now cite a host's browser motion capture for the exact
+  condition it recorded.** `visual-qa` has always asked for
+  `motion_interaction_capture/v1` when transitions or interactive states are
+  in scope, but OMH had no way to accept one. `omh web-qa observation motion
+  import` (agent/operator) now admits a host's metadata-only
+  `host_motion_capture_receipt/v1` against one planned matrix cell. The
+  receipt carries the recording digest, media type, size, duration, and frame
+  count, the producer's requested and observed settings, and optional
+  contact-sheet tiles that each name the recording digest. It stores a
+  `motion_interaction_capture/v1` record under
+  `.omh/web-visual-qa/motion-captures/<run_id>/` and never any media bytes.
+  The import is refused, with one named reason, when the lineage differs from
+  the plan cell, the revision isn't the checkout's `HEAD`, a tile or the sheet
+  names another recording, a digest is malformed, the media type is
+  unsupported, a bound is exceeded, a key names a path, or the metadata
+  carries secrets. Re-importing the same receipt writes nothing, and a new
+  digest or cell gets a new identity. `motion gate` cites a record only for
+  its own run, revision, round, route, state, viewport, and browser, and it
+  can hold a run's verdict or lower it to `BLOCK` but never raise it to
+  `PASS`. Issue #1801.
 
 - **`omh doctor` no longer tells you to rename a shared lifecycle hook.**
   When OMH and another Hermes plugin both subscribe to an event such as
