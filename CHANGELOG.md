@@ -4,6 +4,31 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **Relational database work has an owner: `omh-relational-db`.** An online
+  migration on a 200M-row table, a seq-scanning query that needs an index,
+  N+1 queries from an endpoint, and when to shard all used to ask a question
+  led by `backend`, `ultraperf` or `agent-board`. They now dispatch to a skill
+  that plans the database change with the checks that prove it safe to run:
+  - engine, version and table sizes come first;
+  - an index is proposed only against an observed query plan, with its size
+    and write cost;
+  - every online migration step carries the lock it takes, its
+    `lock_timeout`, its batch size and its rollback;
+  - `migration_readiness_verdict/v1` reads ready only when no step lacks lock
+    behaviour or a rollback.
+
+  The per-engine lock tables (PostgreSQL lock modes by statement, MySQL
+  online DDL), the expand/backfill/switch/contract order, index-type
+  selection, N+1 detection and the partition-or-shard projection load on
+  demand from `references/engine-lock-tables.md`. `backend` keeps
+  `schema_migration_plan/v1` for a service change, and each skill names the
+  other. OMH never connects to a database. "what index", "alter table",
+  "took a lock" and "need to shard" keep this route only beside a database
+  word, so an index fund and a kitchen table stay out. "ALTER TABLE took a
+  lock during deploy" on its own is a report with no ask. It stays a direct
+  answer while the plugin route hint names the skill, and the same sentence
+  with an ask dispatches (#1692).
+
 - **Git branch repair has an owner: `omh-git-workflow`.** "resolve this merge
   conflict", "bisect to find which commit broke it" and "clean up this
   branch's history before review" used to ask a question led by `memory-sync`,

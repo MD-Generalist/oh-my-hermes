@@ -455,8 +455,12 @@ class RouterContentTests(unittest.TestCase):
         # to have; the ceiling keeps ~2.4% headroom.
         # 28,900 -> 29,700: the six `jev-*` skills add six registry rows
         # (28,963 measured); one row per new skill, ~2.5% headroom kept.
+        # 29,700 -> 30,500: `app-debugging`, `commit-pr-authoring`,
+        # `git-workflow`, and `relational-db` (#1709, #1711, #1695, #1692) add
+        # four registry rows (29,798 measured); one row per new skill, ~2.4%
+        # headroom kept.
         for template in builtin_skill_reference_templates():
-            self.assertLess(len(template.content.encode("utf-8")), 29_700, template.relative_path)
+            self.assertLess(len(template.content.encode("utf-8")), 30_500, template.relative_path)
 
         schemas = (
             OMH_CAPABILITIES_SCHEMA,
@@ -4176,7 +4180,7 @@ class RouterContentTests(unittest.TestCase):
         # Retired engines must not be presented as current planning skills.
         self.assertNotIn("`ultragoal`", docs_readme)
         # omh-docs and github-issue-intake raise the measured catalog to 119.
-        self.assertIn("**133 installable skills**", docs_readme)
+        self.assertIn("**134 installable skills**", docs_readme)
         self.assertIn("**Retain knowledge**", docs_readme)
         # The unit suite runs through the deterministic sharding tools (issue
         # #1294): plan once, run per shard plus the serial quarantine, then

@@ -318,6 +318,48 @@ _APP_DEBUGGING_EXPLICIT_PHRASES = tuple(
     )
 )
 
+# `relational-db` holds back every token its phrases are built from, which
+# left "this query seq-scans 40M rows, what index" and "ALTER TABLE took a
+# lock during deploy" at the bare phrase credit, and the second one below the
+# plain-question fallback. Listed are the phrases that name database work.
+# "relational database" and "query plan" are not: "what is a relational
+# database" is a concept question. The phrases that are also ordinary English
+# ("what index", "alter table", "took a lock", "need to shard", "partition the
+# table") are safe to boost because `EVERYDAY_SENSE_PHRASES` has already
+# dropped this skill when no database word stands beside them.
+_RELATIONAL_DB_EXPLICIT_PHRASES = tuple(
+    normalized_phrase(phrase)
+    for phrase in (
+        "relational-db",
+        "online migration",
+        "migration for a large table",
+        "lock-safe ddl",
+        "alter table",
+        "took a lock",
+        "table lock",
+        "lock during deploy",
+        "create index concurrently",
+        "which index",
+        "what index",
+        "missing index",
+        "seq scan",
+        "seq-scans",
+        "sequential scan",
+        "explain analyze",
+        "n+1",
+        "n+1 query",
+        "n+1 queries",
+        "need to shard",
+        "shard the database",
+        "database sharding",
+        "table partitioning",
+        "partition the table",
+        "index bloat",
+        "postgres lock",
+        "mysql online ddl",
+    )
+)
+
 # `git-workflow` holds back every token its phrases are built from, which left
 # "resolve this merge conflict" and "clean up this branch's history before
 # review" at the bare +6 credit against `code-review`'s 12 on "review". Listed
@@ -857,6 +899,19 @@ _SKILL_POLICIES = {
             "Prepare native_fault_statement/v1, hypothesis_set/v1 with at least three hypotheses on distinct axes, "
             "distinguishing_observation_plan/v1, and debugger_session_plan/v1 naming the DAP adapter, breakpoints, "
             "watchpoints, threads, frames, and values the executor reads at each stop."
+        ),
+    ),
+    "relational-db": RecommendationPolicy(
+        next_action="prepare_db_change_plan",
+        evidence_boundary=(
+            "A database change plan is not a query plan, a built index, an applied migration, or a measured lock wait until "
+            "observed; OMH never connects to a database, and a migration plan is not ready while any step lacks lock "
+            "behaviour or a rollback."
+        ),
+        wrapper_guidance=(
+            "Prepare db_problem_statement/v1 with engine, version, and table sizes; index_proposal/v1 citing the observed "
+            "plan; online_migration_plan/v1 giving every step its lock mode, `lock_timeout`, batch size, and rollback; and "
+            "migration_readiness_verdict/v1 naming any step that lacks lock behaviour or rollback."
         ),
     ),
     "git-workflow": RecommendationPolicy(
@@ -2519,6 +2574,53 @@ _WHOLE_PHRASE_ONLY_TRIGGER_TOKENS = {
     # them (`EVERYDAY_SENSE_PHRASES`: "PR" is also public relations). Two
     # tokens stay creditable: `commit-pr`, which appears only in the skill
     # name, and `not-tested`, the trailer itself.
+    # `relational-db` is built from "index", "table", "lock", "migration",
+    # "query", "shard", "partition", "alter", "plan", "scan" and "size" -- an
+    # index fund, a kitchen table, a shard of glass, a customer's query and a
+    # dinner-party table setting all reached it as bare tokens. Only the
+    # complete phrases score, and the ones that are also ordinary English need a
+    # database word beside them (`EVERYDAY_SENSE_PHRASES`). Five tokens stay
+    # creditable because nothing else means them: `relational-db` (the skill
+    # name), `seq-scans`, `ddl`, `postgres`, and `mysql`.
+    "relational-db": frozenset(
+        {
+            "alter",
+            "analyze",
+            "bloat",
+            "concurrently",
+            "create",
+            "database",
+            "deploy",
+            "during",
+            "explain",
+            "index",
+            "large",
+            "lock",
+            "lock-safe",
+            "migration",
+            "missing",
+            "need",
+            "online",
+            "partition",
+            "partitioning",
+            "plan",
+            "queries",
+            "query",
+            "relational",
+            "safe",
+            "scan",
+            "scans",
+            "seq",
+            "sequential",
+            "shard",
+            "sharding",
+            "size",
+            "table",
+            "took",
+            "what",
+            "which",
+        }
+    ),
     # `git-workflow` is built from "conflict", "resolve", "history", "clean",
     # "force", "push", "cherry", "pick", "bisect", "undo", "lost", "recover",
     # "stack" and "branch" -- two teams in conflict, a car forced out of the
@@ -3455,6 +3557,9 @@ def _score_definition(
     if definition.name == "todo-checklist" and _todo_checklist_explicit_match(normalized_query):
         score += 30
         matched.add("direct:todo_checklist")
+    if definition.name == "relational-db" and _relational_db_explicit_match(normalized_query):
+        score += 30
+        matched.add("direct:relational_db")
     if definition.name == "git-workflow" and _git_workflow_explicit_match(normalized_query):
         score += 30
         matched.add("direct:git_workflow")
@@ -4234,6 +4339,10 @@ def _contains_any_phrase(normalized_query: str, phrases: tuple[str, ...]) -> boo
 
 def _todo_checklist_explicit_match(normalized_query: str) -> bool:
     return any(_explicit_phrase_match(normalized_query, phrase) for phrase in _TODO_CHECKLIST_EXPLICIT_PHRASES)
+
+
+def _relational_db_explicit_match(normalized_query: str) -> bool:
+    return any(_explicit_phrase_match(normalized_query, phrase) for phrase in _RELATIONAL_DB_EXPLICIT_PHRASES)
 
 
 def _git_workflow_explicit_match(normalized_query: str) -> bool:
