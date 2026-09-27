@@ -200,7 +200,7 @@ def register(ctx: _PluginContext) -> None:
         awareness_system_prompt_section,
         pre_llm_call,
     )
-    from .hooks.result_transforms import transform_tool_result
+    from .hooks.result_transforms import transform_llm_output, transform_tool_result
     from .hooks.session_hooks import on_session_end, on_session_start, subagent_start
     from .hooks.tool_hooks import post_tool_call, pre_tool_call
     from .hooks.verify_hooks import pre_verify
@@ -400,6 +400,7 @@ def register(ctx: _PluginContext) -> None:
     _register_optional_hook(ctx, "pre_verify", pre_verify)
     _register_optional_hook(ctx, "subagent_start", subagent_start)
     _register_optional_hook(ctx, "transform_tool_result", transform_tool_result)
+    _register_optional_hook(ctx, "transform_llm_output", transform_llm_output)
     get_config = getattr(ctx, "get_config", None)
     browser_config = get_config("browser_adapter", {}) if callable(get_config) else {}
     if isinstance(browser_config, dict) and browser_config.get("enabled") is True:

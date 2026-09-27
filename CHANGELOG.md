@@ -19,6 +19,20 @@ All notable changes will be documented here.
   its severities and its `precedence` values are unchanged. Reported by
   @ComBba in #1902.
 
+- **A turn that started remote work, was told nothing would wake it, and
+  armed nothing anyway now ends by saying the session has stopped.** The
+  plugin registers the optional `transform_llm_output` hook, which Hermes
+  fires once per turn after the tool loop. It appends one sentence to the
+  final response only when this turn's unarmed-wait directive (#1738) was
+  delivered and a fresh read of `processes.json` still shows no live
+  notifying background process for the session. It reads those records,
+  never the response text, so a response that says it is waiting cannot
+  trigger it, and a turn that armed a watcher, made no remote call, or whose
+  records cannot be read passes through unchanged. The sentence is shown to
+  the person and not added to the model's context: Hermes saves the
+  transcript before this hook runs. This closes the end-of-turn half of
+  #1721. Arming a watcher at that point is still impossible, because the
+  hook cannot re-enter the turn loop.
 - **The cost receipt now counts Hermes kanban workers the conversation
   started.** `omh_cost_receipt/v1` gains a fourth source, `kanban_workers`.
   A worker run belongs to the conversation when its task's `tasks.session_id`

@@ -976,6 +976,7 @@ print(json.dumps(observed, ensure_ascii=False))
                     "pre_tool_call",
                     "pre_verify",
                     "subagent_start",
+                    "transform_llm_output",
                     "transform_tool_result",
                 ],
             )
