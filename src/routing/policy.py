@@ -2115,6 +2115,25 @@ EVERYDAY_SENSE_PHRASES: dict[str, tuple[tuple[str, ...], frozenset[str]]] = {
             }
         ),
     ),
+    # "the root cause of my back pain", "my phone update is lost after the
+    # reset" and "the race condition at the track" are not requests to debug
+    # code; the phrase keeps its route only beside a word of the code being
+    # debugged.
+    "app-debugging": (
+        ("root cause", "root-cause", "update is lost", "lost update", "race condition", "race conditions"),
+        frozenset(
+            {
+                "api", "app", "application", "async", "backend", "bug", "bugs", "cache", "ci", "code",
+                "codebase", "concurrency", "concurrent", "crash", "database", "db", "deadlock", "debug",
+                "endpoint", "error", "errors", "exception", "exceptions", "fails", "failing", "flaky",
+                "frontend", "function", "handler", "job", "jobs", "library", "lock", "locks", "method",
+                "module", "mutex", "prod", "production", "query", "queue", "regression", "request",
+                "requests", "returns", "row", "rows", "script", "sdk", "server", "service", "services",
+                "stack", "test", "tests", "thread", "threads", "transaction", "transactions", "worker",
+                "workers", "write", "writes",
+            }
+        ),
+    ),
     "doctor": (
         ("doctor",),
         frozenset(

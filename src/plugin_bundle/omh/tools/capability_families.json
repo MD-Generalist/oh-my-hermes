@@ -201,6 +201,7 @@
    "backend",
    "rust",
    "native-debugging",
+   "app-debugging",
    "ai-slop-cleaner",
    "frontend-refactor",
    "tech-debt-audit",

@@ -3371,6 +3371,7 @@ _PRIMARY_HARNESSES = {
     "frontend-refactor": "coding-handling",
     "maestro": "coding-handling",
     "native-debugging": "coding-handling",
+    "app-debugging": "coding-handling",
     "rust": "coding-handling",
     "model-setup": "hermes-setup",
     "parallel-tools": "hermes-setup",

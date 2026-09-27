@@ -3134,6 +3134,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 - Do not use when:
   - The failure is a build or CI failure rather than a runtime fault in a binary; use `build-failure-triage`.
   - The subject is an agent or workflow misbehaving rather than a native binary; use `agent-debug`.
+  - The wrong result, flaky test, or lost update is in application code such as a Python or TypeScript service and needs its root cause reproduced; use `app-debugging`.
   - The change is Rust source work whose risk is `unsafe` or UB discipline; use `rust`.
   - The request is to judge whether a fix is verified rather than to find the fault; use `verification-gate`.
 - Strong routing signals: `native-debugging`, `native debugging`, `native binary`, `segfault`, `segmentation fault`, `core dump`, `stack corruption`, `memory corruption`, `heap corruption`, `use after free`, `null pointer dereference`, `stripped binary`, `disassembly`, `lldb`, `gdb`, `dap debugger`, `breakpoint`, `watchpoint`, `backtrace`, `セグメンテーション違反`, `コアダンプ`, `メモリ破壊`, `ヒープ破壊`, `解放後使用`, `逆アセンブル`, `네이티브 디버깅`, `세그폴트`, `코어 덤프`, `메모리 손상`, `역어셈블`, `중단점`, `段错误`, `核心转储`, `内存破坏`, `释放后使用`, `反汇编`
@@ -3410,6 +3411,7 @@ These surfaces are generated command references, not installed Hermes workflow s
   - The user needs a code review of changed behavior rather than failing command triage; use `code-review`.
   - The user needs broad production readiness; use `production-audit`.
   - The user asks for incident or SLO review after deployment; use `reliability-review`.
+  - A test passes on some runs and not others, or the code returns a wrong value whose cause is unknown; use `app-debugging`.
 - Strong routing signals: `build-failure-triage`, `build failure triage`, `build failure`, `build-failure`, `build fix`, `build failed`, `build failing`, `compile error`, `compilation error`, `typecheck failed`, `typecheck failure`, `type check failed`, `tsc failed`, `lint failed`, `lint failure`, `test failed`, `test failure`, `tests failed`, `ci failed`, `ci failure`, `github actions failed`, `pr checks failed`, `pr check failure`, `dco failed`, `dco failure`, `pytest failed`, `pytest failure`, `cargo build failed`, `npm build failed`, `ビルド失敗`, `ビルドが失敗`, `コンパイルエラー`, `型チェック失敗`, `テストが落ちる`, `빌드 실패`, `배포 파이프라인`, `파이프라인 깨짐`, `파이프라인 실패`, `배포 실패`, `CI 실패`, `빌드 고쳐`, `컴파일 에러`, `타입체크 실패`, `테스트 실패`, `체크 실패`, `DCO 실패`, `构建失败`, `編譯錯誤`, `编译错误`, `类型检查失败`, `测试失败`
 - Good example:
   - Prompt: build-failure-triage PR 체크에서 Python 3.12 test가 실패했는데 로그를 기준으로 최소 수정 handoff 만들어줘.
@@ -6501,6 +6503,82 @@ These surfaces are generated command references, not installed Hermes workflow s
   - Do not call the incident recovered because a mitigation was applied; recovery needs the named signal observed at its healthy value, with the observer recorded.
   - Never leave a temporary mitigation unmarked; record what it changed and what removes it, or it becomes permanent because nobody wrote it down.
   - Never print customer records, credentials, tokens, or connection strings pulled into the timeline as evidence.
+
+### app-debugging
+
+[omh] Application code misbehaves -- a wrong value, a flaky test, a lost update: reproduce it first, form competing hypotheses, discriminate them with the cheapest observation, and only then fix the demonstrated root cause.
+
+- Category: `verification`
+- Phase: `app-root-cause`
+- Hermes role: `reviewer`
+- Quality tier: `root-cause-evidence-gated`
+- Reasoning demand: `standard`
+- Exposure: `direct_skill`
+- Install visibility: `true`
+- Docs visibility: `primary_workflow_skill`
+- Compatibility alias: `false`
+- Lifecycle stage: `canonical`
+- Preferred usage: Use as an installed Hermes workflow skill when this explicit workflow is the clearest user-facing handle.
+- Handoff policy: Keep the symptom statement, the hypothesis set, the discriminating observations, and the root-cause verdict in Hermes. Record every reproduction run, probe output, and fix verification only from executor or wrapper observed evidence.
+- Why this exists: `app-debugging` exists because a wrong result in application code had no owner: `native-debugging` covers native binaries, `build-failure-triage` covers red builds, and `agent-debug` covers agent misbehaviour, so the most common debugging request dispatched straight to an execution lane that skipped the diagnosis.
+- First steps:
+  - Ask for, or plan, the one command that shows the wrong behaviour, and record its observed output before naming a cause.
+  - Refuse to prepare a fix while the reproduction reads not_observed; plan the observation that would establish it instead.
+- Use when: Use when application code -- a Python, TypeScript, Go, or JVM service, library, or test -- behaves wrongly and the cause is unknown: a wrong value, an intermittent or order-dependent test, a race or lost update, or a bug that moves when observed. The work is a demonstrated root cause: an observed reproduction, competing hypotheses, the cheapest observation that separates them, and only then a fix.
+- Do not use when:
+  - The fault is a crash, memory corruption, or core dump in a compiled native binary that needs a debugger session; use `native-debugging`.
+  - The build, compile, or CI job fails the same way on every run; use `build-failure-triage`.
+  - The subject is an agent or workflow run that misbehaved rather than the application code; use `agent-debug`.
+  - The cause is already demonstrated and the request is to judge whether the fix is proven; use `verification-gate`.
+- Strong routing signals: `app-debugging`, `app debugging`, `application debugging`, `root cause`, `root-cause`, `find the root cause`, `root cause analysis`, `flaky test`, `flaky tests`, `test is flaky`, `intermittent test failure`, `fails intermittently`, `fails one run in`, `passes locally but fails in ci`, `heisenbug`, `bug disappears`, `disappears when i add a print`, `race condition`, `lost update`, `update is lost`, `wrong return value`, `returns the wrong value`, `reproduce the bug`, `minimal reproduction`
+- Good example:
+  - Prompt: a test fails one run in five in CI, how do I find out why
+  - Expected behavior: Prepare reproduction_record/v1 with the loop that measures the failure rate, competing_hypotheses/v1 across ordering, shared state, timing, and environment, and the cheapest observation that splits them; no fix yet.
+  - Why: The failure is intermittent, so the first deliverable is a measured reproduction rather than a patch.
+- Bad example:
+  - Prompt: add a sleep before the assertion so the flaky test passes
+  - Expected behavior: Record the sleep as a symptom mask, keep root cause open, and plan the observation that names the race.
+  - Why: A timing change that hides the failure leaves the fault in place and removes the reproduction.
+- Quality bar:
+  - State the symptom and the expected behaviour separately from any suspected cause.
+  - Record the reproduction with its hit rate; an intermittent fault is reproduced when its rate over N runs is measured, not when it happened once.
+  - Load `references/hypothesis-and-race-method.md` for the hypothesis table, flaky-test tactics, and race patterns instead of improvising them.
+  - Pick the next observation by cost and by how many hypotheses its result eliminates, and record the eliminations.
+  - Keep reproduction, root cause, fix, and verification as separate observed states.
+- Completion checklist:
+  - The reproduction names its command, observed output, expected output, and hit rate, and reads observed before any fix is prepared.
+  - At least three hypotheses on distinct axes were written before the first observation was chosen.
+  - Each observation records which hypotheses its result eliminated.
+  - The root cause cites the demonstrating observation and the observation that ruled out each rival.
+  - The fix handoff carries the reproduction as a regression test that fails before and passes after.
+- Recovery notes:
+  - If the fault does not reproduce, make reproduction the first hypothesis and plan the loop, seed, or ordering that would establish it.
+  - If every hypothesis is eliminated, record that, widen the axes, and keep root cause unclaimed rather than promoting the last survivor.
+- Required inputs:
+  - the wrong behaviour as observed, and the behaviour that was expected
+  - the command, request, or test that shows it, and how often it shows it
+  - language, framework, and what changed recently when known
+  - logs, stack traces, or failing assertions already captured
+  - observed reproduction and verification evidence for any root-cause or fix claim
+- Expected outputs:
+  - reproduction_record/v1
+  - competing_hypotheses/v1 with at least three hypotheses on distinct axes
+  - discriminating_observation_plan/v1
+  - root_cause_record/v1
+  - fix_handoff/v1 blocked until reproduction_record/v1 reads observed
+  - observed_fix_verification/v1 when observed
+- Artifact expectations:
+  - reproduction_record/v1 names the exact command, the input, the observed output, the expected output, and the hit rate over N runs; it reads observed or not_observed and nothing between
+  - competing_hypotheses/v1 spans distinct axes -- input and state, ordering and timing, environment and build, dependency behaviour -- rather than three phrasings of one guess
+  - discriminating_observation_plan/v1 orders the observations cheapest first and names, for each, which hypotheses its result eliminates
+  - root_cause_record/v1 cites the observation that demonstrated the cause and the one that ruled out each rival
+  - fix_handoff/v1 carries the reproduction as the regression test that must fail before the fix and pass after it
+- Safety rules:
+  - No fix before an observed reproduction: `fix_handoff/v1` stays blocked while `reproduction_record/v1` reads not_observed, and a proposed change without one is a guess, not a fix.
+  - Do not claim a reproduction, a probe result, a root cause, or a passing fix from a prepared plan.
+  - Require at least three hypotheses on distinct axes before planning observations; one hypothesis makes every reading confirmatory.
+  - Never treat a symptom's disappearance as a root cause; a bug that stops after a print statement, a retry, or a sleep is an open timing fault.
+  - Do not execute tests, debuggers, or commands from OMH core; the executor runs them and the record takes only what it observed.
 
 ### decision-prototype
 

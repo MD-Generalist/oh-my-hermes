@@ -191,9 +191,12 @@ NON_SKILL_BACKTICKS = frozenset(
 # first statement, handing typed Jev probabilities to `jev-ask` (a new
 # owner), and `strategy-brief` gains the same hand-off (no new owner). Sixteen
 # cases, sixteen pairs, seven owners.
-EXPECTED_DEFERENCE_CASES = 263
-EXPECTED_DEFERENCE_PAIRS = 274
-EXPECTED_DEFERRING_OWNERS = 78
+# `app-debugging` (#1709) defers to `native-debugging`, `build-failure-triage`,
+# `agent-debug`, and `verification-gate` (a new owner), and the first two each
+# gain the statement pointing back at it. Six cases, six pairs, one owner.
+EXPECTED_DEFERENCE_CASES = 269
+EXPECTED_DEFERENCE_PAIRS = 280
+EXPECTED_DEFERRING_OWNERS = 79
 
 # The ratchet. Recording a new inversion must be a visible edit to this number,
 # not one more dict line with a plausible sentence attached.
