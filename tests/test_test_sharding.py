@@ -403,6 +403,7 @@ class RunShardTests(unittest.TestCase):
                 )
                 self.assertEqual(ran.returncode, 0, ran.stderr)
                 payload = json.loads(out.read_text(encoding="utf-8"))
+                self.assertEqual(payload["attempt"], 1)
                 self.assertEqual(payload["failures"], [])
                 self.assertEqual(payload["errors"], [])
                 planned = payload["planned"]
@@ -459,6 +460,19 @@ class RunShardTests(unittest.TestCase):
             self.assertNotEqual(ran.returncode, 0)
             payload = json.loads(out.read_text(encoding="utf-8"))
             self.assertEqual(payload["failures"], ["test_delta.TestDelta.test_bad"])
+            self.assertEqual(payload["attempt"], 1)
+            ran = run_tool(
+                RUN_PY, "--plan", str(plan_path), "--lane", "fixture", "--shard", "0",
+                "--attempt", "3", "--out", str(out), "--start-dir", str(root),
+            )
+            self.assertNotEqual(ran.returncode, 0)
+            self.assertEqual(json.loads(out.read_text(encoding="utf-8"))["attempt"], 3)
+            ran = run_tool(
+                RUN_PY, "--plan", str(plan_path), "--lane", "fixture", "--shard", "0",
+                "--attempt", "0", "--out", str(root / "never.json"), "--start-dir", str(root),
+            )
+            self.assertEqual(ran.returncode, 2)
+            self.assertFalse((root / "never.json").exists())
 
 
 @dataclass(frozen=True, slots=True)
@@ -470,6 +484,7 @@ class ResultSpec:
     planned: tuple[str, ...]
     executed: tuple[str, ...] | None = None
     failures: tuple[str, ...] = ()
+    attempt: int = 1
 
 
 class AggregateFixture(unittest.TestCase):
@@ -513,6 +528,7 @@ class AggregateFixture(unittest.TestCase):
                 "lane": lane,
                 "kind": specification.kind,
                 "shard": specification.shard,
+                "attempt": specification.attempt,
                 "planned": list(specification.planned),
                 "executed": list(ran),
                 "skipped": [],
@@ -595,12 +611,63 @@ class AggregateTests(AggregateFixture):
                     aggregate_mod.load_plan(self.plan_path)
 
     def test_failed_shard_fails_aggregate(self) -> None:
-        self._write_result("linux-3.11", "s0.json", ResultSpec("shard", 0, ("a.A.t1",), failures=("a.A.t1",)))
+        self._write_result("linux-3.11", "s0.json", ResultSpec("shard", 0, ("a.A.t1",), executed=(), failures=("a.A.t1",)))
         self.assertNotEqual(self.aggregate().returncode, 0)
 
     def test_missing_executed_test_fails_reconciliation(self) -> None:
         self._write_result("linux-3.11", "s0.json", ResultSpec("shard", 0, ("a.A.t1",), executed=()))
         self.assertNotEqual(self.aggregate().returncode, 0)
+
+    def test_fresh_passing_attempt_supersedes_a_stale_failing_one(self) -> None:
+        # Issue #1894: "Re-run failed jobs" leaves attempt 1's red result for
+        # the re-run shard beside attempt 2's green one.
+        self._write_result("windows-3.12", "s0.json", ResultSpec("shard", 0, ("a.A.t1",), executed=(), failures=("a.A.t1",)))
+        self._write_result("windows-3.12", "s0-attempt-2.json", ResultSpec("shard", 0, ("a.A.t1",), attempt=2))
+        result = self.aggregate()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("superseded: windows-3.12 shard 0 attempt 1 by attempt 2", result.stdout)
+
+    def test_stale_passing_attempt_never_hides_a_fresh_failing_one(self) -> None:
+        self._write_result("windows-3.12", "s0-attempt-2.json", ResultSpec("shard", 0, ("a.A.t1",), executed=(), failures=("a.A.t1",), attempt=2))
+        result = self.aggregate()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("windows-3.12 shard 0 reports 1 failures", result.stderr)
+
+    def test_fresh_attempt_missing_a_planned_test_fails(self) -> None:
+        self._write_result("linux-3.11", "q-attempt-2.json", ResultSpec("quarantine", None, ("a.A.t3",), executed=(), attempt=2))
+        result = self.aggregate()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("result for linux-3.11 quarantine does not account for every planned test", result.stderr)
+
+    def test_shard_with_no_result_in_any_attempt_fails(self) -> None:
+        (self.results / "linux-3.12-s1.json").unlink()
+        self._write_result("linux-3.12", "s0-attempt-2.json", ResultSpec("shard", 0, ("a.A.t1",), attempt=2))
+        result = self.aggregate()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("missing result for linux-3.12 shard 1", result.stderr)
+
+    def test_two_results_for_one_shard_in_one_attempt_fail(self) -> None:
+        for attempt in (1, 2):
+            with self.subTest(attempt=attempt):
+                self._write_result("linux-3.11", f"s0-dup-{attempt}.json", ResultSpec("shard", 0, ("a.A.t1",), attempt=attempt))
+                if attempt == 2:
+                    self._write_result("linux-3.11", "s0-dup-2b.json", ResultSpec("shard", 0, ("a.A.t1",), attempt=2))
+                result = self.aggregate()
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(f"duplicate result for linux-3.11 shard 0 in attempt {attempt}", result.stderr)
+
+    def test_missing_or_malformed_attempt_fails_at_json_boundary(self) -> None:
+        result_path = self.results / "linux-3.11-s0.json"
+        for value in (None, True, 0, -1, 1.0, "2"):
+            with self.subTest(value=value):
+                payload = json.loads(result_path.read_text(encoding="utf-8"))
+                if value is None:
+                    payload.pop("attempt", None)
+                else:
+                    payload["attempt"] = value
+                write_json(result_path, payload)
+                with self.assertRaises(plan_mod.ShardingError):
+                    aggregate_mod.load_result(result_path)
 
     def test_missing_quarantine_metadata_fails(self) -> None:
         write_json(
@@ -662,6 +729,7 @@ class LanePlanAggregateTests(unittest.TestCase):
                 "lane": lane,
                 "kind": kind,
                 "shard": shard,
+                "attempt": 1,
                 "planned": list(tests),
                 "executed": list(tests),
                 "skipped": [],
@@ -818,6 +886,23 @@ class EventLaneAggregateTests(AggregateFixture):
         self.assertEqual(windows, {"windows-3.12"})
         self.assertIn("--lane windows-3.12 --shard", workflow)
         self.assertIn("--event ${{ github.event_name }}", workflow)
+
+    def test_every_shard_result_is_named_and_stamped_by_run_attempt(self) -> None:
+        # Issue #1894: a re-run attempt's result must never share a name with
+        # the earlier attempt's, and must carry the attempt the aggregate reads.
+        workflow = (REPO_ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+        attempt = "${{ github.run_attempt }}"
+        runs = workflow.count("python tools/test_sharding/run.py")
+        self.assertEqual(runs, 4)
+        self.assertEqual(workflow.count(f"--attempt {attempt}\n"), runs)
+        names = [line.strip() for line in workflow.splitlines() if line.strip().startswith("name: shard-result-")]
+        paths = [line.strip() for line in workflow.splitlines() if line.strip().startswith("path: results/")]
+        self.assertEqual(len(names), runs)
+        self.assertEqual(len(paths), runs)
+        for line in names:
+            self.assertTrue(line.endswith(f"-attempt-{attempt}"), line)
+        for line in paths:
+            self.assertTrue(line.endswith(f"-attempt-{attempt}.json"), line)
 
 
 if __name__ == "__main__":

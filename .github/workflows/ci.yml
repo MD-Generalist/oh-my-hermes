@@ -127,13 +127,14 @@ jobs:
         run: >-
           python tools/test_sharding/run.py --plan shard-plan/plan.json
           --lane linux-${{ matrix.python-version }} --shard ${{ matrix.shard }} --workers 2
-          --out results/result-linux-${{ matrix.python-version }}-${{ matrix.shard }}.json
+          --attempt ${{ github.run_attempt }}
+          --out results/result-linux-${{ matrix.python-version }}-${{ matrix.shard }}-attempt-${{ github.run_attempt }}.json
       - name: Upload shard result
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: shard-result-linux-${{ matrix.python-version }}-${{ matrix.shard }}
-          path: results/result-linux-${{ matrix.python-version }}-${{ matrix.shard }}.json
+          name: shard-result-linux-${{ matrix.python-version }}-${{ matrix.shard }}-attempt-${{ github.run_attempt }}
+          path: results/result-linux-${{ matrix.python-version }}-${{ matrix.shard }}-attempt-${{ github.run_attempt }}.json
       # Serial quarantine (issue #1294): shared-state tests (process-wide
       # signal handlers, spawned child processes, bound sockets) run in their
       # own process after this lane's last shard, the one the planner leaves
@@ -147,13 +148,14 @@ jobs:
         run: >-
           python tools/test_sharding/run.py --plan shard-plan/plan.json
           --lane linux-${{ matrix.python-version }} --quarantine
-          --out results/result-quarantine-linux-${{ matrix.python-version }}.json
+          --attempt ${{ github.run_attempt }}
+          --out results/result-quarantine-linux-${{ matrix.python-version }}-attempt-${{ github.run_attempt }}.json
       - name: Upload quarantine result
         if: ${{ always() && matrix.shard == 1 }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: shard-result-quarantine-linux-${{ matrix.python-version }}
-          path: results/result-quarantine-linux-${{ matrix.python-version }}.json
+          name: shard-result-quarantine-linux-${{ matrix.python-version }}-attempt-${{ github.run_attempt }}
+          path: results/result-quarantine-linux-${{ matrix.python-version }}-attempt-${{ github.run_attempt }}.json
       # Non-test gates run once per python-version (shard 0) instead of once
       # per shard; sharding them would duplicate cost without new signal.
       - name: Static analysis (ruff)
@@ -285,13 +287,14 @@ jobs:
         run: >-
           python tools/test_sharding/run.py --plan shard-plan/plan-windows.json
           --lane windows-3.12 --shard ${{ matrix.shard }} --workers 2
-          --out results/result-windows-3.12-${{ matrix.shard }}.json
+          --attempt ${{ github.run_attempt }}
+          --out results/result-windows-3.12-${{ matrix.shard }}-attempt-${{ github.run_attempt }}.json
       - name: Upload shard result
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: shard-result-windows-3.12-${{ matrix.shard }}
-          path: results/result-windows-3.12-${{ matrix.shard }}.json
+          name: shard-result-windows-3.12-${{ matrix.shard }}-attempt-${{ github.run_attempt }}
+          path: results/result-windows-3.12-${{ matrix.shard }}-attempt-${{ github.run_attempt }}.json
       # Serial quarantine in its own process after the lane's last shard; see
       # the same step in the `test` job.
       - name: Quarantined tests (serial)
@@ -301,13 +304,14 @@ jobs:
         run: >-
           python tools/test_sharding/run.py --plan shard-plan/plan-windows.json
           --lane windows-3.12 --quarantine
-          --out results/result-quarantine-windows-3.12.json
+          --attempt ${{ github.run_attempt }}
+          --out results/result-quarantine-windows-3.12-attempt-${{ github.run_attempt }}.json
       - name: Upload quarantine result
         if: ${{ always() && matrix.shard == 3 }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: shard-result-quarantine-windows-3.12
-          path: results/result-quarantine-windows-3.12.json
+          name: shard-result-quarantine-windows-3.12-attempt-${{ github.run_attempt }}
+          path: results/result-quarantine-windows-3.12-attempt-${{ github.run_attempt }}.json
       - name: Compile package
         if: matrix.shard == 0
         run: python -m compileall src
@@ -466,6 +470,12 @@ jobs:
         with:
           name: shard-plan
           path: shard-plan
+      # Every shard result carries its run attempt in the artifact name, the
+      # file name, and the JSON. "Re-run failed jobs" leaves the earlier
+      # attempt's artifacts in the run, and download-artifact's same-name
+      # "latest" pick orders by artifact ID, which is not creation order
+      # (run 36302750878 kept attempt 1's red result), so names never repeat
+      # and aggregate.py reconciles each shard's newest attempt (#1894).
       - name: Download shard results
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:

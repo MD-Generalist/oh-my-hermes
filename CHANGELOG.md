@@ -49,6 +49,17 @@ All notable changes will be documented here.
   skill reach goes from 121 to 123 of 130 and both skills leave the
   unreached baseline.
 
+- **Re-running only a sharded run's failed jobs now reconciles.** After
+  "Re-run failed jobs", `aggregate` could read the earlier attempt's red
+  shard result instead of the re-run's green one. Both attempts shared one
+  artifact name, and `download-artifact` keeps the same-name artifact with the
+  highest ID, which is not the newest (run 36302750878). Shard and quarantine
+  results now carry `github.run_attempt` in the artifact name, the file name
+  and the result JSON (`run.py --attempt`). `aggregate.py` reconciles each
+  shard's newest attempt and prints the results it superseded. It stays
+  fail-closed: a shard with no result in any attempt is red, two results for
+  one shard in one attempt are red, and a stale green can never hide a fresh
+  red (#1894).
 - **The cost receipt now counts Hermes kanban workers the conversation
   started.** `omh_cost_receipt/v1` gains a fourth source, `kanban_workers`.
   A worker run belongs to the conversation when its task's `tasks.session_id`
