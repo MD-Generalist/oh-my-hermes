@@ -8986,10 +8986,10 @@ _DEFINITIONS.append(
             "If every hypothesis is eliminated, record that, widen the axes, and keep root cause unclaimed rather than promoting the last survivor.",
         ),
         situations=(
-            "a test fails one run in five",
+            "a test fails every fifth run",
             "the bug goes away when I add logging",
             "two requests overwrite each other",
-            "the function returns the wrong value",
+            "the function gives the wrong answer for negative numbers",
             "works locally but not in ci",
             "cannot figure out why this fails",
         ),

@@ -1433,7 +1433,7 @@
 }
 },
 {
-"anchors":"away cannot ci figur five function goes heisenbug log overwrit",
+"anchors":"answer away cannot ci fifth figur function give goes heisenbug log negativ number overwrit",
 "hangul":"",
 "hangul_anchors":"",
 "label":"omh-app-debugging",
@@ -1441,11 +1441,11 @@
 "situation":"Application code misbehaves -- a wrong value, a flaky test, a lost update",
 "terms":{
 "1":"behav dependent discriminat first form jvm library misbehav move observ order python separat servic typescript unknown wrongly",
-"2":"analysis away cannot cheapest code compet condition demonstrat disappear failur figur find five fix function goes heisenbug hypothes intermittently log minimal observation overwrit pass print request",
+"2":"analysis answer away cannot cheapest code compet condition demonstrat disappear failur fifth figur find fix function give goes heisenbug hypothes intermittently log minimal negativ number observation overwrit pass print request return",
 "3":"flaky intermittent race reproduc reproduction work",
-"4":"add application caus ci fail locally lost return root run updat",
+"4":"add application caus ci fail locally lost root run updat valu",
 "5":"app bug debug",
-"6":"test valu wrong"
+"6":"test wrong"
 }
 },
 {
