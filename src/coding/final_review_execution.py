@@ -14,6 +14,7 @@ from .final_review_execution_models import (
 )
 from .final_review_wave_models import (
     LANE_ORDER,
+    ContextProvenance,
     ImmutableRevision,
     LaneObservation,
     LaneState,
@@ -36,9 +37,14 @@ def execute_final_review_wave(
     reservations: FinalReviewExecutionReservations,
     *,
     provider_for: ProviderForLane,
+    context_provenance: ContextProvenance,
     status_sink: StatusSink | None = None,
 ) -> FinalReviewWave:
     """Run every eligible lane, then reduce terminal evidence in fixed lane order.
+
+    ``context_provenance`` is how this executor builds each reviewer's context.
+    It is recorded on every lane it observes; a runner result may declare its
+    own. It is metadata about the lane, never evidence that the lane ran.
 
     A worker holds global, provider, and review reservations simultaneously.
     Every submitted lane is awaited before any terminal state is reduced, so a
@@ -55,14 +61,14 @@ def execute_final_review_wave(
     def mark_running(lens: ReviewLens) -> None:
         nonlocal current
         with current_lock:
-            current = current.observe(LaneObservation(lens, LaneState.RUNNING, revision))
+            current = current.observe(LaneObservation(lens, LaneState.RUNNING, revision, context_provenance))
             projection = current.project_status()
         _emit_projection(projection, status_sink)
 
     eligible = set(wave.eligible_lanes())
     for lens in LANE_ORDER:
         if lens not in eligible:
-            current = current.observe(LaneObservation(lens, LaneState.BLOCKED, revision))
+            current = current.observe(LaneObservation(lens, LaneState.BLOCKED, revision, context_provenance))
 
     providers: dict[ReviewLens, str] = {}
     runnable: list[ReviewLens] = []
@@ -71,7 +77,7 @@ def execute_final_review_wave(
             continue
         provider = provider_for(lens).strip()
         if not provider or provider not in reservations.provider_reservations:
-            current = current.observe(LaneObservation(lens, LaneState.MISSING, revision))
+            current = current.observe(LaneObservation(lens, LaneState.MISSING, revision, context_provenance))
         else:
             providers[lens] = provider
             runnable.append(lens)
@@ -81,7 +87,7 @@ def execute_final_review_wave(
         or reservations.review_reservation.available_slots == 0
     ):
         for lens in runnable:
-            current = current.observe(LaneObservation(lens, LaneState.BLOCKED, revision))
+            current = current.observe(LaneObservation(lens, LaneState.BLOCKED, revision, context_provenance))
         _emit(current, status_sink)
         return current
 
@@ -92,7 +98,7 @@ def execute_final_review_wave(
     ]
     for lens in LANE_ORDER:
         if lens in providers and lens not in runnable:
-            current = current.observe(LaneObservation(lens, LaneState.BLOCKED, revision))
+            current = current.observe(LaneObservation(lens, LaneState.BLOCKED, revision, context_provenance))
     if not runnable:
         _emit(current, status_sink)
         return current
@@ -124,7 +130,14 @@ def execute_final_review_wave(
     for lens in LANE_ORDER:
         if lens in results:
             observation = results[lens]
-            current = current.observe(LaneObservation(lens, observation.state, observation.revision))
+            current = current.observe(
+                LaneObservation(
+                    lens,
+                    observation.state,
+                    observation.revision,
+                    observation.context_provenance or context_provenance,
+                )
+            )
     _emit(current, status_sink)
     return current
 
@@ -167,7 +180,7 @@ def _terminal_result(
     if isinstance(result, LaneObservation):
         if result.lens is not lens:
             return LaneExecutionResult(LaneState.MISSING, revision)
-        result = LaneExecutionResult(result.state, result.revision)
+        result = LaneExecutionResult(result.state, result.revision, result.context_provenance)
     if result.state not in _TERMINAL_STATES or result.revision is None:
         return LaneExecutionResult(LaneState.MISSING, revision)
     return result

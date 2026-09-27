@@ -11,10 +11,12 @@ from omh.coding.final_review_wave import (
     LANE_ORDER,
     FinalReviewExecutionReservations,
     GlobalReviewReservation,
+    ContextProvenance,
     ImmutableRevision,
     IntegrationReceipt,
     LaneBudgetReservationInput,
     LaneExecutionResult,
+    LaneObservation,
     LaneState,
     ProviderReviewReservation,
     ReviewLens,
@@ -27,6 +29,7 @@ from omh.coding.final_review_wave import (
 
 
 REVISION = ImmutableRevision("a" * 40)
+FRESH = ContextProvenance.FRESH_FROM_DIFF
 
 
 def _reservations() -> tuple[LaneBudgetReservationInput, ...]:
@@ -70,7 +73,7 @@ class FinalReviewWaveAggregateTests(unittest.TestCase):
         result: list[object] = []
         worker = threading.Thread(
             target=lambda: result.append(
-                execute_final_review_wave(wave, run, _limits(), provider_for=lambda _: "local")
+                execute_final_review_wave(wave, run, _limits(), provider_for=lambda _: "local", context_provenance=FRESH)
             )
         )
         worker.start()
@@ -105,7 +108,7 @@ class FinalReviewWaveAggregateTests(unittest.TestCase):
         result: list[object] = []
         worker = threading.Thread(
             target=lambda: result.append(
-                execute_final_review_wave(wave, run, _limits(provider_limit=1), provider_for=lambda _: "local")
+                execute_final_review_wave(wave, run, _limits(provider_limit=1), provider_for=lambda _: "local", context_provenance=FRESH)
             )
         )
         worker.start()
@@ -131,7 +134,7 @@ class FinalReviewWaveAggregateTests(unittest.TestCase):
                 raise RuntimeError("broken requirement lane")
             return LaneExecutionResult(LaneState.COMPLETED, REVISION)
 
-        completed = execute_final_review_wave(wave, run, _limits(), provider_for=lambda _: "local")
+        completed = execute_final_review_wave(wave, run, _limits(), provider_for=lambda _: "local", context_provenance=FRESH)
 
         self.assertEqual(set(calls), set(LANE_ORDER))
         self.assertEqual(completed.assess().verdict, WaveVerdict.BLOCK)
@@ -156,7 +159,7 @@ class FinalReviewWaveAggregateTests(unittest.TestCase):
                     return LaneExecutionResult(LaneState.COMPLETED, ImmutableRevision("b" * 40))
             raise AssertionError("unreachable")
 
-        completed = execute_final_review_wave(wave, run, _limits(), provider_for=lambda _: "local")
+        completed = execute_final_review_wave(wave, run, _limits(), provider_for=lambda _: "local", context_provenance=FRESH)
 
         self.assertEqual(
             [lane.state for lane in completed.lanes],
@@ -180,6 +183,7 @@ class FinalReviewWaveAggregateTests(unittest.TestCase):
             ),
             _limits(),
             provider_for=lambda _: "local",
+            context_provenance=FRESH,
             status_sink=lambda projection: statuses.append(tuple(item.status for item in projection.lanes)),
         )
 
@@ -194,6 +198,7 @@ class FinalReviewWaveAggregateTests(unittest.TestCase):
             lambda _lane: LaneExecutionResult(LaneState.COMPLETED, REVISION),
             _limits(),
             provider_for=lambda _: "local",
+            context_provenance=FRESH,
         )
         invalidated = completed.invalidate_for_remediation()
         replacement = prepare_remediated_wave(invalidated, "wave-2", _reservations()).integrate(
@@ -211,6 +216,57 @@ class FinalReviewWaveAggregateTests(unittest.TestCase):
         self.assertEqual(prepared.assess().verdict, WaveVerdict.HOLD)
         self.assertEqual([lane.status for lane in prepared.project_status().lanes], ["required"] * 4)
 
+
+    def test_runner_declared_inherited_context_overrides_the_executor_and_is_refused(self) -> None:
+        completed = execute_final_review_wave(
+            _integrated_wave(),
+            lambda lane: LaneExecutionResult(
+                LaneState.COMPLETED,
+                REVISION,
+                ContextProvenance.INHERITED_FROM_AUTHOR if lane.lens is ReviewLens.REAL_SURFACE else None,
+            ),
+            _limits(),
+            provider_for=lambda _: "local",
+            context_provenance=FRESH,
+        )
+
+        self.assertEqual(
+            [lane.context_provenance for lane in completed.lanes],
+            [FRESH, FRESH, FRESH, ContextProvenance.INHERITED_FROM_AUTHOR],
+        )
+        self.assertEqual(completed.assess().verdict, WaveVerdict.BLOCK)
+        self.assertEqual(completed.assess().blocking_lens, ReviewLens.REAL_SURFACE)
+        self.assertEqual(completed.assess().refused_field, "context_provenance")
+
+    def test_executor_declared_inherited_context_cannot_pass(self) -> None:
+        completed = execute_final_review_wave(
+            _integrated_wave(),
+            lambda _lane: LaneExecutionResult(LaneState.COMPLETED, REVISION),
+            _limits(),
+            provider_for=lambda _: "local",
+            context_provenance=ContextProvenance.INHERITED_FROM_AUTHOR,
+        )
+
+        self.assertEqual(completed.assess().verdict, WaveVerdict.BLOCK)
+        self.assertEqual(completed.assess().refused_field, "context_provenance")
+
+    def test_runner_observation_keeps_its_declared_inherited_context(self) -> None:
+        completed = execute_final_review_wave(
+            _integrated_wave(),
+            lambda lane: LaneObservation(
+                lane.lens,
+                LaneState.COMPLETED,
+                REVISION,
+                ContextProvenance.INHERITED_FROM_AUTHOR if lane.lens is ReviewLens.QUALITY else FRESH,
+            ),
+            _limits(),
+            provider_for=lambda _: "local",
+            context_provenance=FRESH,
+        )
+
+        self.assertIs(completed.lanes[1].context_provenance, ContextProvenance.INHERITED_FROM_AUTHOR)
+        self.assertEqual(completed.assess().blocking_lens, ReviewLens.QUALITY)
+        self.assertEqual(completed.assess().refused_field, "context_provenance")
 
 if __name__ == "__main__":
     unittest.main()

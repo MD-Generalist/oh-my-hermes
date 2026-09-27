@@ -66,8 +66,12 @@ def run_final_review_after_integration(
         return _aggregate(integrated_revision, "BLOCK")
     observations = _observations_by_lens(observed)
     if observations is None or any(
-        observations[lane.lens]
-        != LaneObservation(lane.lens, lane.state, lane.observed_revision)
+        (
+            observations[lane.lens].state,
+            observations[lane.lens].revision,
+            observations[lane.lens].context_provenance,
+        )
+        != (lane.state, lane.observed_revision, lane.context_provenance)
         for lane in wave.lanes
     ):
         return _aggregate(integrated_revision, "BLOCK")
@@ -84,6 +88,7 @@ def run_final_review_after_integration(
             "state": lane.state.value,
             "revision": integrated_revision,
             "execution_observed": True,
+            "context_provenance": observations[lane.lens].context_provenance.value,
             "execution_ref": _execution_ref(integrated_revision, observations[lane.lens]),
         }
         for lane in wave.lanes
@@ -92,6 +97,7 @@ def run_final_review_after_integration(
         integrated_revision,
         assessment.verdict.value,
         assessment.blocking_lens.value if assessment.blocking_lens else "",
+        assessment.refused_field or "",
     )
     result["final_review_records"] = records
     return result
@@ -111,15 +117,20 @@ def _observations_by_lens(
 def _execution_ref(revision: str, observation: LaneObservation) -> str:
     material = (
         f"{revision}\0{observation.lens.value}\0"
-        f"{observation.state.value}\0{observation.revision.value}"
+        f"{observation.state.value}\0{observation.revision.value}\0"
+        f"{observation.context_provenance.value}"
     ).encode("ascii")
     return f"final-review:{hashlib.sha256(material).hexdigest()}"
 
 
-def _aggregate(revision: str, verdict: str, blocking_lens: str = "") -> dict[str, object]:
+def _aggregate(
+    revision: str, verdict: str, blocking_lens: str = "", refused_field: str = ""
+) -> dict[str, object]:
     aggregate: dict[str, str] = {"revision": revision, "verdict": verdict}
     if blocking_lens:
         aggregate["blocking_lens"] = blocking_lens
+    if refused_field:
+        aggregate["refused_field"] = refused_field
     return {
         "final_review_status": verdict,
         "final_review_aggregate": aggregate,

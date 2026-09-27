@@ -8,7 +8,9 @@ from . import final_review_execution as _execution
 from . import final_review_execution_models as _execution_models
 from .final_review_status import human_lane_status
 from .final_review_wave_models import (
+    CONTEXT_PROVENANCE_FIELD,
     LANE_ORDER,
+    ContextProvenance,
     ImmutableRevision,
     IntegrationReceipt,
     LaneBudgetReservationInput,
@@ -98,7 +100,12 @@ class FinalReviewWave:
             raise ValueError("an invalidated wave cannot accept observations")
         index = LANE_ORDER.index(observation.lens)
         state = observation.state if observation.revision == self.integration.revision else LaneState.STALE
-        replacement = replace(self.lanes[index], state=state, observed_revision=observation.revision)
+        replacement = replace(
+            self.lanes[index],
+            state=state,
+            observed_revision=observation.revision,
+            context_provenance=observation.context_provenance,
+        )
         return replace(
             self,
             lanes=tuple(replacement if current == index else lane for current, lane in enumerate(self.lanes)),
@@ -113,6 +120,9 @@ class FinalReviewWave:
         for lens in LANE_ORDER:
             if lanes[lens].state in _BLOCKING_STATES:
                 return WaveAssessment(WaveVerdict.BLOCK, lens)
+        for lens in LANE_ORDER:
+            if not _may_count_as_independent(lanes[lens]):
+                return WaveAssessment(WaveVerdict.BLOCK, lens, CONTEXT_PROVENANCE_FIELD)
         reservations = {item.lens: item for item in self.reservations}
         for lens in LANE_ORDER:
             if lanes[lens].state is LaneState.PREPARED and not reservations[lens].available:
@@ -163,6 +173,13 @@ def prepare_remediated_wave(
         prepare_final_review_wave(wave_id, reservations),
         replaces_revision=prior_wave.integration.revision,
     )
+
+
+def _may_count_as_independent(lane: ReviewLane) -> bool:
+    """Refuse a lane whose context was inherited, or completed without saying."""
+    if lane.context_provenance is ContextProvenance.INHERITED_FROM_AUTHOR:
+        return False
+    return lane.state is not LaneState.COMPLETED or lane.context_provenance is ContextProvenance.FRESH_FROM_DIFF
 
 
 def _execution_status(state: LaneState) -> str:

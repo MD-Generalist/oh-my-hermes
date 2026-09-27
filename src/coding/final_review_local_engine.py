@@ -11,6 +11,7 @@ from threading import Lock
 
 from .final_review_wave import (
     LANE_ORDER,
+    ContextProvenance,
     FinalReviewExecutionReservations,
     FinalReviewWave,
     GlobalReviewReservation,
@@ -115,6 +116,10 @@ class HermesFinalReviewEngine:
                 ReviewReservation(len(LANE_ORDER), 0),
             ),
             provider_for=lambda _lens: self._config.provider,
+            # Each child starts from a detached checkout of the integrated
+            # revision and a prompt of goal, lens, and revision only; no
+            # author session or transcript reaches it.
+            context_provenance=ContextProvenance.FRESH_FROM_DIFF,
         )
         for lane in completed.lanes:
             if lane.observed_revision is not None:
@@ -123,6 +128,7 @@ class HermesFinalReviewEngine:
                         lane.lens,
                         lane.state,
                         lane.observed_revision,
+                        lane.context_provenance,
                     )
                 )
         return completed
