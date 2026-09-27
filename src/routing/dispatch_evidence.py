@@ -175,6 +175,10 @@ def dispatch_evidence(
     if any(guard_trust.get(label) == GUARD_TRUSTED for label in labels if _kind(label) == "guard"):
         return EVIDENCE_TRUSTED_GUARD
     phrases = phrase_count(labels)
+    # The non-ASCII exemption above must stay ahead of this branch:
+    # `reads_as_a_request` reads Latin words only and returns False for a
+    # message with none, which would strip every Korean or Japanese cadence
+    # phrase (`매일 아침`) of its evidence.
     if phrases and not reads_as_a_request(message):
         # A cadence phrase says when, never what: `every morning` is the
         # skill's own phrase in a request and a habit in a report. Without a

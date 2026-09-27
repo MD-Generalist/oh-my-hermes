@@ -10,9 +10,12 @@ All notable changes will be documented here.
   own-phrase rule dispatched on them in any sentence: "every morning I drink
   coffee ..." opened a scheduled-ops blueprint. A phrase made only of a
   frequency and its time now counts as own-phrase evidence only when the
-  message reads as a request -- a request frame (`can you`, `remind me`,
-  `I want`) or a main clause that opens on its verb rather than on a subject
-  after the cadence. Separately, the feedback-triage guard's weakest branch
+  message reads as a request: a request frame (`can you`, `remind me`,
+  `I want`), a main clause after the cadence that opens on its verb, or a
+  clause about a thing (`the report`, `our snapshot`) that carries a
+  directive modal (`should`, `needs to`) or a passive of a delivery verb
+  (`gets sent`). A clause about a person (`every morning I ...`) reads as a
+  report even with a modal (`I should really ...`). Separately, the feedback-triage guard's weakest branch
   (a product noun beside a defect noun, no reporter) read "fix the null
   pointer crash in the checkout service" as a customer report and dispatched
   triage on trust earned by its reporter-shaped branches; that branch no
@@ -20,8 +23,12 @@ All notable changes will be documented here.
   the first with `automation-blueprint` first, the second with a coding skill
   first. Recurring requests ("every morning check release risk and tell me on
   Slack ...") and defect reports ("the checkout page crashes on submit")
-  still dispatch. Eight negative controls and three intervention cases pin
-  both sides; no existing corpus case moved.
+  still dispatch, and so do subject-initial and passive scheduling requests
+  ("every morning the report should go to Slack", "every morning our
+  dashboard snapshot gets sent to leadership"). Eleven negative controls and
+  ten intervention cases pin both sides; no existing corpus case moved. Known
+  limit: a thing-subject habit with a modal ("every morning my dog needs to
+  go out") still dispatches, as on main; separating it needs noun vocabulary.
 - **A routing guard dispatches on its own only when its measured record is
   at least 3 right per wrong, unless demoting it breaks a quality floor.**
   `GUARD_DISPATCH_TRUST` now reads each guard's record as the dispatched

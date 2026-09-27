@@ -277,6 +277,34 @@ class CadencePhraseNeedsARequestTests(unittest.TestCase):
             with self.subTest(message=message):
                 self.assertFalse(policy.reads_as_a_request(message))
 
+    def test_a_clause_about_a_thing_asks_with_a_directive_modal_or_a_delivery_passive(self) -> None:
+        for message in (
+            "every morning the release notes should reach the support team",
+            "each night the backup log has to go to the storage channel",
+            "every week our churn chart gets emailed to finance",
+            "the invoices are to be mailed every friday",
+        ):
+            with self.subTest(message=message):
+                self.assertTrue(policy.reads_as_a_request(message))
+        for message in (
+            # A modal said of a person is advice, obligation, or belief.
+            "every morning I should stretch more, honestly",
+            "every night we must look ridiculous to the neighbours",
+            # A thing with no modal and no delivery passive is described.
+            "every day the elevator is broken again",
+            "each morning the parking lot gets crowded",
+        ):
+            with self.subTest(message=message):
+                self.assertFalse(policy.reads_as_a_request(message))
+
+    def test_pure_non_ascii_input_reads_as_no_request(self) -> None:
+        # `dispatch_evidence` must keep its non-ASCII exemption ahead of the
+        # cadence branch; this is the reason.
+        self.assertFalse(policy.reads_as_a_request("매일 아침 뉴스 요약 보내줘"))
+        self.assertEqual(
+            _classify(["trigger:매일 아침"], message="매일 아침 뉴스 요약 보내줘"), EVIDENCE_NON_ASCII_EXEMPT
+        )
+
     def test_the_issue_sentence_asks_with_automation_first(self) -> None:
         route = route_chat_message("every morning I drink coffee before checking email", source="discord")
         self.assertEqual(route["action"], "clarify")

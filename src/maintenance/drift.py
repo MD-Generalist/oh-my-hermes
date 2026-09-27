@@ -329,7 +329,9 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # intervention case.
             # #1892 adds eight: four habits told with a cadence phrase and four
             # non-code fix commands on a product noun and a defect noun.
-            expected=321,
+            # The #1893 review adds three: modals said of a person (advice,
+            # obligation, belief), which stay narration.
+            expected=324,
             sites=(
                 "tests/test_cli.py",
                 "tests/test_hermes_ux_quality.py",
@@ -399,7 +401,10 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # #1892 adds three: a cadence request that still dispatches, a
             # command to fix a product crash that asks with the coding lane
             # first, and a report of the same crash that still triages.
-            expected=489,
+            # The #1893 review adds seven: subject-initial and passive
+            # scheduling requests (a directive modal or a delivery passive on a
+            # noun-phrase subject) that must keep dispatching.
+            expected=496,
             sites=(
                 "tests/test_cli.py",
                 "tests/test_hermes_ux_quality.py",

@@ -6377,14 +6377,26 @@ def has_cadence(normalized_query: str, query_tokens: set[str]) -> bool:
 
 
 _CADENCE_ADVERBS = frozenset({"every", "each", "daily", "weekly", "monthly", "hourly", "nightly"})
-# Closed-class words that open a clause as its subject: a pronoun, a
-# possessive, or an article. A clause that opens on one says what someone or
-# something does; an imperative opens on its verb.
-_CLAUSE_SUBJECT_OPENERS = frozenset(
-    {
-        "i", "we", "he", "she", "they", "it", "my", "our", "his", "her", "their", "its",
-        "the", "a", "an", "this", "that", "these", "those", "there",
-    }
+# Closed-class words that open a clause as its subject. A personal pronoun
+# makes the clause about a person (`I`, `we`); a possessive or an article opens
+# a noun phrase about a thing (`the report`, `our dashboard`). An imperative
+# opens on its verb instead.
+_PERSONAL_SUBJECTS = frozenset({"i", "we", "he", "she", "they", "you", "it"})
+_NOUN_PHRASE_OPENERS = frozenset(
+    {"my", "our", "his", "her", "their", "its", "the", "a", "an", "this", "that", "these", "those", "there"}
+)
+# A directive modal puts an obligation on the subject: `the report should go
+# out`. Said of a person it is advice or narration (`I should drink less`), so
+# it counts only on a noun-phrase subject.
+_DIRECTIVE_MODALS = frozenset({"should", "must"})
+_DIRECTIVE_MODAL_PAIRS = frozenset(
+    {("needs", "to"), ("need", "to"), ("has", "to"), ("have", "to"), ("is", "to"), ("are", "to")}
+)
+# A passive of a delivery verb (`gets sent`, `be emailed`) schedules a thing to
+# reach someone. Other passives (`the road is blocked`) describe a state.
+_PASSIVE_AUXILIARIES = frozenset({"get", "gets", "got", "be", "is", "are", "being"})
+_DELIVERY_PARTICIPLES = frozenset(
+    {"sent", "emailed", "mailed", "posted", "delivered", "shared", "published", "forwarded"}
 )
 # A request put to the assistant in so many words, whatever the clause opens on.
 _REQUEST_FRAMES = (
@@ -6411,10 +6423,20 @@ def reads_as_a_request(message: str) -> bool:
     """True when the message puts something to the assistant rather than reporting.
 
     A request frame (`can you`, `remind me`) anywhere is a request. Otherwise
-    the main clause decides: after a courtesy opener and a leading cadence
-    (`every morning, ...`), an imperative opens on its verb, while a report
-    opens on its subject (`every morning I ...`, `each day the bus ...`).
+    the main clause decides, after a courtesy opener and a leading cadence
+    (`every morning, ...`):
+
+    - an imperative opens on its verb: a request;
+    - a clause about a person (`every morning I ...`) is a report, even with a
+      modal (`I should really ...`);
+    - a clause about a thing (`the report ...`, `our snapshot ...`) is a
+      request only when it carries a directive modal (`should`, `needs to`)
+      or a passive of a delivery verb (`gets sent`); otherwise it reports
+      (`each day the bus is late`).
+
     A question is left to the rest of the router, which already reads it.
+    ASCII only: a message with no Latin words has no words here and reads as
+    no request, so callers must exempt non-ASCII input before asking.
     """
     normalized = normalized_phrase(message)
     if "?" in message or contains_boundary_phrase(normalized, _REQUEST_FRAMES):
@@ -6422,7 +6444,16 @@ def reads_as_a_request(message: str) -> bool:
     words = _command_words(normalized)
     while words and words[0] in _CADENCE_ADVERBS:
         words = words[2:] if words[0] in {"every", "each"} else words[1:]
-    return bool(words) and words[0] not in _CLAUSE_SUBJECT_OPENERS
+    if not words or words[0] in _PERSONAL_SUBJECTS:
+        return False
+    if words[0] not in _NOUN_PHRASE_OPENERS:
+        return True
+    pairs = list(zip(words, words[1:]))
+    return (
+        bool(_DIRECTIVE_MODALS & set(words))
+        or any(pair in _DIRECTIVE_MODAL_PAIRS for pair in pairs)
+        or any(first in _PASSIVE_AUXILIARIES and second in _DELIVERY_PARTICIPLES for first, second in pairs)
+    )
 
 
 def _direct_coding_task_guard_applies(

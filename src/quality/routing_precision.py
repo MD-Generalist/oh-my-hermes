@@ -2520,6 +2520,29 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
         "answer_clarification",
         "",
     ),
+    # A modal said of a person is advice or narration, not a schedule: the
+    # directive-modal reading counts only on a noun-phrase subject.
+    RoutingPrecisionCase(
+        "cadence-self-advice-modal-is-not-a-schedule",
+        "Advice to oneself with a modal is not a scheduled job",
+        "every morning I should really drink less coffee, haha",
+        "answer_clarification",
+        "",
+    ),
+    RoutingPrecisionCase(
+        "cadence-obligation-narration-is-not-a-schedule",
+        "A daily obligation told about ourselves is not a scheduled job",
+        "every day we have to walk past that awful construction site",
+        "answer_clarification",
+        "",
+    ),
+    RoutingPrecisionCase(
+        "cadence-epistemic-modal-is-not-a-schedule",
+        "An epistemic `must` about other people is not a scheduled job",
+        "every morning they must think I'm crazy for jogging in the rain",
+        "answer_clarification",
+        "",
+    ),
     # `fix` plus a product noun and a defect noun made the feedback guard read
     # a command as a customer report (#1892). None of these is code and none
     # hands over a report; the positive halves are
@@ -7389,6 +7412,73 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "cadence-request-still-dispatches-automation",
         "A request that opens on its cadence still opens automation blueprint",
         "every morning send me the build status",
+        "dispatch",
+        "automation-blueprint",
+        "prepare_scheduled_ops_blueprint",
+        "automation_blueprint",
+    ),
+    # Subject-initial and passive scheduling requests (#1893 review): a clause
+    # about a thing that carries a directive modal or a passive of a delivery
+    # verb reads as a request, so the cadence phrase keeps its evidence.
+    # The first four are the review's sentences; the last three share the shape.
+    RoutingInterventionCase(
+        "cadence-modal-passive-email-dispatches",
+        "A thing that should be emailed every morning is a schedule",
+        "every morning the sales numbers should be emailed to the team",
+        "dispatch",
+        "automation-blueprint",
+        "prepare_scheduled_ops_blueprint",
+        "automation_blueprint",
+    ),
+    RoutingInterventionCase(
+        "cadence-get-passive-send-dispatches",
+        "A snapshot that gets sent every morning is a schedule",
+        "every morning our dashboard snapshot gets sent to leadership",
+        "dispatch",
+        "automation-blueprint",
+        "prepare_scheduled_ops_blueprint",
+        "automation_blueprint",
+    ),
+    RoutingInterventionCase(
+        "cadence-modal-post-dispatches",
+        "Results that should post every day are a schedule",
+        "every day the CI results should post to the team channel",
+        "dispatch",
+        "automation-blueprint",
+        "prepare_scheduled_ops_blueprint",
+        "automation_blueprint",
+    ),
+    RoutingInterventionCase(
+        "cadence-modal-go-to-dispatches",
+        "A report that should go to Slack every morning is a schedule",
+        "every morning the report should go to Slack",
+        "dispatch",
+        "automation-blueprint",
+        "prepare_scheduled_ops_blueprint",
+        "automation_blueprint",
+    ),
+    RoutingInterventionCase(
+        "cadence-get-passive-post-dispatches",
+        "A summary that gets posted every morning is a schedule",
+        "every morning the overnight error summary gets posted to the ops channel",
+        "dispatch",
+        "automation-blueprint",
+        "prepare_scheduled_ops_blueprint",
+        "automation_blueprint",
+    ),
+    RoutingInterventionCase(
+        "cadence-needs-to-dispatches",
+        "A report that needs to go out every day is a schedule",
+        "every day the backlog report needs to go to the product leads",
+        "dispatch",
+        "automation-blueprint",
+        "prepare_scheduled_ops_blueprint",
+        "automation_blueprint",
+    ),
+    RoutingInterventionCase(
+        "cadence-must-be-shared-dispatches",
+        "Numbers that must be shared every morning are a schedule",
+        "every morning the uptime numbers must be shared with the on-call team",
         "dispatch",
         "automation-blueprint",
         "prepare_scheduled_ops_blueprint",
