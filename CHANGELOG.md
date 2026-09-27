@@ -72,6 +72,17 @@ All notable changes will be documented here.
   `fresh_from_diff`, and each fan-out `final_review_records` row carries the
   field. Declaring provenance is not evidence that a review ran: a prepared
   lane stays `prepared_not_executed`.
+- **Deep research tries one recovery before calling a blocked source a
+  gap (#1527).** When a source answers HTTP 403, HTTP 429, a paywall, or a
+  WAF or bot wall, the `research` skill now loads Hermes' bundled
+  `blocked-page-recovery` skill once for that source when it is available,
+  and never retries the same URL in a loop. An archive or cached copy it
+  returns is cited as a dated historical capture, never as the live page.
+  When the skill is missing, recovery fails, or the source needs a login or
+  payment, the run names the retrieval gap with that reason, as before. The
+  portable `agent-skills/ulw-research` body carries the same rule against
+  the host's own recovery capability and does not name the Hermes skill.
+
 - **The cost receipt now counts Hermes kanban workers the conversation
   started.** `omh_cost_receipt/v1` gains a fourth source, `kanban_workers`.
   A worker run belongs to the conversation when its task's `tasks.session_id`
