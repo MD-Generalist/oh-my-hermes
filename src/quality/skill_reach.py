@@ -61,72 +61,29 @@ NEGATIVE_REASONS = (REASON_CORPUS_GAP,)
 # measured when this gate landed. Shrink-only: remove an entry in the same
 # commit that adds the intervention case reaching it.
 UNREACHED_POSITIVE_BASELINE: Mapping[str, str] = {
+    # `achievements` and `wiki` dispatch on their own non-name triggers, but
+    # every dispatch to them measured so far answers with the generic `ack`
+    # chat response, which the intervention evaluator rejects ("generic
+    # acknowledgement replaced expected workflow surface"). Giving them a
+    # passing case means giving them a response surface of their own -- a
+    # wrapper change, not a corpus one.
     "achievements": REASON_CORPUS_GAP,
-    "agent-debug": REASON_CORPUS_GAP,
-    "ai-slop-cleaner": REASON_CORPUS_GAP,
-    "ask": REASON_CORPUS_GAP,
-    "buzz": REASON_CORPUS_GAP,
-    "cancel": REASON_CORPUS_GAP,
-    "capability-toggle": REASON_CORPUS_GAP,
-    "codebase-onboarding": REASON_CORPUS_GAP,
-    "codegraph-refresh": REASON_CORPUS_GAP,
-    "connector-operator": REASON_CORPUS_GAP,
-    "cto-loop": REASON_CORPUS_GAP,
-    "data-analysis": REASON_CORPUS_GAP,
-    "decision-recall": REASON_CORPUS_GAP,
-    "deploy-and-monitor": REASON_CORPUS_GAP,
-    "design-orchestration": REASON_CORPUS_GAP,
-    "failure-signal-audit": REASON_CORPUS_GAP,
-    "gateway-intent-card": REASON_CORPUS_GAP,
-    "harness-session-inventory": REASON_CORPUS_GAP,
-    "instinct-ledger": REASON_CORPUS_GAP,
     "jev-action-check": REASON_ADDRESSED_BY_DESIGN,
     "jev-ask": REASON_ADDRESSED_BY_DESIGN,
     "jev-done-check": REASON_ADDRESSED_BY_DESIGN,
     "jev-failure-triage": REASON_ADDRESSED_BY_DESIGN,
     "jev-review-gate": REASON_ADDRESSED_BY_DESIGN,
     "jev-route": REASON_ADDRESSED_BY_DESIGN,
-    "live-info-operator": REASON_CORPUS_GAP,
-    "meeting-brief": REASON_CORPUS_GAP,
     "meta-router": REASON_ADDRESSED_BY_DESIGN,
-    "operating-rhythm": REASON_CORPUS_GAP,
-    "physical-device-readiness": REASON_CORPUS_GAP,
-    "production-audit": REASON_CORPUS_GAP,
-    "prompt-import-readiness": REASON_CORPUS_GAP,
-    "provider-profile-posture": REASON_CORPUS_GAP,
-    "report-package": REASON_CORPUS_GAP,
-    "run-efficiency": REASON_CORPUS_GAP,
-    "skill": REASON_CORPUS_GAP,
-    "skill-health": REASON_CORPUS_GAP,
-    "skill-scout": REASON_CORPUS_GAP,
-    "ultraqa": REASON_CORPUS_GAP,
-    "voice-operator": REASON_CORPUS_GAP,
     "wiki": REASON_CORPUS_GAP,
-    "workspace-file-operator": REASON_CORPUS_GAP,
 }
 
 # Skills whose territory no negative control in ROUTING_PRECISION_CASES enters,
 # as measured when this gate landed. Shrink-only: remove an entry in the same
-# commit that adds the negative control.
-NO_NEGATIVE_CONTROL_BASELINE: Mapping[str, str] = {
-    "adversarial-consensus": REASON_CORPUS_GAP,
-    "cancel": REASON_CORPUS_GAP,
-    "context": REASON_CORPUS_GAP,
-    "doctor": REASON_CORPUS_GAP,
-    "failure-signal-audit": REASON_CORPUS_GAP,
-    "harness-session-inventory": REASON_CORPUS_GAP,
-    "jev-action-check": REASON_CORPUS_GAP,
-    "jev-done-check": REASON_CORPUS_GAP,
-    "jev-failure-triage": REASON_CORPUS_GAP,
-    "jev-review-gate": REASON_CORPUS_GAP,
-    "jev-route": REASON_CORPUS_GAP,
-    "jit-learn": REASON_CORPUS_GAP,
-    "media-input-operator": REASON_CORPUS_GAP,
-    "ops-review": REASON_CORPUS_GAP,
-    "physical-device-readiness": REASON_CORPUS_GAP,
-    "run-efficiency": REASON_CORPUS_GAP,
-    "skill-health": REASON_CORPUS_GAP,
-}
+# commit that adds the negative control. Every installable skill has one now,
+# and the shrink-only ledger in tests/test_skill_reach.py is empty, so no skill
+# can be excused here: a new one needs its own negative control.
+NO_NEGATIVE_CONTROL_BASELINE: Mapping[str, str] = {}
 
 
 class SkillReachMeasurement(TypedDict):

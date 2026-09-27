@@ -21,6 +21,21 @@ All notable changes will be documented here.
   or one could not be read. "Hermes kanban workers" leaves the not-covered
   list; tasks created from the CLI or dashboard, which record no originating
   session, take its place.
+- **The routing corpora now prove natural reach for 33 more skills and a
+  negative control for every installable skill.** `omh demo skill-reach`
+  (#1875) listed 35 skills whose own non-name trigger dispatches but that no
+  intervention case reached without naming them, and 17 skills that no
+  negative control entered. Thirty-three intervention cases, each a user's
+  request built around one of the skill's own triggers, and seventeen
+  negative controls, each using a skill's vocabulary in an unrelated sense
+  (a Jev skill through a person named Jev), close all but two of those gaps
+  without changing a trigger or the router. Natural reach goes from 88/130 to
+  121/130 skills and negative-control coverage from 113/130 to 130/130.
+  `achievements` and `wiki` stay listed: every dispatch to them answers with
+  the generic `ack` chat response, which the intervention evaluator rejects,
+  so no case can pass until they get their own response surface. The seven
+  addressed-only skills (`meta-router` and the six `jev-*` skills) stay as
+  they were.
 
 - **A cadence phrase in a report, or a command to fix a product defect, no
   longer dispatches a confident wrong skill (#1892).** `every morning` and

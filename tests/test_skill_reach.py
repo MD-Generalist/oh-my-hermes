@@ -3,6 +3,7 @@ from __future__ import annotations
 import unittest
 
 from _cli_harness import run_cli
+from omh.quality.routing_precision import ROUTING_INTERVENTION_CASES
 from omh.quality.skill_reach import (
     NO_NEGATIVE_CONTROL_BASELINE,
     REASON_ADDRESSED_BY_DESIGN,
@@ -23,26 +24,11 @@ from omh.quality.skill_reach import (
 # commit that removes it from the baseline, so it cannot quietly re-join.
 UNREACHED_POSITIVE_LEDGER = frozenset(
     {
-        "achievements", "agent-debug", "ai-slop-cleaner", "ask", "buzz", "cancel",
-        "capability-toggle", "codebase-onboarding", "codegraph-refresh", "connector-operator",
-        "cto-loop", "data-analysis", "decision-recall", "deploy-and-monitor",
-        "design-orchestration", "failure-signal-audit", "gateway-intent-card",
-        "harness-session-inventory", "instinct-ledger", "jev-action-check", "jev-ask",
-        "jev-done-check", "jev-failure-triage", "jev-review-gate", "jev-route",
-        "live-info-operator", "meeting-brief", "meta-router", "operating-rhythm",
-        "physical-device-readiness", "production-audit", "prompt-import-readiness",
-        "provider-profile-posture", "report-package", "run-efficiency", "skill", "skill-health",
-        "skill-scout", "ultraqa", "voice-operator", "wiki", "workspace-file-operator",
+        "achievements", "jev-action-check", "jev-ask", "jev-done-check", "jev-failure-triage",
+        "jev-review-gate", "jev-route", "meta-router", "wiki",
     }
 )
-NO_NEGATIVE_CONTROL_LEDGER = frozenset(
-    {
-        "adversarial-consensus", "cancel", "context", "doctor", "failure-signal-audit",
-        "harness-session-inventory", "jev-action-check", "jev-done-check", "jev-failure-triage",
-        "jev-review-gate", "jev-route", "jit-learn", "media-input-operator", "ops-review",
-        "physical-device-readiness", "run-efficiency", "skill-health",
-    }
-)
+NO_NEGATIVE_CONTROL_LEDGER: frozenset[str] = frozenset()
 
 
 class SkillReachGateTests(unittest.TestCase):
@@ -103,9 +89,18 @@ class SkillReachGateTests(unittest.TestCase):
         self.assertTrue(errors[0].startswith("wiki: no intervention case dispatches to it"), errors)
 
     def test_a_skill_without_a_negative_control_fails_by_name(self) -> None:
-        negative = dict(NO_NEGATIVE_CONTROL_BASELINE)
-        del negative["doctor"]
-        errors = self._errors(negative=negative)
+        # Every skill has a negative control now, so the baseline is empty and
+        # there is no entry to delete: take `doctor`'s control away instead.
+        self.assertNotIn("doctor", NO_NEGATIVE_CONTROL_BASELINE)
+        measurements: list[SkillReachMeasurement] = [
+            {**row, "negative_control_cases": 0} if row["skill"] == "doctor" else row
+            for row in self.measurements
+        ]
+        errors = skill_reach_errors(
+            measurements,
+            positive_baseline=dict(UNREACHED_POSITIVE_BASELINE),
+            negative_baseline=dict(NO_NEGATIVE_CONTROL_BASELINE),
+        )
         self.assertEqual(1, len(errors), errors)
         self.assertTrue(errors[0].startswith("doctor: no negative control"), errors)
 
@@ -150,11 +145,24 @@ class SkillReachGateTests(unittest.TestCase):
         self.assertGreater(row["addressed_dispatch_cases"], 0)
 
     def test_a_shortlist_first_case_is_shown_but_not_counted_as_reach(self) -> None:
-        # Its intervention cases ask with `deploy-and-monitor` as the first
-        # candidate instead of dispatching: the router did not pick it.
+        # Some of its intervention cases ask with `deploy-and-monitor` as the
+        # first candidate instead of dispatching: the router did not pick it,
+        # so they count as shortlist-first, and only the dispatching cases
+        # count as reach.
         row = self._row("deploy-and-monitor")
-        self.assertEqual(0, row["natural_dispatch_cases"])
-        self.assertGreater(row["shortlist_first_cases"], 0)
+        clarifying = [
+            case.id
+            for case in ROUTING_INTERVENTION_CASES
+            if case.expected_route_action == "clarify" and case.expected_candidate == "deploy-and-monitor"
+        ]
+        dispatching = [
+            case.id
+            for case in ROUTING_INTERVENTION_CASES
+            if case.expected_route_action == "dispatch" and case.expected_workflow == "deploy-and-monitor"
+        ]
+        self.assertTrue(clarifying)
+        self.assertEqual(len(clarifying), row["shortlist_first_cases"], clarifying)
+        self.assertEqual(len(dispatching), row["natural_dispatch_cases"], dispatching)
 
     def test_the_trigger_probe_skips_a_trigger_that_only_spells_the_name(self) -> None:
         # A bare `skill-health` dispatches without the router marking it

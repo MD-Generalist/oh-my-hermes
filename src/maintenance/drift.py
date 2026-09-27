@@ -333,7 +333,7 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # obligation, belief), which stay narration.
             # The #1893 re-review adds five: a modal inside a subordinate or
             # reported clause, which does not make the main clause a request.
-            expected=329,
+            expected=346,
             sites=(
                 "tests/test_cli.py",
                 "tests/test_hermes_ux_quality.py",
@@ -406,7 +406,7 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # The #1893 review adds seven: subject-initial and passive
             # scheduling requests (a directive modal or a delivery passive on a
             # noun-phrase subject) that must keep dispatching.
-            expected=496,
+            expected=529,
             sites=(
                 "tests/test_cli.py",
                 "tests/test_hermes_ux_quality.py",
