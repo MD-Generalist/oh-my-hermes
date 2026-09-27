@@ -37,6 +37,25 @@ All notable changes will be documented here.
   addressed-only skills (`meta-router` and the six `jev-*` skills) stay as
   they were.
 
+- **A prepared coding handoff can carry a machine-checkable
+  `handoff_contract/v1`, and its postconditions' exit statuses, not the
+  report's wording, decide verification (#1715).** Before this, a handoff's
+  acceptance criteria and verification were prose. Whether the executor met
+  them was a matter of reading its report. Now `--handoff-contract
+  contract.json` on `omh coding delegate` and `omh coding lifecycle start`
+  attaches typed inputs, postcondition commands (compiled through
+  `verification_plan/v1`), an optional output shape, and forbidden actions to
+  the Codex, prompt-only, and runtime handoff schemas. The handoff is refused,
+  with the offender named, when a declared input is unused or a template
+  variable is undeclared. Forbidden actions and postcondition commands appear
+  in the executor prompt's Don't and Test sections, not in the routing
+  metadata. `omh coding lifecycle verify --postcondition-exit ID=STATUS`
+  records integer exit statuses into `handoff_contract_receipt/v1`. On a
+  contracted run, verification is observed only when every postcondition has
+  exit status `0`. `--completion-status completed`, a wrapper
+  `verification_observed` flag, or a word such as `passed` cannot promote it,
+  and a contract that was never run says so. OMH still executes none of the
+  commands. Handoffs without a declaration are byte-identical to before.
 - **A cadence phrase in a report, or a command to fix a product defect, no
   longer dispatches a confident wrong skill (#1892).** `every morning` and
   `every day` are `automation-blueprint`'s own trigger phrases, and the

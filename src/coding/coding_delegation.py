@@ -26,6 +26,7 @@ from ..coding_contracts import (
     TASK_PROMPT_REQUIRED_SECTIONS,
 )
 from .action_gate import evaluate_action_gate, is_authority_shaped, split_handoff_safety_contract
+from .handoff_contract import HANDOFF_CONTRACT_KEY, build_handoff_contract, require_valid_handoff_contract
 from .prompting import build_executor_prompting_contract, render_executor_prompt_sections
 from ..executors import (
     EXTERNAL_CLI_PROFILES,
@@ -381,6 +382,7 @@ def build_coding_delegation_payload(
     input_representation: object = "text_only",
     transformation: Mapping[str, object] | None = None,
     now: str = "",
+    handoff_contract: Mapping[str, object] | None = None,
 ) -> dict[str, object]:
     """Prepare coding work through Maestro for external owners and natively for Hermes."""
 
@@ -428,6 +430,7 @@ def build_coding_delegation_payload(
                 model_chains=dict(model_chains) if model_chains is not None else None,
                 requested_model=requested_model,
                 requested_effort=requested_effort,
+                handoff_contract=handoff_contract,
             )
         try:
             return maestro_facade.build_external_handoff(request).payload
@@ -472,6 +475,7 @@ def build_coding_delegation_payload(
         input_representation=input_representation,
         transformation=transformation,
         now=now,
+        handoff_contract=handoff_contract,
     )
 
 
@@ -509,10 +513,14 @@ def _build_coding_delegation_payload_native(
     input_representation: object = "text_only",
     transformation: Mapping[str, object] | None = None,
     now: str = "",
+    handoff_contract: Mapping[str, object] | None = None,
 ) -> dict[str, object]:
     message = message.strip()
     if not message:
         raise ValueError("coding delegate requires a task description")
+    # Normalized before anything routes, so a malformed declaration fails
+    # where the caller is still holding it rather than after a handoff exists.
+    declared_contract = build_handoff_contract(handoff_contract) if handoff_contract is not None else None
     from .model_routing import canonical_model_category, category_from_text
 
     model_route_category = category_from_text(message)
@@ -797,6 +805,7 @@ def _build_coding_delegation_payload_native(
             prompting_contract=prompting_contract,
             capability_snapshot=capability_snapshot,
             executor_local_workflow=executor_local_workflow,
+            handoff_contract=declared_contract,
         )
         _attach_context_pack(payload["executor_handoff"], context_pack)
         _attach_input_manifest(payload["executor_handoff"], resolved_input_manifest)
@@ -818,6 +827,7 @@ def _build_coding_delegation_payload_native(
             prompting_contract=prompting_contract,
             capability_snapshot=capability_snapshot,
             executor_local_workflow=executor_local_workflow,
+            handoff_contract=declared_contract,
         )
         if selection.selected_executor_profile == "hermes" and model_recommendation is not None:
             payload["runtime_handoff"]["hermes_native_model_binding"] = _hermes_native_model_binding(
@@ -843,10 +853,13 @@ def _build_coding_delegation_payload_native(
             prompting_contract=prompting_contract,
             capability_snapshot=capability_snapshot,
             executor_local_workflow=executor_local_workflow,
+            handoff_contract=declared_contract,
         )
         _attach_context_pack(payload["prompt_handoff"], context_pack)
         _attach_input_manifest(payload["prompt_handoff"], resolved_input_manifest)
         _attach_memory_recall_pack(payload["prompt_handoff"], memory_recall_pack)
+    if declared_contract is not None:
+        _attach_handoff_contract(payload, declared_contract)
     _attach_model_routing_metadata(
         payload,
         category=model_route_category,
@@ -1700,6 +1713,28 @@ def _derived_input_manifest(
     )
 
 
+def _attach_handoff_contract(payload: dict[str, object], contract: dict[str, Any]) -> None:
+    """Pin the declared contract onto the prepared handoff and validate it there.
+
+    Validation runs against the rendered handoff because only its templates
+    say which variables a wrapper will fill; a declared input no template uses,
+    or a template variable nothing declares, refuses the handoff by name. A
+    declaration with no handoff to carry it (the request clarified, fell back,
+    or stayed with Hermes) is reported as not attached rather than dropped.
+    """
+    for handoff_key in ("executor_handoff", "prompt_handoff", "runtime_handoff"):
+        handoff = payload.get(handoff_key)
+        if isinstance(handoff, dict):
+            handoff[HANDOFF_CONTRACT_KEY] = contract
+            require_valid_handoff_contract(handoff)
+            return
+    payload["handoff_contract_not_attached"] = {
+        "schema_version": contract["schema_version"],
+        "status": "not_attached",
+        "reason": "no_prepared_handoff",
+    }
+
+
 def _attach_input_manifest(handoff: object, input_manifest: dict[str, object] | None) -> None:
     """Pin the manifest onto the handoff.
 
@@ -2199,6 +2234,7 @@ def _executor_handoff(
     prompting_contract: dict[str, object],
     capability_snapshot: dict[str, object] | None,
     executor_local_workflow: dict[str, object] | None,
+    handoff_contract: dict[str, Any] | None = None,
 ) -> dict[str, object]:
     if executor_target != "codex":
         raise ValueError(f"unsupported coding delegate executor: {executor_target}")
@@ -2247,6 +2283,7 @@ def _executor_handoff(
             delegation,
             candidate_template=candidate_template if candidate_dispatchable else None,
             prompting_contract=prompting_contract,
+            handoff_contract=handoff_contract,
         ),
         "execution_brief": {
             "task_source": str(prompting_contract["task_source"]),
@@ -2330,6 +2367,7 @@ def _prompt_handoff(
     prompting_contract: dict[str, object],
     capability_snapshot: dict[str, object] | None,
     executor_local_workflow: dict[str, object] | None,
+    handoff_contract: dict[str, Any] | None = None,
 ) -> dict[str, object]:
     invocation = prompt_invocation_for_profile(profile)
     label = executor_label(profile)
@@ -2353,6 +2391,7 @@ def _prompt_handoff(
             profile=profile,
             label=label,
             prompting_contract=prompting_contract,
+            handoff_contract=handoff_contract,
         ),
         "isolation_plan": isolation_plan,
         "scope": [
@@ -2404,6 +2443,7 @@ def _runtime_handoff(
     prompting_contract: dict[str, object],
     capability_snapshot: dict[str, object] | None,
     executor_local_workflow: dict[str, object] | None,
+    handoff_contract: dict[str, Any] | None = None,
 ) -> dict[str, object]:
     invocation = runtime_invocation_for_profile(profile)
     contract = runtime_profile_contract(profile)
@@ -2429,6 +2469,7 @@ def _runtime_handoff(
             profile=profile,
             label=label,
             prompting_contract=prompting_contract,
+            handoff_contract=handoff_contract,
         ),
         "runtime_brief": {
             "task_source": str(prompting_contract["task_source"]),
@@ -2967,6 +3008,7 @@ def _codex_prompt_template(
     *,
     candidate_template: str | None,
     prompting_contract: dict[str, object],
+    handoff_contract: dict[str, Any] | None = None,
 ) -> str:
     workflow_instruction = (
         "Observed executor-local workflow candidate: `{candidate_template}`.\n"
@@ -2999,7 +3041,7 @@ def _codex_prompt_template(
         intent=delegation.intent,
         local_capability_prompt=_local_capability_prompt_block("codex", "Codex"),
         task_prompt_shape=_task_prompt_shape_block(),
-        prompt_sections=_executor_prompt_sections(delegation, prompting_contract),
+        prompt_sections=_executor_prompt_sections(delegation, prompting_contract, handoff_contract),
     )
 
 
@@ -3009,6 +3051,7 @@ def _prompt_only_template(
     profile: str,
     label: str,
     prompting_contract: dict[str, object],
+    handoff_contract: dict[str, Any] | None = None,
 ) -> str:
     return (
         "You are {label}, receiving a Hermes-orchestrated coding handoff.\n\n"
@@ -3032,7 +3075,7 @@ def _prompt_only_template(
         intent=delegation.intent,
         local_capability_prompt=_local_capability_prompt_block(profile, label),
         task_prompt_shape=_task_prompt_shape_block(),
-        prompt_sections=_executor_prompt_sections(delegation, prompting_contract),
+        prompt_sections=_executor_prompt_sections(delegation, prompting_contract, handoff_contract),
     )
 
 
@@ -3042,6 +3085,7 @@ def _runtime_prompt_template(
     profile: str,
     label: str,
     prompting_contract: dict[str, object],
+    handoff_contract: dict[str, Any] | None = None,
 ) -> str:
     return (
         "You are {label}, receiving a Hermes-orchestrated runtime handoff.\n\n"
@@ -3068,11 +3112,15 @@ def _runtime_prompt_template(
         intent=delegation.intent,
         local_capability_prompt=_runtime_local_capability_prompt_block(profile, label),
         task_prompt_shape=_task_prompt_shape_block(),
-        prompt_sections=_executor_prompt_sections(delegation, prompting_contract),
+        prompt_sections=_executor_prompt_sections(delegation, prompting_contract, handoff_contract),
     )
 
 
-def _executor_prompt_sections(delegation: CodingDelegation, prompting_contract: dict[str, object]) -> str:
+def _executor_prompt_sections(
+    delegation: CodingDelegation,
+    prompting_contract: dict[str, object],
+    handoff_contract: dict[str, Any] | None = None,
+) -> str:
     return render_executor_prompt_sections(
         prompting_contract,
         recommended_workflow=delegation.recommended_workflow,
@@ -3080,6 +3128,7 @@ def _executor_prompt_sections(delegation: CodingDelegation, prompting_contract: 
         acceptance_criteria=delegation.acceptance_criteria,
         verification=delegation.verification,
         review_required=delegation.review_required,
+        handoff_contract=handoff_contract,
     )
 
 

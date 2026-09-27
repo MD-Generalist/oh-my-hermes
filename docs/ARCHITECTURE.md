@@ -536,6 +536,30 @@ the companion `run.json` is marked as
 and `coding_delegation.json` as a required pair. The run envelope is
 implementation bookkeeping, not proof that Hermes executed the handoff.
 
+A caller can also declare a `handoff_contract/v1` (`--handoff-contract
+contract.json` on `omh coding delegate` and `omh coding lifecycle start`), and
+any of the three handoff schemas then carries it. The declaration holds typed
+`inputs[]` (`name`, `input_type`, `requirement`, `default`),
+`postconditions[]` (an `id` plus a command, compiled through the same
+`verification_plan/v1` compiler the fanout dispatcher uses), an optional
+`output_shape`, and `forbidden_actions[]`. The handoff is refused, with the
+offender named, when a declared input appears in no template or when a
+template variable (the builder declares `{message}` itself) has no
+declaration. Forbidden actions and postcondition commands are rendered in the
+executor prompt's Don't and Test sections and never copied into the routing
+metadata. OMH still runs nothing. The executor or host runs each
+postcondition, and `omh coding lifecycle verify --postcondition-exit ID=STATUS`
+records the integer exit status into `handoff_contract_receipt/v1`. On a run
+whose handoff carries a contract, only that receipt can make verification
+observed: every postcondition must have an exit status and every status must
+be `0`. A contract that was never run reads `prepared_not_observed`, lists the
+postconditions that were never observed, and neither `--completion-status
+completed` nor a wrapper `verification_observed` flag changes that. Run-backed
+recording is currently limited to the Codex lifecycle, which is the only
+run-backed coding lifecycle today. Prompt-only and runtime handoffs carry the
+same contract, and the receipt producer in `src/coding/handoff_contract.py`
+has no executor-specific logic.
+
 The wrapper contract and lower-level surfaces are local contracts; execution
 evidence still comes from Hermes Agent and the selected executor/runtime. The
 append-only observation journal is the bridge between "prepared" and "observed"

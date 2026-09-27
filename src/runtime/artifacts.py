@@ -11,6 +11,12 @@ from typing import Any
 
 from ..context_safety import MAX_RUN_HISTORY_EVENTS, build_coding_progress_reporting_policy
 from ..coding.executor_local_workflow import validate_executor_local_workflow
+from ..coding.handoff_contract import (
+    HANDOFF_CONTRACT_KEY,
+    HANDOFF_CONTRACT_RECEIPT_FILENAME,
+    contract_verification_observed,
+    contract_verification_summary,
+)
 from ..executor_progress import validate_progress_binding, validate_progress_event, validate_progress_report
 from ..executors import (
     CODING_EXECUTOR_HANDOFF_TARGETS,
@@ -303,6 +309,44 @@ def write_coding_delegation(run_dir: Path, delegation: dict[str, Any]) -> dict[s
         },
     )
     return record
+
+
+def stored_handoff_contract(run_dir: Path) -> dict[str, Any] | None:
+    """The `handoff_contract/v1` the run's recorded handoff carries, if any."""
+    path = run_dir / "coding_delegation.json"
+    record = read_json_object(path) if path.exists() else None
+    if not isinstance(record, dict):
+        return None
+    for handoff_key in ("executor_handoff", "prompt_handoff", "runtime_handoff"):
+        handoff = record.get(handoff_key)
+        contract = handoff.get(HANDOFF_CONTRACT_KEY) if isinstance(handoff, dict) else None
+        if isinstance(contract, dict) and contract:
+            return contract
+    return None
+
+
+def write_handoff_contract_receipt(run_dir: Path, receipt: dict[str, Any]) -> dict[str, Any]:
+    """Store the latest exit-status receipt for the run's handoff contract."""
+    atomic_write_json(run_dir / HANDOFF_CONTRACT_RECEIPT_FILENAME, receipt, private=True)
+    append_event(
+        run_dir,
+        {
+            "event": "handoff_contract_receipt_recorded",
+            "level": "info",
+            "message": f"handoff contract {receipt['status']} {receipt['verdict']}",
+            "data": {
+                "status": receipt["status"],
+                "verdict": receipt["verdict"],
+                "unobserved_postconditions": list(receipt["unobserved_postconditions"]),
+            },
+        },
+    )
+    return receipt
+
+
+def read_handoff_contract_receipt(run_dir: Path) -> dict[str, Any] | None:
+    path = run_dir / HANDOFF_CONTRACT_RECEIPT_FILENAME
+    return read_json_object(path) if path.exists() else None
 
 
 def _run_id_for_dir(run_dir: Path) -> str:
@@ -913,6 +957,18 @@ def summarize_delegated_coding_status(paths: OmhPaths, run_id: str) -> dict[str,
     prompt_dispatched = bool(wrapper.get("prompt_dispatched", False)) or bool(lifecycle.get("prompt_dispatched", False))
     response_observed = bool(wrapper.get("hermes_response_observed", False))
     verification_observed = bool(wrapper.get("verification_observed", False)) or bool(lifecycle.get("verification_observed", False))
+    # A handoff that declared a contract is verified by its receipt, never by
+    # a flag: the wrapper/lifecycle booleans above can be written from a
+    # report's wording, so with a contract they are necessary but not enough.
+    run_dir = paths.runtime_runs_dir / run_id
+    handoff_contract = stored_handoff_contract(run_dir)
+    handoff_contract_summary: dict[str, Any] | None = None
+    if handoff_contract is not None:
+        contract_receipt = read_handoff_contract_receipt(run_dir)
+        verification_observed = verification_observed and contract_verification_observed(
+            handoff_contract, contract_receipt
+        )
+        handoff_contract_summary = contract_verification_summary(handoff_contract, contract_receipt)
     completion_status = str(wrapper.get("completion_status") or "unknown")
     verification_status = _verification_status_summary(
         observed=verification_observed,
@@ -1024,6 +1080,7 @@ def summarize_delegated_coding_status(paths: OmhPaths, run_id: str) -> dict[str,
             **verification_status,
             "observed": verification_observed,
             "expected": coding.get("verification", []),
+            **({"handoff_contract": handoff_contract_summary} if handoff_contract_summary is not None else {}),
         },
         "review": {
             **review_status,
