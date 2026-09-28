@@ -15369,6 +15369,10 @@ class RuntimeTodoCliTests(unittest.TestCase):
                 ["--items-json", "not json"],
                 ["--items-json", json.dumps([{"text": "x", "state": "later"}])],
                 ["--items-json", json.dumps([])],
+                # Done-item bindings are the tool's to write, never this path's.
+                ["--items-json", json.dumps([{"text": "x", "state": "done", "evidence": {"kind": "tool_call", "ref": "toolu_ok"}}])],
+                ["--items-json", json.dumps([{"text": "x", "state": "done", "done_at": "2026-09-28T00:00:00Z"}])],
+                ["--items-json", json.dumps([{"text": "x", "window_start": "2026-09-28T00:00:00Z"}])],
             ]
             for items_args in cases:
                 status, stdout, _ = run_cli(["--omh-home", omh_home, "runtime", "todo", "set"] + items_args)

@@ -441,14 +441,15 @@ class ItemsDoneBeforeEvidenceExistedTest(_PlanHomeTest):
 
 
 class StoreContractTest(unittest.TestCase):
-    def test_bindings_are_refused_on_an_open_item(self):
-        for field, value in (
-            ("evidence", evidence("tool_call", "toolu_ok")),
-            ("done_at", iso(T0)),
-            ("window_start", iso(T0)),
-        ):
-            with self.subTest(field=field), self.assertRaisesRegex(TodoValidationError, "only on a done item"):
-                build_todo_record("plan", [{"text": "a", "state": "active", field: value}], source="s")
+    def test_done_at_is_refused_on_an_open_item_and_the_sticky_fields_are_not(self):
+        with self.assertRaisesRegex(TodoValidationError, "only on a done item"):
+            build_todo_record("plan", [{"text": "a", "state": "active", "done_at": iso(T0)}], source="s")
+        record = build_todo_record(
+            "plan",
+            [{"text": "a", "state": "active", "evidence": evidence("tool_call", "toolu_red"), "window_start": iso(T0)}],
+            source="s",
+        )
+        self.assertEqual(record["items"][0]["evidence"], evidence("tool_call", "toolu_red"))
 
     def test_evidence_must_be_a_known_kind_in_its_shape(self):
         for bad in (
@@ -471,11 +472,18 @@ class StoreContractTest(unittest.TestCase):
             )
 
     def test_bind_ignores_what_the_writer_sent_and_gives_each_call_to_one_item(self):
-        calls = [evidence("tool_call", "toolu_1"), evidence("tool_call", "toolu_2")]
+        opened = iso(T0)
+        calls = [
+            {"evidence": evidence("tool_call", "toolu_1"), "at": T0 + 1},
+            {"evidence": evidence("tool_call", "toolu_2"), "at": T0 + 2},
+        ]
         prior = [
             {"text": "verified", "state": "done", "evidence": evidence("tool_call", "toolu_old"), **WINDOW},
             {"text": "grandfathered", "state": "done"},
-            {"text": "next", "state": "active"},
+            {"text": "next", "state": "active", "window_start": opened},
+            {"text": "then", "state": "pending", "window_start": opened},
+            {"text": "and then", "state": "pending", "window_start": opened},
+            {"text": "reopened", "state": "done", "evidence": evidence("tool_call", "toolu_red"), **WINDOW},
         ]
         sent = [
             {"text": "verified", "state": "done", "evidence": evidence("tool_call", "toolu_forged")},
@@ -483,16 +491,29 @@ class StoreContractTest(unittest.TestCase):
             {"text": "next", "state": "done", "evidence": evidence("tool_call", "toolu_old")},
             {"text": "then", "state": "done"},
             {"text": "and then", "state": "done"},
+            {"text": "reopened", "state": "pending"},
+            {"text": "renamed", "state": "done"},
             {"text": "open", "state": "pending", "evidence": evidence("tool_call", "toolu_x"), "done_at": iso(T0)},
         ]
 
-        bound = bind_done_items(sent, prior_items=prior, calls=calls, window_start="W", done_at="D")
+        bound = bind_done_items(sent, prior_items=prior, calls=calls, fallback_start="F", now="N")
 
         self.assertEqual(bound[0], {"text": "verified", "state": "done", "evidence": evidence("tool_call", "toolu_old"), **WINDOW})
         self.assertEqual(bound[1], {"text": "grandfathered", "state": "done"})
-        self.assertEqual([item.get("evidence") for item in bound[2:5]], [calls[0], calls[1], None])
-        self.assertEqual({item["done_at"] for item in bound[2:5]}, {"D"})
-        self.assertEqual(bound[5], {"text": "open", "state": "pending"})
+        # The latest unheld call goes first, and each call to one item.
+        self.assertEqual(
+            [item.get("evidence") for item in bound[2:5]],
+            [evidence("tool_call", "toolu_2"), evidence("tool_call", "toolu_1"), None],
+        )
+        self.assertEqual({(item["window_start"], item["done_at"]) for item in bound[2:5]}, {(opened, "N")})
+        # Leaving done keeps a failed binding, drops done_at, reopens the window.
+        self.assertEqual(
+            bound[5],
+            {"text": "reopened", "state": "pending", "evidence": evidence("tool_call", "toolu_red"), "window_start": "N"},
+        )
+        # A renamed item is a new item: its window opens at this write.
+        self.assertEqual(bound[6], {"text": "renamed", "state": "done", "window_start": "N", "done_at": "N"})
+        self.assertEqual(bound[7], {"text": "open", "state": "pending", "window_start": "N"})
 
 
 class ToolBindsEvidenceTest(_PlanHomeTest):
@@ -551,20 +572,22 @@ class ToolBindsEvidenceTest(_PlanHomeTest):
         self.assertEqual(items[0]["evidence"], shown)
         self.assertEqual(items[1]["evidence"], evidence("tool_call", "toolu_red"))
         self.assertNotIn("evidence", items[2])
+        # Item 3 is failed too: the last command the session ran before it
+        # was marked done did not pass.
         self.assertEqual(
             [(entry["item"], entry["reason"]) for entry in result["done_unverified"]],
-            [(2, EVIDENCE_REASON_FAILED), (3, EVIDENCE_REASON_NONE)],
+            [(2, EVIDENCE_REASON_FAILED), (3, EVIDENCE_REASON_FAILED)],
         )
         self.assertNotEqual(self.todo()["status"], "absent")
         self.assertIsNotNone(open_plan_position(self.todo(), self.unverified()))
 
     def test_advance_never_binds_a_call_another_item_already_holds(self):
-        # A call stamped later than the write that bound it (clock skew) is
-        # still inside the next item's window; it must not be bound twice.
+        # b's window opened with a's, so a's call sits inside both; it closes
+        # one item, not two.
         self.call({"action": "set", "items": [{"text": "a", "state": "active"}, {"text": "b"}]})
-        add_rows(self.hermes, [(SESSION, "terminal", "toolu_skewed", _terminal(0), None, 4_000_000_000.0)])
-        self.call({"action": "set", "items": [{"text": "a", "state": "done"}, {"text": "b", "state": "active"}]})
-        self.assertEqual(self.stored()["items"][0]["evidence"], evidence("tool_call", "toolu_skewed"))
+        self.run_command("toolu_shared")
+        self.call({"action": "set", "items": [{"text": "a", "state": "done"}, {"text": "b"}]})
+        self.assertEqual(self.stored()["items"][0]["evidence"], evidence("tool_call", "toolu_shared"))
 
         result = self.call({"action": "advance", "item": 2, "item_text": "b", "state": "done"})
 
@@ -637,14 +660,73 @@ class ToolBindsEvidenceTest(_PlanHomeTest):
 
         self.assertEqual(nudges, 1)
 
-    def test_moving_an_item_out_of_done_drops_its_bindings(self):
+    def test_leaving_done_keeps_the_binding_drops_done_at_and_reopens_the_window(self):
         self.call({"action": "set", "items": [{"text": "fix", "state": "active"}, {"text": "ship"}]})
-        self.run_command("toolu_suite")
+        self.run_command("toolu_red", exit_code=1)
         self.call({"action": "advance", "item": 1, "item_text": "fix", "state": "done"})
+        closed_window = self.stored()["items"][0]["window_start"]
 
         self.call({"action": "advance", "item": 1, "item_text": "fix", "state": "active"})
 
-        self.assertEqual(self.stored()["items"][0], {"text": "fix", "state": "active"})
+        item = self.stored()["items"][0]
+        self.assertEqual(item["evidence"], evidence("tool_call", "toolu_red"))
+        self.assertNotIn("done_at", item)
+        self.assertGreater(item["window_start"], closed_window)
+
+    def _failing_then(self) -> None:
+        self.call({"action": "set", "items": [{"text": "a", "state": "active"}, {"text": "b"}]})
+        self.run_command("toolu_red", exit_code=1)
+
+    def _a_reason(self) -> list[tuple[int, str]]:
+        return [pair for pair in self.reasons() if pair[0] == 1]
+
+    def test_l1_reopening_a_failed_item_and_marking_it_done_again_does_not_launder_it(self):
+        self._failing_then()
+        self.call({"action": "advance", "item": 1, "item_text": "a", "state": "done"})
+        self.call({"action": "advance", "item": 1, "item_text": "a", "state": "pending"})
+        time.sleep(0.02)
+
+        self.call({"action": "advance", "item": 1, "item_text": "a", "state": "done"})
+
+        self.assertEqual(self._a_reason(), [(1, EVIDENCE_REASON_FAILED)])
+
+    def test_l2_another_items_write_between_the_failure_and_the_done_mark_does_not_hide_it(self):
+        self._failing_then()
+        self.call({"action": "advance", "item": 2, "item_text": "b", "state": "active"})
+        time.sleep(0.02)
+
+        self.call({"action": "advance", "item": 1, "item_text": "a", "state": "done"})
+
+        self.assertEqual(self.stored()["items"][0]["evidence"], evidence("tool_call", "toolu_red"))
+        self.assertEqual(self._a_reason(), [(1, EVIDENCE_REASON_FAILED)])
+
+    def test_l3_renaming_the_item_in_a_set_does_not_reset_the_failure(self):
+        self._failing_then()
+        self.call({"action": "set", "items": [{"text": "a", "state": "done"}, {"text": "b"}]})
+        time.sleep(0.02)
+
+        self.call({"action": "set", "items": [{"text": "a.", "state": "done"}, {"text": "b"}]})
+
+        self.assertEqual(self._a_reason(), [(1, EVIDENCE_REASON_FAILED)])
+
+    def test_l4_clear_then_set_does_not_reset_the_failure(self):
+        self._failing_then()
+        self.assertEqual(self.call({"action": "clear"})["status"], "cleared")
+
+        result = self.call({"action": "set", "items": [{"text": "a", "state": "done"}]})
+
+        self.assertEqual(result["done_unverified"][0]["reason"], EVIDENCE_REASON_FAILED)
+
+    def test_a_passing_command_in_the_window_replaces_a_sticky_failure(self):
+        self._failing_then()
+        self.call({"action": "advance", "item": 1, "item_text": "a", "state": "done"})
+        self.call({"action": "advance", "item": 1, "item_text": "a", "state": "active"})
+        self.run_command("toolu_green")
+
+        result = self.call({"action": "advance", "item": 1, "item_text": "a", "state": "done"})
+
+        self.assertEqual(self.stored()["items"][0]["evidence"], evidence("tool_call", "toolu_green"))
+        self.assertNotIn("done_unverified", result)
 
     def test_a_finished_plan_still_refuses_a_move_out_of_done(self):
         self.call({"action": "set", "items": [{"text": "fix", "state": "done"}]})

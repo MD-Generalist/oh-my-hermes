@@ -99,6 +99,7 @@ from ..plugin_bundle.omh.completion_store import (
 )
 from ..plugin_bundle.omh.todo_store import (
     TODO_CLAIM_BOUNDARY,
+    TODO_DONE_BINDING_KEYS,
     TodoContendedError,
     TodoStoreError,
     TodoValidationError,
@@ -1299,6 +1300,22 @@ def cmd_runtime_todo_set(args: argparse.Namespace) -> int:
             return 1
     else:
         items = [{"text": text, "state": "pending"} for text in args.items]
+    # Done-item bindings are what the plan's stop criterion reads, and only the
+    # `omh_todo` tool writes them, from the session's own records. Accepting
+    # them here would give anything with a shell a way to write the evidence
+    # the tool refuses to take from a writer.
+    if isinstance(items, list) and any(
+        isinstance(item, dict) and any(key in item for key in TODO_DONE_BINDING_KEYS)
+        for item in items
+    ):
+        _print_json(
+            {
+                "status": "invalid_todo",
+                "error": "evidence, done_at and window_start are bound by the omh_todo tool, "
+                "not written through --items-json",
+            }
+        )
+        return 1
     session_ref = args.session_ref
     try:
         record = build_todo_record(args.title, items, source="cli", session_ref=session_ref)

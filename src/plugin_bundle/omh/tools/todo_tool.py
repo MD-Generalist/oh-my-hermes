@@ -13,7 +13,7 @@ from ..host_observation import (
 )
 from ..dispatch_outcomes import _parse_timestamp
 from ..runtime_reader import default_omh_home, read_omh_todo
-from ..todo_evidence import MAX_BOUND_CALLS, evidence_key, observed_calls, valid_evidence
+from ..todo_evidence import observed_calls
 from ..todo_reconciliation import unverified_done_items
 from ..todo_store import (
     TODO_CLAIM_BOUNDARY,
@@ -246,20 +246,19 @@ def omh_todo_handler(args: dict[str, Any], **kwargs) -> str:
         try:
             items = args.get("items")
             if isinstance(items, list):
-                # OMH binds done items itself and ignores any binding the
-                # writer sent (`bind_done_items`). A first declaration's
-                # window opens at this write, so nothing the session ran
-                # before the plan existed can close one of its items.
+                # OMH binds items itself and ignores any binding the writer
+                # sent (`bind_done_items`). Each item is judged over its own
+                # window; a new item's opens at this write.
                 prior = read_todo_record(default_omh_home(), session_ref) or {}
                 now = todo_timestamp()
                 prior_stamp = prior.get("updated_at")
-                window_start = (
+                fallback_start = (
                     prior_stamp
                     if isinstance(prior_stamp, str) and _parse_timestamp(prior_stamp)
                     else now
                 )
                 calls = (
-                    _calls_since(session_ref, window_start, _held_keys(prior.get("items")))
+                    _calls_since(session_ref, _earliest_window(prior.get("items"), fallback_start), set(), now)
                     if _declares_done(items)
                     else []
                 )
@@ -267,8 +266,8 @@ def omh_todo_handler(args: dict[str, Any], **kwargs) -> str:
                     items,
                     prior_items=prior.get("items"),
                     calls=calls,
-                    window_start=window_start,
-                    done_at=now,
+                    fallback_start=fallback_start,
+                    now=now,
                 )
             record = build_todo_record(
                 args.get("title", ""),
@@ -306,7 +305,9 @@ def omh_todo_handler(args: dict[str, Any], **kwargs) -> str:
                 session_ref=session_ref,
                 blocked_reason=args.get("blocked_reason", ""),
                 deferred_reason=args.get("deferred_reason", ""),
-                observed_calls=lambda stamp, held: _calls_since(session_ref, stamp, held),
+                observed_calls=lambda opened, held: _calls_since(
+                    session_ref, opened, held, todo_timestamp()
+                ),
             )
             payload["status"] = "written"
         except TodoContendedError as error:
@@ -344,32 +345,44 @@ def _declares_done(items: object) -> bool:
     )
 
 
-def _calls_since(session_ref: str, stamp: object, held: set[str]) -> list[dict[str, str]]:
-    """The calls this session recorded after ``stamp`` that no item holds, oldest first.
+def _calls_since(
+    session_ref: str, stamp: object, held: set[str], until: str
+) -> list[dict[str, Any]]:
+    """The calls this session recorded in ``(stamp, until]`` that ``held`` does not hold.
 
-    An unparseable ``stamp`` is no window at all and binds nothing. A host
-    that cannot bind its home has no records to name, which is the same
-    answer as a session that ran nothing.
+    Oldest first, as `todo_evidence.observed_calls` returns them. An
+    unparseable ``stamp`` is no window and binds nothing; ``until`` is the
+    done write's own stamp, so a call can never be bound to a done mark made
+    before it was recorded. A host that cannot bind its home has no records
+    to name, the same answer as a session that ran nothing.
     """
-    parsed = _parse_timestamp(stamp) if isinstance(stamp, str) and stamp else None
-    if parsed is None:
+    start = _parse_timestamp(stamp) if isinstance(stamp, str) and stamp else None
+    end = _parse_timestamp(until)
+    if start is None or end is None:
         return []
     try:
         hermes_home = runtime_paths.plugin_home(None, hermes=True)
     except (runtime_paths.RuntimeBindingError, OSError, RuntimeError):
         return []
     return observed_calls(
-        hermes_home, session_ref, after_epoch=parsed.timestamp(), exclude=held, limit=MAX_BOUND_CALLS
+        hermes_home,
+        session_ref,
+        after_epoch=start.timestamp(),
+        until_epoch=end.timestamp(),
+        exclude=held,
     )
 
 
-def _held_keys(items: object) -> set[str]:
-    held: set[str] = set()
+def _earliest_window(items: object, fallback: str) -> str:
+    """The earliest window any stored item opens, so one read covers every item's."""
+    earliest = fallback
+    earliest_at = _parse_timestamp(fallback)
     for item in items if isinstance(items, list) else []:
-        evidence = valid_evidence(item.get("evidence")) if isinstance(item, dict) else None
-        if evidence is not None:
-            held.add(evidence_key(evidence))
-    return held
+        stamp = item.get("window_start") if isinstance(item, dict) else None
+        parsed = _parse_timestamp(stamp) if isinstance(stamp, str) else None
+        if parsed is not None and (earliest_at is None or parsed < earliest_at):
+            earliest, earliest_at = stamp, parsed
+    return earliest
 
 
 def _unverified(todo: object, session_ref: str) -> list[dict[str, Any]]:

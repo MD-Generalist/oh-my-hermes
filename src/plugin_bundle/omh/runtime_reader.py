@@ -2179,16 +2179,18 @@ def _todo_summary(
                 entry["depth"] = depth
             if blocked_reason:
                 entry["blocked_reason"] = blocked_reason
-            # Projected only on a done item and only in a known kind's shape,
-            # the two rules the writer enforces, so a hand-edited value cannot reach a
-            # reader as something to look up. Whether it CLOSES the item is not
+            # Projected only in a known kind's shape, and `done_at` only on a
+            # done item -- the rules the writer enforces -- so a hand-edited
+            # value cannot reach a reader as something to look up. The
+            # projection must carry every field the writer does, or the
+            # deferral digest would disagree. Whether it CLOSES the item is not
             # decided here: that reads the session store, which the HUD poll
             # does not open (`todo_reconciliation.unverified_done_items`).
-            evidence = valid_evidence(raw.get("evidence")) if state == "done" else None
+            evidence = valid_evidence(raw.get("evidence"))
             if evidence:
                 entry["evidence"] = evidence
             for stamp_key in ("done_at", "window_start"):
-                stamp_value = raw.get(stamp_key) if state == "done" else None
+                stamp_value = raw.get(stamp_key) if stamp_key == "window_start" or state == "done" else None
                 if isinstance(stamp_value, str) and stamp_value:
                     entry[stamp_key] = strip_control_characters(stamp_value)[:40]
             items.append(entry)

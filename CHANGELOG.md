@@ -26,19 +26,24 @@ All notable changes will be documented here.
 - **A plan item marked done now closes only on a recorded result.** The
   continuation rule stopped a plan once every item said done, so a run could
   mark an item done over a failed command, or tick several items off one
-  command, and end its own loop. The `omh_todo` tool now binds every done item
-  itself and ignores any binding the writer sends. Each item gets its window
-  (from the plan's previous write, or the write itself on a first
-  declaration), its `done_at`, and at most one `terminal`, `write_file` or
-  `patch` call from that window that no other item holds. The call is read
-  from the session's own Hermes `state.db` (`mode=ro`, rewound rows ignored)
-  and stored as a typed `evidence` reference `{kind, ref}`, with kinds
-  `tool_call`, `file_write`, `pr`, `ci_run` and `team_check`.
+  command, and end its own loop. The `omh_todo` tool now binds every item
+  itself and ignores any binding the writer sends. An item's window opens at
+  its own last transition (declared, pending to active, out of done). At the
+  done write it takes `done_at` and the latest `terminal`, `write_file` or
+  `patch` call inside its window that no other item holds. The call is read
+  from the session's own Hermes `state.db` (`mode=ro`, rewound rows ignored,
+  bounded at the done write) and stored as a typed `evidence` reference
+  `{kind, ref}`, with kinds `tool_call`, `file_write`, `pr`, `ci_run` and
+  `team_check`. A failed binding is sticky across a reopen, and an item is
+  failed while the session's last call before its done mark failed, so a plan
+  write, rename or `clear` cannot hide a failure.
+  `omh runtime todo set --items-json` refuses the binding fields.
   - **When an item closes.** The stop criterion reads that record, never the
     item's text. `tool_call` closes on a recorded `exit_code` of 0 inside the
     window; `file_write` closes on a landed write or a successful patch (#1922's
     outcome rules). An item with no reference closes when its window recorded
-    no command, so a conversational item is never held open.
+    no command and the session's last call before it did not fail, so a
+    conversational item is not held open.
   - **When it stays open.** Any other done item is `done_unverified` and still
     open. The turn-end directive and the per-turn plan line name it in plain
     words, and the tool result carries its reason code (`no_evidence`,
