@@ -34,7 +34,13 @@ from ..skills.catalog_types import (
     historical_skill_display_names,
     omh_skill_display_name,
 )
-from .hermes_state import NO_SOURCE_LABEL, hermes_epoch, open_state_db_readonly, session_source_clause
+from .hermes_state import (
+    NO_SOURCE_LABEL,
+    TOOL_CALL_KEY_SQL as _CALL_KEY,
+    hermes_epoch,
+    open_state_db_readonly,
+    session_source_clause,
+)
 
 
 SESSION_USAGE_SCHEMA_VERSION = "session_usage/v1"
@@ -44,9 +50,6 @@ _UNPARSED_SKILL_LABEL = "(unparsed)"
 _OMH_MARKER = OMH_DESCRIPTION_PREFIX.strip()
 # A compaction replaces a skill_view result with `[skill_view] name=<x> (N chars) ...`.
 _PLACEHOLDER_PREFIX = f"[{SKILL_VIEW_TOOL_NAME}] name="
-# An empty tool_call_id is not NULL, so without NULLIF every such row in a
-# session would share one key and distinct calls would collapse into one.
-_CALL_KEY = "COALESCE(NULLIF(tool_call_id, ''), 'row:' || id)"
 
 SESSION_USAGE_CLAIM_BOUNDARY = (
     "Session usage is a read-only observation of Hermes' own session store, grouped by the "

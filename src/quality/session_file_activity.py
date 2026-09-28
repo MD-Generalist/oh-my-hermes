@@ -34,7 +34,7 @@ import re
 import sqlite3
 from typing import Any, Mapping
 
-from .hermes_state import hermes_epoch, open_state_db_readonly, resolve_session_id
+from .hermes_state import TOOL_CALL_KEY_SQL as _CALL_KEY, hermes_epoch, open_state_db_readonly, resolve_session_id
 
 
 SESSION_FILE_ACTIVITY_SCHEMA_VERSION = "session_file_activity/v1"
@@ -84,7 +84,6 @@ _V4A_MARKERS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("delete", re.compile(r"^\*\*\*\s*Delete\s+File:\s*(.+)$")),
 )
 _V4A_MOVE = re.compile(r"^\*\*\*\s*Move\s+File:\s*(.+?)\s*->\s*(.+)$")
-_CALL_KEY = "COALESCE(NULLIF(tool_call_id, ''), 'row:' || id)"
 
 
 class SessionFileActivityError(ValueError):
