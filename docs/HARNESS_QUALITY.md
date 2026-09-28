@@ -368,6 +368,52 @@ database, an unknown session id, or `--max-files` below 1 exits 2. The claim
 boundary says what the payload is not: it is not file-content, diff, test,
 review, CI, or merge evidence.
 
+## Agent Debug Report
+
+The `agent-debug` skill diagnoses a stuck, looping, or repeatedly failing
+agent run, and it declared `agent_debug_report/v1` without anything that
+produced one, so a plausible narrative read the same as a diagnosis.
+`omh quality-evidence agent-debug` gives the diagnosis a floor of observed
+rows: it reads one session from Hermes' own session store and returns
+findings derived from record fields, each cited by reference.
+
+```sh
+omh quality-evidence agent-debug --hermes-session <id|latest> [--json]
+```
+
+| Kind | Derived from |
+| --- | --- |
+| `tool_error` | a tool result whose JSON object records an error in a typed field: a non-zero integer `exit_code`, `success: false`, or a non-empty string `error` (error class `nonzero_exit`, `success_false`, `error_field`) |
+| `identical_retry_after_error` | the next call of the same tool after a `tool_error` whose arguments, from the assistant row's `tool_calls`, have the same sha256 over canonical JSON |
+| `background_without_notify` | a tool result that records a started process (an integer `pid`) with `notify_on_complete` not true |
+| `compaction_boundary` | a message row Hermes marks `_compressed_summary` |
+
+Every finding carries a citation with a closed key set: the session id, one
+message id and timestamp per row the finding spans, the tool_call ids, the
+tool name, the error class, the exit code, and a 16-character argument
+digest. No prompt, reply, argument, or tool output is quoted, and no word of
+a result is matched. The validator refuses a report whose finding lacks the
+citation its kind requires, cites another session, or carries any key outside
+that shape; the reader runs it on every report before returning it.
+
+The database opens `mode=ro` and nothing is written. A compaction re-persists
+rows under new ids, so a tool call counts once per distinct `tool_call_id`,
+the first row by id deciding what it was; a row with an empty `tool_call_id`
+is counted in `tool_calls_without_id` and never cited as a call. When the
+Hermes build lacks the `tool_calls` or `_compressed_summary` column, the kind
+that needs it is listed under `unavailable` and left out of `checked_kinds`,
+so an unchecked kind never reads as clean. A valid report exits 0 whether or
+not it has findings: a finding is an observation to cite, not failed work,
+and a loop that wants to gate reads `finding_counts`. A missing database, an
+unknown session, or a report that fails validation exits 2.
+
+The payload is `agent_debug_report/v1` and carries its own claim boundary: a
+finding is an observed record, not a diagnosis. It does not show why the
+agent acted as it did, that a retry was wrong, that a compaction lost what
+mattered, or that any recovery worked, and it is not execution, review, CI,
+or merge evidence. The failure pattern, competing hypotheses, and recovery
+action the skill asks for are built on top of these citations.
+
 ## Cost Receipt
 
 Audience: people ask in chat; agents and operators read the tool payload or

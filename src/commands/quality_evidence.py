@@ -20,6 +20,7 @@ from ..quality.language_diagnostic_evidence import (
     language_diagnostic_claim_support,
 )
 from ..quality.reply_lint import build_reply_lint, format_reply_lint_summary, summarize_reply_lints
+from ..quality.agent_debug_report import AgentDebugReportError, build_agent_debug_report, format_agent_debug_report
 from ..quality.hermes_state import HERMES_LATEST_SESSION, NO_SOURCE_LABEL
 from ..quality.reply_lint_source import ReplySourceError, hermes_session_replies
 from ..quality.session_file_activity import (
@@ -196,6 +197,29 @@ def cmd_quality_evidence_file_activity(args: argparse.Namespace) -> int:
         _print_json(payload)
     else:
         print(format_session_file_activity_summary(payload))
+    return 0
+
+
+def cmd_quality_evidence_agent_debug(args: argparse.Namespace) -> int:
+    """Cite what one Hermes session recorded going wrong; reads state.db only.
+
+    The agent-debug skill declared ``agent_debug_report/v1`` and nothing
+    produced one, so a plausible narrative read the same as a diagnosis. This
+    reads one session read-only and returns findings derived from record
+    fields, each cited by session, message and tool-call id. A valid report
+    exits 0 whether or not it has findings: a finding is an observation to
+    cite, not failed work, and a wrapper that wants to gate reads
+    ``finding_counts``. A missing session, an unreadable database, or a report
+    that fails validation is an error.
+    """
+    try:
+        report = build_agent_debug_report(_paths(args).hermes_home, args.hermes_session)
+    except (OSError, AgentDebugReportError, ValueError) as exc:
+        raise OmhError(str(exc)) from exc
+    if _wants_json(args):
+        _print_json(report)
+    else:
+        print(format_agent_debug_report(report))
     return 0
 
 
@@ -395,6 +419,26 @@ def _add_quality_evidence_commands(sub: argparse._SubParsersAction[argparse.Argu
     )
     activity.add_argument("--json", action="store_true", help="Print the machine-readable session_file_activity/v1 payload.")
     activity.set_defaults(func=cmd_quality_evidence_file_activity)
+
+    agent_debug = commands.add_parser(
+        "agent-debug",
+        help="Cite tool errors, identical retries, unnotified background processes and compactions in one Hermes session.",
+        description=(
+            "Read one Hermes session from state.db (mode=ro) and report agent_debug_report/v1: tool results "
+            "whose typed fields record an error, the same tool retried with identical arguments after an "
+            "error, background processes started without notify_on_complete, and compaction boundaries. "
+            "Each finding cites session, message and tool-call ids, tool name, error class and timestamps; "
+            "no prompt or tool output is quoted. A finding is an observed record, not a diagnosis, and not "
+            "execution, review, CI, or merge evidence."
+        ),
+    )
+    agent_debug.add_argument(
+        "--hermes-session",
+        required=True,
+        help=f"Hermes session id, or `{HERMES_LATEST_SESSION}` for the most recently active session.",
+    )
+    agent_debug.add_argument("--json", action="store_true", help="Print the machine-readable agent_debug_report/v1 payload.")
+    agent_debug.set_defaults(func=cmd_quality_evidence_agent_debug)
 
     receipt = commands.add_parser(
         "cost-receipt",

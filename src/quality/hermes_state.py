@@ -23,6 +23,11 @@ from urllib.parse import quote
 
 NO_SOURCE_LABEL = "(none)"
 HERMES_LATEST_SESSION = "latest"
+# A compaction re-persists tool rows under new ids, so a tool call is keyed by
+# its tool_call_id. An empty tool_call_id is not NULL, so without NULLIF every
+# such row in a session would share one key and distinct calls would collapse
+# into one; a row without one is keyed by its own id.
+TOOL_CALL_KEY_SQL = "COALESCE(NULLIF(tool_call_id, ''), 'row:' || id)"
 
 
 def open_state_db_readonly(

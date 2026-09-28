@@ -1665,7 +1665,7 @@ _FEATURE_SURFACE_SKILLS = (
             "contained_recovery_action/v1",
         ),
         artifact_expectations=(
-            "agent_debug_report/v1 with failure pattern, recent tool sequence, goal/context pressure, environment assumptions, recovery action, and evidence status",
+            "agent_debug_report/v1 from `omh quality-evidence agent-debug --hermes-session <id|latest> --json`, which reads Hermes' own session store: tool errors, identical retries after an error, background processes started without notify_on_complete, and compaction boundaries, each cited by session, message, and tool-call id; build the failure pattern, goal/context pressure, and recovery action on those citations, and treat a kind listed unavailable as unchecked",
             "agent_failure_capture/v1 separating observed errors and tool loops from inferred root-cause hypotheses",
             "contained_recovery_action/v1 with the smallest safe next action and explicit escalation boundary",
         ),

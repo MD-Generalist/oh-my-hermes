@@ -91,6 +91,31 @@ All notable changes will be documented here.
   with `--json`. OMH keeps no new store and records nothing during the
   session (#1813).
 
+- **`agent-debug` has a report it can cite: `omh quality-evidence agent-debug`.**
+  The skill declared `agent_debug_report/v1` and nothing produced one, so a
+  plausible story about a looping run read the same as a diagnosis.
+  `omh quality-evidence agent-debug --hermes-session <id|latest>` now reads
+  one session from Hermes' `state.db` (`mode=ro`, through the same open and
+  session resolution the reply lint and session-usage report use) and
+  reports four finding kinds derived from record fields only:
+  - `tool_error`: a non-zero `exit_code`, `success: false`, or a non-empty
+    `error` in the tool result's JSON;
+  - `identical_retry_after_error`: the same tool called next with
+    byte-identical canonical arguments after an error;
+  - `background_without_notify`: a started process (`pid`) whose result
+    recorded `notify_on_complete` not true;
+  - `compaction_boundary`: a `_compressed_summary` row.
+
+  Each finding cites session, message and tool-call ids, tool name, error
+  class, exit code and timestamps, and quotes no prompt or tool output. A
+  validator refuses a finding without the citation its kind needs, a
+  citation naming another session, and any key outside the closed citation
+  shape. Calls count once per distinct `tool_call_id`, so a compaction's
+  re-persisted rows do not double up, and a kind whose column this Hermes
+  build lacks is listed `unavailable` rather than clean. Plain text by
+  default, `--json` for the payload; the `agent-debug` skill now points at
+  the command (#1799, first slice).
+
 - **The repo's agent instruction file has an owner: `omh-agent-instructions`.**
   "set up AGENTS.md", "update our CLAUDE.md" and "write an AGENTS.md for this
   repo" used to ask a question led by `rules-distill` or `memory-sync`. They
