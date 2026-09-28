@@ -208,6 +208,7 @@
    "relational-db",
    "security-event-response",
    "release-cut",
+   "mobile-release",
    "agent-instructions",
    "iac-change",
    "data-pipelines",
