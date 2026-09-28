@@ -726,7 +726,7 @@
 }
 },
 {
-"anchors":"checklist launch live operational pre preflight prod rollback ship",
+"anchors":"checklist launch live operational pre preflight prod rollback",
 "hangul":"덕션 로덕 롤백 리즈 릴리 운영 준비 출시 프로",
 "hangul_anchors":"덕션 로덕 롤백 리즈 릴리 운영 출시",
 "label":"omh-production-audit",
@@ -940,7 +940,7 @@
 }
 },
 {
-"anchors":"act cto dev engineer launch lead leadership operat ops pm risky roadmap security several ship tech technical together tradeoff",
+"anchors":"act cto dev engineer launch lead leadership operat ops pm risky roadmap security several tech technical together tradeoff",
 "hangul":"구조 기술 더십 드맵 드오 레이 로드 리더 아키 오프 이드 준비 출시 키텍 텍처 트레",
 "hangul_anchors":"구조 기술 더십 드맵 드오 로드 리더 아키 오프 이드 출시 키텍 텍처 트레",
 "label":"omh-cto-loop",
@@ -957,7 +957,7 @@
 }
 },
 {
-"anchors":"deploy deployment eye health hold incident metric monitor post production roll rollback safely ship watch",
+"anchors":"deploy deployment eye health hold incident metric monitor post production roll rollback safely watch",
 "hangul":"감시 니터 덕션 라에 로덕 롤백 리즈 릴리 모니 배포 비스 서비 인프 장애 체크 터링 프라 프로 헬스",
 "hangul_anchors":"감시 니터 덕션 라에 로덕 롤백 리즈 릴리 모니 배포 비스 서비 인프 장애 체크 터링 프라 헬스",
 "label":"omh-deploy-and-monitor",
@@ -1501,7 +1501,7 @@
 }
 },
 {
-"anchors":"agpl critical cve ended env flag github gpl library log4j npm ok public push reachabl scanner ship token",
+"anchors":"agpl critical cve ended env flag github gpl library log4j npm ok public push reachabl scanner token",
 "hangul":"",
 "hangul_anchors":"",
 "label":"omh-security-event-response",
@@ -1514,6 +1514,23 @@
 "4":"advisory api commit cve dependency gpl licens reachability secret",
 "5":"respons",
 "7":"event security"
+}
+},
+{
+"anchors":"bad five number percent restor semver send week yesterday",
+"hangul":"",
+"hangul_anchors":"",
+"label":"omh-release-cut",
+"name":"release-cut",
+"situation":"Shipping a versioned release -- tag it, stage it behind a canary, or roll back the last deploy",
+"terms":{
+"1":"already befor ci execut host named need output perform plan publish undon",
+"2":"bad behind build bump candidat decid exact first five note number percent percentag previous progressiv restor semver send set user week yesterday",
+"3":"last prepar rollout",
+"4":"back canary command deploy goes new roll rollback ship stag trigger",
+"5":"cut",
+"6":"tag version",
+"9":"releas"
 }
 },
 {

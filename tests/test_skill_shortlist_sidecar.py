@@ -290,9 +290,15 @@ class AdmissionTests(unittest.TestCase):
         # shortlist floor; only the single-anchor score keeps it out.
         message = "The doctor said my cholesterol is a bit high. What foods should I cut back on?"
         ranking = bundle.lexical_ranking(message)
-        self.assertEqual(ranking[0][0], "doctor")
-        self.assertGreaterEqual(ranking[0][1], core.LEXICAL_SCORE_FLOOR)
-        self.assertLess(ranking[0][1], bundle.ADMISSION_SINGLE_ANCHOR_SCORE)
+        # `release-cut` (#1693) outranks doctor here on "cut" and "back", from
+        # "cut a release" and "roll back the deploy"; both words are held back
+        # for it, so it shares no anchor with the message and is never listed.
+        # The claim is about doctor, read from its own row.
+        self.assertEqual([name for name, _ in ranking[:2]], ["release-cut", "doctor"])
+        self.assertTrue(core.only_held_back_overlap(message, "release-cut"))
+        doctor = dict(ranking)["doctor"]
+        self.assertGreaterEqual(doctor, core.LEXICAL_SCORE_FLOOR)
+        self.assertLess(doctor, bundle.ADMISSION_SINGLE_ANCHOR_SCORE)
         with mock.patch.object(bundle, "ADMISSION_SINGLE_ANCHOR_SCORE", core.LEXICAL_SCORE_FLOOR):
             self.assertIn("omh-doctor", [label for label, _ in bundle.skill_candidates(message)])
 
@@ -439,7 +445,11 @@ class HangulAdmissionTests(unittest.TestCase):
         # Two anchored words, one family message: only the floor keeps it out.
         message = "동생 결혼식에서 사진 공유해줄게"
         self.assertLess(bundle.hangul_ranking(message)[0][1], bundle.HANGUL_ADMISSION_SCORE_FLOOR)
-        with mock.patch.object(bundle, "HANGUL_ADMISSION_SCORE_FLOOR", 3.0):
+        # 3.0 -> 2.5: the lowered floor must sit below img-summary, the one
+        # skill with anchors in two words here. Each new skill grows the
+        # document count and shifts every IDF; with `release-cut` (#1693)
+        # img-summary measures 2.9996, a hair under the old 3.0.
+        with mock.patch.object(bundle, "HANGUL_ADMISSION_SCORE_FLOOR", 2.5):
             self.assertTrue(bundle.hangul_skill_candidates(message))
         self.assertEqual(_candidates(message), ())
 

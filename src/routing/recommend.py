@@ -360,6 +360,42 @@ _RELATIONAL_DB_EXPLICIT_PHRASES = tuple(
     )
 )
 
+# `release-cut` holds back every token its phrases are built from, which left
+# "cut a release and tag it" and "set up a canary for this service" at the bare
+# phrase credit against `deploy-and-monitor`'s `rollback`. Listed are the
+# phrases that name deciding or undoing a release. "canary" alone and "what
+# goes in the release" are not: "what is a canary" is a concept question. The
+# phrases that are also ordinary English ("cut a release", "release
+# candidate") are safe to boost because `EVERYDAY_SENSE_PHRASES` has already
+# dropped this skill when no word of shipping software stands beside them.
+_RELEASE_CUT_EXPLICIT_PHRASES = tuple(
+    normalized_phrase(phrase)
+    for phrase in (
+        "release-cut",
+        "release cut",
+        "cut a release",
+        "cut the release",
+        "cut a new release",
+        "tag a release",
+        "tag the release",
+        "release candidate",
+        "version the release",
+        "semver bump",
+        "roll back the last deploy",
+        "roll back the deploy",
+        "roll back the release",
+        "roll back to the previous version",
+        "rollback trigger",
+        "rollback command",
+        "canary release",
+        "canary deploy",
+        "set up a canary",
+        "staged rollout",
+        "progressive rollout",
+        "percentage rollout",
+    )
+)
+
 # `security-event-response` holds back every token its phrases are built from,
 # which left "we committed a secret, what now" and "is this dependency's license
 # OK for us" at the bare phrase credit. Listed are the phrases that name an
@@ -941,6 +977,19 @@ _SKILL_POLICIES = {
             "Prepare native_fault_statement/v1, hypothesis_set/v1 with at least three hypotheses on distinct axes, "
             "distinguishing_observation_plan/v1, and debugger_session_plan/v1 naming the DAP adapter, breakpoints, "
             "watchpoints, threads, frames, and values the executor reads at each stop."
+        ),
+    ),
+    "release-cut": RecommendationPolicy(
+        next_action="prepare_release_plan",
+        evidence_boundary=(
+            "A release plan is not a pushed tag, a passed approval, a published release, a promoted canary, or a performed "
+            "rollback until observed; OMH prepares and the host or CI executes, and a plan is not ready without a named "
+            "rollback trigger and the exact command that performs it."
+        ),
+        wrapper_guidance=(
+            "Prepare release_scope/v1 with contents, held items, and the version derived from change classes; release_plan/v1 "
+            "ordering freeze, bump, tag, workflow, approval, publish, and notes; rollout_stages/v1 with promotion criteria; "
+            "rollback_trigger/v1 naming the signal, threshold, exact command, and who runs it; and release_readiness_verdict/v1."
         ),
     ),
     "security-event-response": RecommendationPolicy(
@@ -2638,6 +2687,41 @@ _WHOLE_PHRASE_ONLY_TRIGGER_TOKENS = {
     # database word beside them (`EVERYDAY_SENSE_PHRASES`). Five tokens stay
     # creditable because nothing else means them: `relational-db` (the skill
     # name), `seq-scans`, `ddl`, `postgres`, and `mysql`.
+    # `release-cut` is built from "release", "cut", "tag", "canary", "roll",
+    # "back", "deploy", "rollback", "version" and "rollout" -- a band's new
+    # release, a haircut, a price tag, a pet canary and a carpet rolled back
+    # all reached it as bare tokens. Only the complete phrases score, and the
+    # ones that are also ordinary English need a word of shipping software
+    # beside them (`EVERYDAY_SENSE_PHRASES`). Two tokens stay creditable
+    # because nothing else means them: `release-cut` (the skill name) and
+    # `semver`.
+    "release-cut": frozenset(
+        {
+            "back",
+            "bump",
+            "canary",
+            "candidate",
+            "command",
+            "cut",
+            "deploy",
+            "goes",
+            "last",
+            "new",
+            "percentage",
+            "previous",
+            "progressive",
+            "release",
+            "roll",
+            "rollback",
+            "rollout",
+            "set",
+            "staged",
+            "tag",
+            "trigger",
+            "version",
+            "what",
+        }
+    ),
     # `security-event-response` is built from "security", "event", "secret",
     # "license", "advisory", "leaked", "committed", "key", "history" and
     # "dependency" -- a travel security advisory, a driver's licence, a secret
@@ -3651,6 +3735,9 @@ def _score_definition(
     if definition.name == "todo-checklist" and _todo_checklist_explicit_match(normalized_query):
         score += 30
         matched.add("direct:todo_checklist")
+    if definition.name == "release-cut" and _release_cut_explicit_match(normalized_query):
+        score += 30
+        matched.add("direct:release_cut")
     if definition.name == "security-event-response" and _security_event_response_explicit_match(normalized_query):
         score += 30
         matched.add("direct:security_event_response")
@@ -4440,6 +4527,10 @@ def _todo_checklist_explicit_match(normalized_query: str) -> bool:
 
 def _relational_db_explicit_match(normalized_query: str) -> bool:
     return any(_explicit_phrase_match(normalized_query, phrase) for phrase in _RELATIONAL_DB_EXPLICIT_PHRASES)
+
+
+def _release_cut_explicit_match(normalized_query: str) -> bool:
+    return any(_explicit_phrase_match(normalized_query, phrase) for phrase in _RELEASE_CUT_EXPLICIT_PHRASES)
 
 
 def _security_event_response_explicit_match(normalized_query: str) -> bool:

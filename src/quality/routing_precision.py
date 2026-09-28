@@ -3013,6 +3013,49 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
         "",
         "security-event-response",
     ),
+    # `release-cut` phrases outside shipping software: a band's release, a pet
+    # canary, a political candidate, and a carpet. Watching a deploy that is
+    # already out stays with `deploy-and-monitor`.
+    RoutingPrecisionCase(
+        "band-release-is-not-release-cut",
+        "A band cutting a release is not a software release",
+        "the band cut a release of their new album",
+        "answer_clarification",
+        "",
+        "release-cut",
+    ),
+    RoutingPrecisionCase(
+        "pet-canary-is-not-release-cut",
+        "A pet canary is not a canary deploy",
+        "my canary stopped singing",
+        "answer_clarification",
+        "",
+        "release-cut",
+    ),
+    RoutingPrecisionCase(
+        "release-candidate-for-mayor-is-not-release-cut",
+        "A candidate for mayor is not a release candidate",
+        "the release candidate for mayor spoke tonight",
+        "answer_clarification",
+        "",
+        "release-cut",
+    ),
+    RoutingPrecisionCase(
+        "rolled-back-carpet-is-not-release-cut",
+        "Rolling back a carpet is not rolling back a deploy",
+        "roll back the carpet in the hallway",
+        "answer_clarification",
+        "",
+        "release-cut",
+    ),
+    RoutingPrecisionCase(
+        "watching-a-deploy-is-not-release-cut",
+        "Watching metrics after a deploy stays with deploy-and-monitor",
+        "watch metrics after the deploy",
+        "answer_clarification",
+        "",
+        "release-cut",
+    ),
 )
 
 
@@ -8612,6 +8655,53 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "security-event-response",
         "prepare_security_event_response",
         "security_event_response",
+    ),
+    # #1693: deciding or undoing a release dispatches to the release lane. The
+    # first three are the issue's rows.
+    RoutingInterventionCase(
+        "cut-and-tag-reaches-release-cut",
+        "Cutting and tagging a release reaches the release lane",
+        "cut a release and tag it",
+        "dispatch",
+        "release-cut",
+        "prepare_release_plan",
+        "release_plan",
+    ),
+    RoutingInterventionCase(
+        "roll-back-last-deploy-reaches-release-cut",
+        "Rolling back the last deploy reaches the release lane, not the deploy watch",
+        "roll back the last deploy",
+        "dispatch",
+        "release-cut",
+        "prepare_release_plan",
+        "release_plan",
+    ),
+    RoutingInterventionCase(
+        "service-canary-reaches-release-cut",
+        "Setting up a canary for a service reaches the release lane",
+        "set up a canary for this service",
+        "dispatch",
+        "release-cut",
+        "prepare_release_plan",
+        "release_plan",
+    ),
+    RoutingInterventionCase(
+        "versioned-cut-reaches-release-cut",
+        "Cutting a versioned release reaches the release lane",
+        "cut the release for version 2.4 today",
+        "dispatch",
+        "release-cut",
+        "prepare_release_plan",
+        "release_plan",
+    ),
+    RoutingInterventionCase(
+        "tag-release-for-build-reaches-release-cut",
+        "Tagging a release for a build reaches the release lane",
+        "tag a release for the new build",
+        "dispatch",
+        "release-cut",
+        "prepare_release_plan",
+        "release_plan",
     ),
 )
 

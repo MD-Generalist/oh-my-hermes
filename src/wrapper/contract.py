@@ -278,6 +278,8 @@ VISIBLE_ACTIONS = (
     "show_migration_readiness",
     "prepare_security_event_response",
     "show_event_closure",
+    "prepare_release_plan",
+    "show_release_readiness",
     "show_frontend_handoff",
     "record_browser_capture",
     "record_accessibility_check",
@@ -1115,6 +1117,8 @@ _ACK_PRIMARY_ACTIONS_BY_NEXT_ACTION = {
     "show_migration_readiness": ("show_migration_readiness", "Show migration readiness"),
     "prepare_security_event_response": ("prepare_security_event_response", "Respond to the security event"),
     "show_event_closure": ("show_event_closure", "Show event closure"),
+    "prepare_release_plan": ("prepare_release_plan", "Plan the release"),
+    "show_release_readiness": ("show_release_readiness", "Show release readiness"),
     "prepare_accessibility_audit": ("prepare_accessibility_audit", "Audit accessibility"),
     "prepare_visual_qa": ("prepare_visual_qa", "Prepare visual QA"),
     "prepare_deliverable_package": ("prepare_deliverable_package", "Prepare deliverable"),
@@ -2223,6 +2227,39 @@ _WORKFLOW_OPERATIONS_CHAT_CARDS: dict[str, dict[str, object]] = {
             "migration applied",
             "lock wait",
             "row count",
+        ],
+    },
+    "release-cut": {
+        "kind": "release_plan",
+        "headline": "I can plan this release with its rollback decided before it is needed.",
+        "body": (
+            "I will list what goes in and what is held, derive the version, and order the cut: freeze, bump every version "
+            "surface, tag, run the release workflow, pass its approval, publish, and curate the notes. Each rollout stage gets "
+            "a promotion criterion, and the plan reads ready only with a named rollback trigger and the exact command that "
+            "performs it. OMH prepares; the host or CI executes."
+        ),
+        "phase": "release_plan_prepared",
+        "next_action": "prepare_release_plan",
+        "artifact_schema": "release_plan/v1",
+        "claim_boundary_suffix": "It is not a pushed tag, a published release, a promoted canary, or a performed rollback until the output is observed.",
+        "actions": [
+            {"id": "prepare_release_plan", "label": "Plan the release", "style": "primary"},
+            {"id": "show_release_readiness", "label": "Show release readiness", "style": "secondary"},
+            {"id": "show_status", "label": "Show status", "style": "secondary"},
+        ],
+        "recommended_flow": [
+            "list_contents_and_derive_the_version",
+            "order_the_cut_with_the_branch_frozen",
+            "stage_the_rollout_with_promotion_criteria",
+            "name_the_rollback_trigger_and_command",
+            "issue_the_readiness_verdict",
+        ],
+        "evidence_not_observed": [
+            "tag pushed",
+            "release published",
+            "approval passed",
+            "canary promoted",
+            "rollback performed",
         ],
     },
     "security-event-response": {
