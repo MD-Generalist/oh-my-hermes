@@ -717,6 +717,40 @@ class ToolBindsEvidenceTest(_PlanHomeTest):
 
         self.assertEqual(result["done_unverified"][0]["reason"], EVIDENCE_REASON_FAILED)
 
+    def test_a_sticky_failure_outlives_a_pass_that_belongs_to_another_item(self):
+        # The pass ran for b before a was reopened, so it is neither in a's
+        # new window nor the session's last word on a -- only the binding is.
+        self._failing_then()
+        self.call({"action": "advance", "item": 1, "item_text": "a", "state": "done"})
+        self.call({"action": "advance", "item": 2, "item_text": "b", "state": "active"})
+        self.run_command("toolu_green_for_b")
+        self.call({"action": "advance", "item": 2, "item_text": "b", "state": "done"})
+        self.call({"action": "advance", "item": 1, "item_text": "a", "state": "active"})
+        time.sleep(0.02)
+
+        self.call({"action": "advance", "item": 1, "item_text": "a", "state": "done"})
+
+        self.assertEqual(self._a_reason(), [(1, EVIDENCE_REASON_FAILED)])
+
+    def test_a_re_advance_over_a_bound_failure_never_binds_an_older_pass(self):
+        self.call({"action": "set", "items": [{"text": "a", "state": "active"}]})
+        self.run_command("toolu_green_first")
+        self.run_command("toolu_red_last", exit_code=1)
+        self.call({"action": "advance", "item": 1, "item_text": "a", "state": "done"})
+        self.assertEqual(self.stored()["items"][0]["evidence"], evidence("tool_call", "toolu_red_last"))
+
+        self.call({"action": "advance", "item": 1, "item_text": "a", "state": "done"})
+
+        self.assertEqual(self.stored()["items"][0]["evidence"], evidence("tool_call", "toolu_red_last"))
+
+    def test_a_call_recorded_after_the_done_write_is_never_bound_to_it(self):
+        self.call({"action": "set", "items": [{"text": "a", "state": "active"}]})
+        add_rows(self.hermes, [(SESSION, "terminal", "toolu_future", _terminal(0), None, 4_000_000_000.0)])
+
+        self.call({"action": "advance", "item": 1, "item_text": "a", "state": "done"})
+
+        self.assertNotIn("evidence", self.stored()["items"][0])
+
     def test_a_passing_command_in_the_window_replaces_a_sticky_failure(self):
         self._failing_then()
         self.call({"action": "advance", "item": 1, "item_text": "a", "state": "done"})
