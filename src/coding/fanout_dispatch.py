@@ -5031,10 +5031,6 @@ def _dispatch_unit(
                 'runtime_profile': owner, 'attempt_id': attempt_id,
                 'failure_diagnostic': failure_diagnostic})
 
-        # The task-linked postcondition joins the declared checks as one more
-        # dispatcher-run command, so its exit status moves the same ladder.
-        # One the dispatcher could not resolve fails closed: nothing runs and
-        # no observation is appended.
         # Which check failed and how, captured only for a unit that declared a
         # repair budget: the repair loop's trigger reads it, nothing else does.
         observed_check_failures: list[dict[str, Any]] = []
@@ -5043,6 +5039,10 @@ def _dispatch_unit(
             observed_check_failures.append(observed_check_failure(command, reason, code, source))
 
         repair_enabled = declared_max_repair_attempts(unit) > 0
+        # The task-linked postcondition joins the declared checks as one more
+        # dispatcher-run command, so its exit status moves the same ladder.
+        # One the dispatcher could not resolve fails closed: nothing runs and
+        # no observation is appended.
         verification_unit: Mapping[str, Any] = unit
         task_linked: dict[str, Any] | None = None
         test_runner = str(unit.get("task_linked_test_runner") or "")
