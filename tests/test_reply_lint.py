@@ -235,15 +235,35 @@ _SCHEMA_ID = re.compile(r"(?<![A-Za-z0-9_/.-])([a-z][a-z0-9]*(?:_[a-z0-9]+)+/v[0
 
 
 def _derived_schema_ids() -> set[str]:
-    """The lint's declared scope rule, re-derived: `omh_` ids the bundle spells,
-    plus every id a shipped plugin tool schema names."""
+    """The lint's declared scope rule, re-derived: every `omh_` id the bundle or
+    a shipped plugin tool schema spells."""
     from omh.plugin_bundle.omh.tools import builtin_tool_schemas
 
-    bundle: set[str] = set()
+    spelled: set[str] = set(_SCHEMA_ID.findall(json.dumps(builtin_tool_schemas())))
     for text in _source_texts(_SRC / "plugin_bundle"):
-        bundle.update(_SCHEMA_ID.findall(text))
-    in_schemas = set(_SCHEMA_ID.findall(json.dumps(builtin_tool_schemas())))
-    return {schema_id for schema_id in bundle if schema_id.startswith("omh_")} | in_schemas
+        spelled.update(_SCHEMA_ID.findall(text))
+    return {schema_id for schema_id in spelled if schema_id.startswith("omh_")}
+
+
+def _derived_record_ids() -> set[str]:
+    """The record ids' producers: categories, todo evidence, route exhaustion, repair."""
+    from omh.coding.fanout_repair import REPAIR_BLOCKED_REASONS, REPAIR_IN_FLIGHT_STATUS
+    from omh.plugin_bundle.omh.hermes_delegation import (
+        _PROVENANCE_ORIGINS,
+        HERMES_MIXTURE_CATEGORY_CHAINS,
+    )
+    from omh.plugin_bundle.omh.todo_reconciliation import DONE_UNVERIFIED, EVIDENCE_REASONS
+
+    categories = set(HERMES_MIXTURE_CATEGORY_CHAINS) - reply_lint._ORDINARY_CATEGORY_IDS
+    origins = {origin for origin in _PROVENANCE_ORIGINS if "_" in origin}
+    return (
+        categories
+        | set(EVIDENCE_REASONS)
+        | {DONE_UNVERIFIED}
+        | origins
+        | set(REPAIR_BLOCKED_REASONS)
+        | {REPAIR_IN_FLIGHT_STATUS}
+    )
 
 
 class OmhHeadTests(unittest.TestCase):
@@ -280,6 +300,11 @@ class OmhHeadTests(unittest.TestCase):
             "Fixed in [OMH 2.0.2].",
             "The [OMH Awareness](https://example.com/awareness) page explains it.",
             "[OMH](https://github.com/rlaope/oh-my-hermes) is installed.",
+            # Reference-style links and their definitions.
+            "See [OMH][1] for install steps.",
+            "[OMH Awareness][docs] explains it.",
+            "[OMH]: https://github.com/rlaope/oh-my-hermes",
+            "[OMH Role: reviewer][roles] lists the roles.",
         ):
             with self.subTest(text=text):
                 self.assertEqual(build_reply_lint(text)["findings"], [])
@@ -310,8 +335,19 @@ class SchemaIdTests(unittest.TestCase):
                 self.assertEqual(_kinds(payload), [("record_term_leak", schema_id)])
 
     def test_the_ids_measured_in_live_replies_are_in_scope(self) -> None:
-        for schema_id in ("omh_todo_result/v1", "omh_run_summary/v1", "route_question/v1"):
+        for schema_id in ("omh_todo_result/v1", "omh_run_summary/v1"):
             self.assertIn(schema_id, reply_lint._SCHEMA_ID_TERMS)
+
+    def test_unprefixed_schema_ids_are_out_of_scope(self) -> None:
+        # A tool schema names these, but none reached a reply in the audit and
+        # each reads as a person's own versioned name.
+        for text in (
+            "The done_check/v1 step in our pipeline passed.",
+            "We still post verification_receipt/v1 payloads to the old endpoint.",
+            "Bump review_flags/v1 to v2 in the config.",
+        ):
+            with self.subTest(text=text):
+                self.assertEqual(build_reply_lint(text)["findings"], [])
 
     def test_an_id_is_exact(self) -> None:
         self.assertEqual(build_reply_lint("omh_todo/v12 and xomh_todo/v1")["findings"], [])
@@ -344,12 +380,16 @@ class AuditTermTests(unittest.TestCase):
 
     def test_the_qualified_terms_are_flagged(self) -> None:
         # The two key names ride every omh_delegate_route / omh_todo result.
-        for term in ("route_question", "closure receipt", "fanout dispatch", "evidence_boundary", "claim_boundary"):
+        for term in ("route_question", "coding fanout dispatch", "evidence_boundary", "claim_boundary"):
             with self.subTest(term=term):
                 self.assertEqual(
                     _kinds(build_reply_lint(f"Next I will check the {term} for this change.")),
                     [("record_term_leak", term)],
                 )
+        self.assertEqual(
+            _kinds(build_reply_lint("I ran omh coding fanout dispatch on the plan.")),
+            [("record_term_leak", "coding fanout dispatch")],
+        )
 
     def test_the_everyday_words_inside_them_are_clean(self) -> None:
         for text in (
@@ -359,6 +399,57 @@ class AuditTermTests(unittest.TestCase):
             "The fan-out of this function is three callers.",
             "Update the goal ledger in the finance sheet.",
             "The route question is whether to go north.",
+            # Narrowed: a person's own function, broker and paperwork.
+            "Call route_question(q) before the dispatcher runs.",
+            "The fanout dispatch queue in our broker is backed up.",
+            "Keep the account closure receipt for your records.",
+        ):
+            with self.subTest(text=text):
+                self.assertEqual(build_reply_lint(text)["findings"], [])
+
+
+class RecordIdTests(unittest.TestCase):
+    """Record ids a tool result carries: exact literals, ordinary words held back."""
+
+    def test_the_id_list_is_the_producers_re_derived(self) -> None:
+        derived = _derived_record_ids()
+        listed = set(reply_lint._RECORD_ID_TERMS)
+        self.assertEqual(sorted(derived - listed), [], "add these ids to _RECORD_ID_TERMS in src/quality/reply_lint.py")
+        self.assertEqual(sorted(listed - derived), [], "no producer spells these ids any more; remove them")
+        self.assertEqual(len(listed), len(reply_lint._RECORD_ID_TERMS), "duplicate id")
+        from omh.plugin_bundle.omh.hermes_delegation import HERMES_MIXTURE_CATEGORY_CHAINS
+
+        self.assertLessEqual(reply_lint._ORDINARY_CATEGORY_IDS, set(HERMES_MIXTURE_CATEGORY_CHAINS))
+
+    def test_the_ids_the_audit_named_are_in_scope(self) -> None:
+        for record_id in ("unspecified-high", "no_evidence", "done_unverified", "exhausted_to_inherit"):
+            self.assertIn(record_id, reply_lint._RECORD_ID_TERMS)
+
+    def test_each_id_in_a_reply_is_flagged(self) -> None:
+        for record_id in reply_lint._RECORD_ID_TERMS:
+            with self.subTest(record_id=record_id):
+                payload = build_reply_lint(f"The route came back as {record_id} for this part.")
+                self.assertEqual(_kinds(payload), [("record_term_leak", record_id)])
+
+    def test_an_id_is_exact(self) -> None:
+        for text in (
+            "unspecified-higher tiers",
+            "pre-unspecified-high",
+            "no_evidence_yet",
+            "UNSPECIFIED-HIGH",
+        ):
+            with self.subTest(text=text):
+                self.assertEqual(build_reply_lint(text)["findings"], [])
+
+    def test_ordinary_words_are_clean(self) -> None:
+        for text in (
+            "A quick fix for the writing in the deep dive; the architect is capable.",
+            "Block a deep-work session for the artistry of it.",
+            "The priority was left unspecified and set high later.",
+            "There is no evidence the evidence failed or was unresolved.",
+            "The route fell back and was exhausted, so it will inherit the default.",
+            "The repair budget is exhausted and the worktree is missing.",
+            "Visual engineering and simple work both count.",
         ):
             with self.subTest(text=text):
                 self.assertEqual(build_reply_lint(text)["findings"], [])

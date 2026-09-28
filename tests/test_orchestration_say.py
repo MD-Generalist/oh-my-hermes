@@ -217,7 +217,8 @@ class RouteHandlerTests(unittest.TestCase):
         for payload in (with_say, without):
             payload.pop("route_provenance", None)
             payload.pop("observation", None)
-        self.assertEqual(with_say, without)
+        # As text, so a moved or retyped key fails too, not only a changed value.
+        self.assertEqual(json.dumps(with_say), json.dumps(without))
 
 
 def _todo_env(case: unittest.TestCase) -> tuple[Path, Path]:
@@ -256,6 +257,54 @@ class TodoSayTests(unittest.TestCase):
         say = todo_say("advance", "written", self.TODO, item=2)
         self.assertEqual(say, "Step 2 (Write the fix) is blocked: waiting on the owner's approval.")
         _assert_plain(self, str(say))
+
+    def test_a_done_step_with_a_reason_is_skipped_not_blocked(self) -> None:
+        # The code-story template keeps an unneeded phase as state=done with a
+        # blocked_reason (`todo_tool.py`), and the record closes it as
+        # skipped; saying "is blocked" would announce a stop that is not one.
+        todo = {
+            "items": [
+                {"text": "I. Story", "state": "done"},
+                {"text": "II. Scope", "state": "done", "blocked_reason": "not needed for a one-line fix"},
+            ]
+        }
+        say = todo_say("advance", "written", todo, item=2)
+        self.assertEqual(say, "Skipped step 2 (II. Scope): not needed for a one-line fix.")
+        self.assertNotIn("blocked", str(say))
+        _assert_plain(self, str(say))
+        # The negative: the same reason on an open step is a block.
+        for state in ("pending", "active"):
+            with self.subTest(state=state):
+                todo["items"][1]["state"] = state
+                self.assertEqual(
+                    todo_say("advance", "written", todo, item=2),
+                    "Step 2 (II. Scope) is blocked: not needed for a one-line fix.",
+                )
+
+    def test_a_value_that_ends_a_sentence_gets_no_period(self) -> None:
+        for reason, said in (
+            ("can we ship without the key?", "can we ship without the key?"),
+            ("the deploy key is gone!", "the deploy key is gone!"),
+            ("デプロイキー待ち。", "デプロイキー待ち。"),
+            ("等待部署密钥！", "等待部署密钥！"),
+            ("可以发布吗？", "可以发布吗？"),
+            ("needs the deploy key.", "needs the deploy key."),
+            ("needs the deploy key", "needs the deploy key."),
+        ):
+            with self.subTest(reason=reason):
+                todo = {"items": [{"text": "Ship", "state": "active", "blocked_reason": reason}]}
+                self.assertEqual(todo_say("advance", "written", todo, item=1), f"Step 1 (Ship) is blocked: {said}")
+        self.assertEqual(
+            loop_say(
+                {"action": "start", "goal_reframe": "Why is CI red?", "success_criteria": ["the cause is named!"]},
+                {"status": "ok"},
+            ),
+            "Goal: Why is CI red? Done when: the cause is named!",
+        )
+        self.assertEqual(
+            loop_say({"action": "feedback", "external_wait": "レビュー待ち。"}, {"status": "ok"}),
+            "Waiting on something outside this work: レビュー待ち。",
+        )
 
     def test_an_advance_that_does_not_block_is_silent(self) -> None:
         self.assertIsNone(todo_say("advance", "written", self.TODO, item=1))
@@ -341,6 +390,11 @@ class TodoHandlerTests(unittest.TestCase):
             {"action": "advance", "item": 2, "item_text": "ship", "state": "pending", "blocked_reason": "needs the deploy key"}
         )
         self.assertEqual(blocked["say"], "Step 2 (ship) is blocked: needs the deploy key.")
+        skipped = self.call(
+            {"action": "advance", "item": 2, "item_text": "ship", "state": "done", "blocked_reason": "not needed"}
+        )
+        self.assertEqual(skipped["status"], "written", skipped)
+        self.assertEqual(skipped["say"], "Skipped step 2 (ship): not needed.")
         moved = self.call({"action": "advance", "item": 1, "item_text": "fix", "state": "active"})
         self.assertNotIn("say", moved)
         self.assertNotIn("say", self.call({"action": "show"}))
@@ -378,7 +432,7 @@ class TodoHandlerTests(unittest.TestCase):
             for key in ("updated_at", "updated_age_seconds", "stall"):
                 payload["todo"].pop(key, None)
             payload.pop("observation", None)
-        self.assertEqual(with_say, without)
+        self.assertEqual(json.dumps(with_say), json.dumps(without))
 
 
 class LoopSayTests(unittest.TestCase):
@@ -450,13 +504,10 @@ class LoopHandlerTests(unittest.TestCase):
         with mock.patch("omh.plugin_bundle.omh.tools.loop_tool.loop_say", return_value=None):
             without = self.call(action="start", loop_id="loop-without", **args)
         self.assertEqual(with_say.pop("say"), "Goal: Ship it. Done when: done.")
-        self.assertEqual(set(with_say), set(without))
-        for key in (
-            "schema_version", "status", "action", "record_revision", "mutation_applied", "warnings",
-            "next_actions", "prepared_versus_observed", "claim_boundary", "plugin_tool",
-        ):
-            with self.subTest(key=key):
-                self.assertEqual(with_say[key], without[key])
+        # As text, with only the loop id told apart: every other byte matches.
+        self.assertEqual(
+            json.dumps(with_say).replace("loop-with", "<id>"), json.dumps(without).replace("loop-without", "<id>")
+        )
 
 
 def _prepared(**overrides: object) -> dict:
@@ -530,11 +581,13 @@ class BoardHandlerTests(unittest.TestCase):
         with mock.patch("omh.plugin_bundle.omh.tools.agent_board_tool.board_say", return_value=None):
             without = self.call(request("create", "lane-9", dict(arguments)))
         self.assertEqual(with_say.pop("say"), LANE_ROLE_SAY["qa"])
-        self.assertEqual(set(with_say), set(without))
-        # The digest and native action name the request id, which differs.
-        for key in ("state", "reason", "route", "operation", "lane_role", "required_capabilities"):
-            with self.subTest(key=key):
-                self.assertEqual(with_say[key], without[key])
+        # The request id, and the digest and native action that name it,
+        # differ by construction; every other byte matches, in order.
+        for payload in (with_say, without):
+            for key in ("request_id", "request_ref", "argument_digest", "native_action"):
+                self.assertIn(key, payload)
+                payload[key] = "<request>"
+        self.assertEqual(json.dumps(with_say), json.dumps(without))
 
 
 if __name__ == "__main__":

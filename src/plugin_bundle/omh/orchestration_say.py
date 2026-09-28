@@ -22,7 +22,8 @@ Rules every builder keeps, pinned in `tests/test_orchestration_say.py`:
 - Nothing from OMH's record vocabulary is added around the echoed values: no
   category id, no reason code, no schema id, no `[OMH ...]` head. Values the
   model wrote (a title, an item, a blocked reason, a goal) are echoed as
-  written, so the sentence carries exactly the vocabulary they carry.
+  written, so the sentence carries exactly the vocabulary they carry, and a
+  value that already ends a sentence (`?`, `!`, `。`) gets no period added.
 
 Stdlib only and no `omh.*` import: this module runs inside Hermes's own
 interpreter. The model labels are vendored from
@@ -116,10 +117,20 @@ LANE_ROLE_SAY: Final[dict[str, str]] = {
 }
 
 
+# A value that already ends a sentence gets no period after it: "is blocked:
+# can we ship?" stays a question, and a Japanese reason keeps its own `。`.
+_SENTENCE_ENDS: Final = ("?", "!", "？", "！", "。")
+
+
 def _clause(value: object) -> str:
-    """An echoed value as a clause: trimmed, one line, no closing period."""
+    """An echoed value as a clause: trimmed, one line, no closing ASCII period."""
     text = " ".join(str(value or "").split())
-    return text.rstrip(" .。")
+    return text.rstrip(" .")
+
+
+def _ended(clause: str) -> str:
+    """*clause* closed as a sentence: a period unless it already ends one."""
+    return clause if clause.endswith(_SENTENCE_ENDS) else f"{clause}."
 
 
 def model_label(alias: object) -> str:
@@ -187,7 +198,8 @@ def todo_say(
     """The sentence for an `omh_todo` write, or ``None``.
 
     A set states the plan and its done criterion; an advance that leaves its
-    item blocked states the item and the recorded reason. Either one adds the
+    item with a recorded reason states the item and the reason -- blocked
+    while it is open, skipped once it is done. Either one adds the
     first done item no recorded result closes. Nothing else speaks.
     """
     if status != "written" or not isinstance(todo, Mapping):
@@ -205,7 +217,14 @@ def todo_say(
         changed = _item(todo, item)
         reason = _clause(changed.get("blocked_reason")) if changed else ""
         if reason:
-            parts.append(f"Step {item} ({_clause(changed.get('text'))}) is blocked: {reason}.")
+            # A done item with a reason is a step the plan did not need (the
+            # code-story template keeps an unneeded phase that way), and the
+            # record closes it as skipped; only an open item is blocked.
+            named = f"{item} ({_clause(changed.get('text'))})"
+            if changed.get("state") == "done":
+                parts.append(_ended(f"Skipped step {named}: {reason}"))
+            else:
+                parts.append(_ended(f"Step {named} is blocked: {reason}"))
     else:
         return None
     unverified_sentence = _unverified_sentence(todo, unverified)
@@ -226,10 +245,10 @@ def loop_say(request: Mapping[str, Any], envelope: Mapping[str, Any]) -> str | N
         criteria = [value for value in criteria if value]
         if not goal or not criteria:
             return None
-        return f"Goal: {goal}. Done when: {'; '.join(criteria)}."
+        return f"Goal: {_ended(goal)} Done when: {_ended('; '.join(criteria))}"
     if action == "feedback":
         wait = _clause(request.get("external_wait"))
-        return f"Waiting on something outside this work: {wait}." if wait else None
+        return _ended(f"Waiting on something outside this work: {wait}") if wait else None
     return None
 
 

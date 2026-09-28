@@ -382,32 +382,55 @@ HONEST_STOP_TEXTS: Final[dict[str, str]] = {
 }
 HONEST_STOP_TEXT: Final = HONEST_STOP_TEXTS["en"]
 
-# How many characters of one script, outside code, make a reply that
-# language. Below it, a quoted word ("the user wrote 설정") leaves an English
-# reply English; any sentence in the script clears it.
-REPLY_SCRIPT_MIN_CHARS: Final = 4
+# When a reply outside code is written in a non-Latin script rather than
+# quoting one. A script counts only through a run of at least
+# `REPLY_SCRIPT_MIN_RUN` of its characters in a row, so "CI 대기 중" is Korean
+# and one stray syllable is nothing. The script's characters must then carry
+# at least as much of the prose as the Latin letters beside them, weighing one
+# CJK character as `REPLY_SCRIPT_LATIN_WEIGHT` Latin letters (a syllable or a
+# character is roughly that much of a word): "the file 설정파일.md is updated"
+# and an English sentence quoting a Korean one stay English, and a Korean
+# reply naming `CI` and a PR number stays Korean.
+REPLY_SCRIPT_MIN_RUN: Final = 2
+REPLY_SCRIPT_LATIN_WEIGHT: Final = 2
 
-_FENCED_CODE = re.compile(r"(?ms)^[ \t]*(```|~~~).*?(?:^[ \t]*\1|\Z)")
+# A fence closes only on a line of the same character at least as long as the
+# opening one, so a ```` block that shows a ``` block is removed whole.
+_FENCED_CODE = re.compile(r"(?ms)^[ \t]*((`|~)\2{2,})[^\n]*$.*?(?:^[ \t]*\1\2*[ \t]*$|\Z)")
 _INLINE_CODE = re.compile(r"`[^`\n]*`")
-_HANGUL_CHARS = re.compile(r"[ᄀ-ᇿ㄰-㆏가-힣]")
-_KANA_CHARS = re.compile(r"[぀-ゟ゠-ヿㇰ-ㇿｦ-ﾟ]")
-_HAN_CHARS = re.compile(r"[㐀-䶿一-鿿豈-﫿]")
+_LATIN_LETTERS = re.compile(r"[A-Za-z]")
+_HANGUL = "ᄀ-ᇿ㄰-㆏가-힣"
+_KANA = "぀-ゟ゠-ヿㇰ-ㇿｦ-ﾟ"
+_HAN = "㐀-䶿一-鿿豈-﫿"
+_CJK_CHARS = re.compile(f"[{_HANGUL}{_KANA}{_HAN}]")
+_SCRIPT_RUNS: Final = tuple(
+    (language, re.compile(f"[{chars}]{{{REPLY_SCRIPT_MIN_RUN},}}"))
+    for language, chars in (("ko", _HANGUL), ("ja", _KANA), ("zh", _HAN))
+)
 
 
 def reply_language(text: object) -> str:
-    """The language of *text* by script presence: ``ko``, ``ja``, ``zh`` or ``en``.
+    """The language of *text*: ``ko``, ``ja``, ``zh`` or ``en``.
 
-    Precedence, not majority: enough Hangul makes it Korean, else enough kana
-    Japanese, else enough Han Chinese. A Japanese reply is often mostly kanji,
-    so a majority rule would call it Chinese; and a Korean reply full of code
-    names is mostly Latin, so a share rule would call it English. Fenced and
-    inline code are removed first, because a Korean string in a code block
-    says nothing about the language the reply is written in. Anything else,
-    including a script with no copy here, is English.
+    Fenced and inline code are removed first, because a Korean string in a
+    code block says nothing about the language the reply is written in. Then
+    the reply is English unless its CJK characters, weighed as above, carry at
+    least as much as its Latin letters. A non-Latin reply takes the first
+    script in precedence order -- Hangul, then kana, then Han -- that has a
+    run long enough to count, not the majority script: a Japanese reply is
+    often mostly kanji, so a majority rule would call it Chinese.
+
+    The stated limit: a Japanese reply with no run of two kana (all kanji, or
+    kanji with single-kana particles) reads as Chinese. Nothing in the text
+    tells the two apart without a dictionary. Anything else, including a
+    script with no copy here, is English.
     """
     prose = _INLINE_CODE.sub("", _FENCED_CODE.sub("", str(text or "")))
-    for language, chars in (("ko", _HANGUL_CHARS), ("ja", _KANA_CHARS), ("zh", _HAN_CHARS)):
-        if len(chars.findall(prose)) >= REPLY_SCRIPT_MIN_CHARS:
+    cjk = len(_CJK_CHARS.findall(prose))
+    if cjk * REPLY_SCRIPT_LATIN_WEIGHT < len(_LATIN_LETTERS.findall(prose)):
+        return "en"
+    for language, run in _SCRIPT_RUNS:
+        if run.search(prose):
             return language
     return "en"
 

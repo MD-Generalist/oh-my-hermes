@@ -58,7 +58,8 @@ from omh.plugin_bundle.omh.remote_wait_nudge import (
     APPROVAL_GATE_TEXT,
     HONEST_STOP_TEXT,
     HONEST_STOP_TEXTS,
-    REPLY_SCRIPT_MIN_CHARS,
+    REPLY_SCRIPT_LATIN_WEIGHT,
+    REPLY_SCRIPT_MIN_RUN,
     PROCESS_RECORD_FILENAME,
     REMOTE_WAIT_NUDGE_KEY,
     REMOTE_WORK_COMMANDS,
@@ -656,11 +657,12 @@ QUESTION_REPLIES = {
 
 
 class ReplyLanguageTests(unittest.TestCase):
-    """Script presence in precedence order, over prose with code removed.
+    """A run of the script, a share against the Latin letters, then precedence.
 
     Each case is the mutation it kills: swap the Hangul/kana precedence, drop
-    the code stripping, drop the minimum, count by majority, or give an
-    unsupported script its own copy.
+    the code stripping or the fence-length match, drop the run minimum or the
+    share, move either threshold by one, or give an unsupported script its
+    own copy.
     """
 
     def test_hangul_wins_over_kana(self) -> None:
@@ -673,6 +675,12 @@ class ReplyLanguageTests(unittest.TestCase):
         reply = "設定変更完了、全試験合格確認済。次段階移行予定ですので、ご確認ください。"
         self.assertEqual(reply_language(reply), "ja")
 
+    def test_a_kanji_only_japanese_reply_reads_as_chinese(self) -> None:
+        # The stated limit: with no run of two kana nothing in the text tells
+        # Japanese from Chinese, so it gets the Chinese copy.
+        self.assertEqual(reply_language("設定変更完了。全試験合格。"), "zh")
+        self.assertEqual(reply_language("設定を変更し完了。"), "zh")
+
     def test_code_is_not_prose(self) -> None:
         fenced = "Updated the greeting.\n\n```python\nGREETING = \"안녕하세요 여러분\"\n```\n\nCI is green."
         self.assertEqual(reply_language(fenced), "en")
@@ -681,16 +689,49 @@ class ReplyLanguageTests(unittest.TestCase):
         inline = "Renamed `설정_저장하기` to `save_settings` and pushed."
         self.assertEqual(reply_language(inline), "en")
 
+    def test_a_longer_fence_is_closed_only_by_its_own_length(self) -> None:
+        # A four-backtick block showing a three-backtick one: the inner ```
+        # does not close it, so the Korean after it is still code.
+        nested = (
+            "Here is the snippet.\n\n````markdown\n```python\nx = 1\n```\n"
+            "안녕하세요 여러분 반갑습니다\n````\n\nPushed."
+        )
+        self.assertEqual(reply_language(nested), "en")
+        # And the block does close at its own length: prose after it counts.
+        self.assertEqual(reply_language("````\nx = 1\n````\n\n브랜치를 푸시했습니다."), "ko")
+
     def test_prose_after_an_unclosed_fence_is_still_code(self) -> None:
         self.assertEqual(reply_language("Here it is:\n```\n안녕하세요 여러분"), "en")
 
-    def test_a_quoted_word_below_the_minimum_does_not_flip_the_language(self) -> None:
-        self.assertEqual(REPLY_SCRIPT_MIN_CHARS, 4)
-        self.assertEqual(reply_language("You asked about 설정 on the settings page."), "en")
-        # Any short Korean sentence clears it. The stated cost of the
-        # minimum: a whole reply of one short word stays English.
-        self.assertEqual(reply_language("네, 확인했습니다."), "ko")
-        self.assertEqual(reply_language("완료."), "en")
+    def test_a_short_korean_status_is_korean(self) -> None:
+        self.assertEqual(reply_language("CI 대기 중"), "ko")
+        self.assertEqual(reply_language("완료."), "ko")
+        self.assertEqual(reply_language("PR #1930 올렸고 CI 대기 중입니다."), "ko")
+
+    def test_an_english_reply_quoting_korean_stays_english(self) -> None:
+        for reply in (
+            "You asked about 설정 on the settings page.",
+            "I updated 설정파일.md with the new timeout and pushed the branch.",
+            'The user wrote "배포가 끝나면 알려주세요" so I set up a notification for it.',
+            "The screen now reads 「プッシュ通知」 after the rename.",
+        ):
+            with self.subTest(reply=reply):
+                self.assertEqual(reply_language(reply), "en")
+
+    def test_the_run_minimum_is_exact(self) -> None:
+        self.assertEqual(REPLY_SCRIPT_MIN_RUN, 2)
+        # Two in a row count; the same two apart do not.
+        self.assertEqual(reply_language("대기"), "ko")
+        self.assertEqual(reply_language("대 기"), "en")
+        self.assertEqual(reply_language("ですね"), "ja")
+        self.assertEqual(reply_language("で す"), "en")
+
+    def test_the_share_threshold_is_exact(self) -> None:
+        self.assertEqual(REPLY_SCRIPT_LATIN_WEIGHT, 2)
+        # Two Hangul weigh four Latin letters: four ties and is Korean, five
+        # outweigh them.
+        self.assertEqual(reply_language("대기 abcd"), "ko")
+        self.assertEqual(reply_language("대기 abcde"), "en")
 
     def test_an_unsupported_script_falls_back_to_english(self) -> None:
         self.assertEqual(reply_language("Готово, изменения отправлены."), "en")

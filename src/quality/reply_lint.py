@@ -12,8 +12,8 @@ merge here" and reporting it.
 This module reads reply text and reports where it departs from those rules:
 
 - ``record_term_leak``: an OMH record term in the reply (the rail's list, the
-  OMH schema ids, plus the Korean renderings that reached the owner's
-  replies).
+  OMH schema ids and record ids, plus the Korean renderings that reached the
+  owner's replies).
 - ``awareness_line_quoted``: an ``[OMH ...]`` head OMH writes (``[OMH
   Awareness]``, ``[OMH plan todo]``, ...) or a ``Boundary:`` line quoted into
   the reply.
@@ -80,29 +80,59 @@ _ENGLISH_RECORD_TERMS: tuple[str, ...] = (
     "wrapper card",
     "OMH wrapper",
     "handoff",
-    # Qualified forms only, from the 2026-09-28 leak audit: bare `receipt`
-    # and `fanout` are everyday words, so each is matched in the compound OMH
-    # uses and never alone. `goal ledger` is held back: "update the goal
-    # ledger in the finance sheet" is ordinary bookkeeping.
+    # Qualified forms only, from the 2026-09-28 leak audit: bare `fanout` is
+    # an everyday word, so it is matched only in the command OMH spells it in
+    # (`omh coding fanout dispatch`), never alone and never as "the fanout
+    # dispatch queue" of someone's broker. `goal ledger` is held back: "update
+    # the goal ledger in the finance sheet" is ordinary bookkeeping, and so is
+    # `closure receipt` ("keep the account closure receipt"), which no surface
+    # a Hermes model reads spells.
     "route_question",
-    "closure receipt",
-    "fanout dispatch",
+    "coding fanout dispatch",
+)
+
+# OMH record ids a tool result carries as values, as exact literals: the
+# routable categories (`hermes_delegation.HERMES_MIXTURE_CATEGORY_CHAINS`),
+# the todo evidence codes and derived state (`todo_reconciliation`), the
+# route exhaustion origin, and the fanout repair loop's blocked reasons and
+# in-flight status (`omh.coding.fanout_repair`). Scope rule: an id that is an
+# ordinary English word or phrase is held back in `_ORDINARY_CATEGORY_IDS`,
+# because "a quick fix" or "a deep-work block" is not a leak; every other id
+# is OMH's coinage. Matched case-sensitively and whole, hyphen included, so
+# `unspecified-high` never fires inside `unspecified-higher`.
+# `tests/test_reply_lint.py` re-derives both sets from those producers and
+# fails with the id to add or remove.
+_RECORD_ID_TERMS: tuple[str, ...] = (
+    "ultrabrain",
+    "visual-engineering",
+    "simple-work",
+    "unspecified-high",
+    "unspecified-low",
+    "done_unverified",
+    "no_evidence",
+    "evidence_failed",
+    "evidence_unresolved",
+    "evidence_unreadable",
+    "exhausted_to_inherit",
+    "repair_budget_exhausted",
+    "repair_worktree_missing",
+    "repair_in_flight",
+)
+_ORDINARY_CATEGORY_IDS: frozenset[str] = frozenset(
+    {"architect", "artistry", "capable", "deep", "deep-work", "quick", "writing"}
 )
 
 # OMH schema ids, as exact literals. Scope rule: every `omh_`-prefixed id the
-# plugin bundle spells (OMH's own namespace, which no ordinary sentence
-# uses), plus every id a shipped plugin tool schema names (the model reads
-# those on every request that carries the tool). Everything else stays out:
-# a one-word id like `governance/v2` reads as an ordinary version reference,
-# and a shape pattern would flag `apps/v1` and `/api/v2/users`.
-# `tests/test_reply_lint.py` re-derives this set from the bundle and fails
-# with the id to add or remove.
+# plugin bundle or a shipped plugin tool schema spells -- OMH's own namespace,
+# which no ordinary sentence uses. Everything else stays out, including the
+# unprefixed ids a tool schema names (`done_check/v1`, `route_question/v1`):
+# none reached a reply in the 2026-09-28 audit, whose measured ids were all
+# `omh_`-prefixed, and `done_check/v1` reads as a person's own versioned
+# check as easily as OMH's. A one-word id like `governance/v2` reads as an
+# ordinary version reference, and a shape pattern would flag `apps/v1` and
+# `/api/v2/users`. `tests/test_reply_lint.py` re-derives this set from the
+# bundle and the schemas and fails with the id to add or remove.
 _SCHEMA_ID_TERMS: tuple[str, ...] = (
-    "action_check/v1",
-    "chat_interaction/v1",
-    "done_check/v1",
-    "failure_triage/v1",
-    "loop_cycle/v2",
     "omh_approval_bypass/v1",
     "omh_awareness/v1",
     "omh_awareness_delivery/v1",
@@ -193,9 +223,6 @@ _SCHEMA_ID_TERMS: tuple[str, ...] = (
     "omh_truncated_read/v1",
     "omh_work_resume/v1",
     "omh_wrapper_session_ref/v1",
-    "review_flags/v1",
-    "route_question/v1",
-    "verification_receipt/v1",
 )
 
 # Korean renderings observed in live replies ("두 표면을 서빙합니다", "레인을
@@ -217,8 +244,9 @@ _HANGUL = "가-힣"
 # exact literal. `tests/test_reply_lint.py` re-derives the set from `src/` and
 # fails with the tag to add, so a new head cannot ship unseen. Exact, never a
 # generic `[OMH ...]` shape: "[OMH README](...)" is a link and "[OMH 2.0.2]" a
-# version, and neither is a tag OMH writes. A literal followed by `(` is
-# markdown link text and never a quoted line.
+# version, and neither is a tag OMH writes. A literal followed by `(`, `[`
+# or `:` is markdown link text (`[OMH](url)`, `[OMH][1]`) or a reference
+# definition (`[OMH]: https://...`), never a quoted line.
 #
 # The user carve-out does not apply to these heads: Hermes stores OMH's
 # injected context inside the user turn's content, so a carve-out keyed on
@@ -249,9 +277,9 @@ _AWARENESS_TAGS: tuple[str, ...] = (
 _AWARENESS_TAG_PREFIXES: tuple[str, ...] = ("[OMH Role:",)
 
 _AWARENESS_LINE_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
-    tuple((tag, re.compile(re.escape(tag) + r"(?!\()")) for tag in _AWARENESS_TAGS)
+    tuple((tag, re.compile(re.escape(tag) + r"(?![\(\[:])")) for tag in _AWARENESS_TAGS)
     + tuple(
-        (prefix + "]", re.compile(re.escape(prefix) + r"[^\]\n]*\](?!\()"))
+        (prefix + "]", re.compile(re.escape(prefix) + r"[^\]\n]*\](?![\(\[:])"))
         for prefix in _AWARENESS_TAG_PREFIXES
     )
     + (
@@ -301,7 +329,9 @@ _CLOSING_EXCERPT_CHARS = 240
 
 def _english_term_pattern(term: str) -> re.Pattern[str]:
     if "_" in term:
-        return re.compile(r"(?<![A-Za-z0-9_])" + re.escape(term) + r"(?![A-Za-z0-9_])")
+        # An identifier followed by `(` is a call in the person's own code
+        # (`route_question(q)`), not OMH's record word.
+        return re.compile(r"(?<![A-Za-z0-9_])" + re.escape(term) + r"(?![A-Za-z0-9_(])")
     return re.compile(r"(?<![A-Za-z0-9])" + re.escape(term) + r"(?![A-Za-z0-9])", re.IGNORECASE)
 
 
@@ -317,8 +347,13 @@ def _schema_id_pattern(schema_id: str) -> re.Pattern[str]:
     return re.compile(r"(?<![A-Za-z0-9_.-])" + re.escape(schema_id) + r"(?![A-Za-z0-9_])")
 
 
+def _record_id_pattern(record_id: str) -> re.Pattern[str]:
+    return re.compile(r"(?<![A-Za-z0-9_-])" + re.escape(record_id) + r"(?![A-Za-z0-9_(-])")
+
+
 _RECORD_TERM_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = tuple(
     [(term, _english_term_pattern(term)) for term in _ENGLISH_RECORD_TERMS]
+    + [(term, _record_id_pattern(term)) for term in _RECORD_ID_TERMS]
     + [(term, _schema_id_pattern(term)) for term in _SCHEMA_ID_TERMS]
     + [(term, _korean_term_pattern(term)) for term in _KOREAN_RECORD_TERMS]
 )
