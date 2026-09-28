@@ -260,7 +260,7 @@ def omh_todo_handler(args: dict[str, Any], **kwargs) -> str:
                 )
                 calls = (
                     _calls_since(session_ref, window_start, _held_keys(prior.get("items")))
-                    if window_start != now and _declares_done(items)
+                    if _declares_done(items)
                     else []
                 )
                 items = bind_done_items(

@@ -265,7 +265,14 @@ class WindowTest(_PlanHomeTest):
     def test_an_item_whose_own_window_holds_no_command_is_conversational_and_closes(self):
         # Commands ran for the first item; the second item's window is later
         # and empty, so it is not held open by the session's earlier work.
-        build_state_db(self.hermes, [(SESSION, "terminal", "toolu_a", _terminal(0), None, T0)])
+        # Commands after the window closed belong to later work, not to it.
+        build_state_db(
+            self.hermes,
+            [
+                (SESSION, "terminal", "toolu_a", _terminal(0), None, T0),
+                (SESSION, "terminal", "toolu_later", _terminal(0), None, T0 + 300),
+            ],
+        )
         self.write_plan(
             [
                 done("land the fix", evidence("tool_call", "toolu_a")),
@@ -550,6 +557,19 @@ class ToolBindsEvidenceTest(_PlanHomeTest):
         )
         self.assertNotEqual(self.todo()["status"], "absent")
         self.assertIsNotNone(open_plan_position(self.todo(), self.unverified()))
+
+    def test_advance_never_binds_a_call_another_item_already_holds(self):
+        # A call stamped later than the write that bound it (clock skew) is
+        # still inside the next item's window; it must not be bound twice.
+        self.call({"action": "set", "items": [{"text": "a", "state": "active"}, {"text": "b"}]})
+        add_rows(self.hermes, [(SESSION, "terminal", "toolu_skewed", _terminal(0), None, 4_000_000_000.0)])
+        self.call({"action": "set", "items": [{"text": "a", "state": "done"}, {"text": "b", "state": "active"}]})
+        self.assertEqual(self.stored()["items"][0]["evidence"], evidence("tool_call", "toolu_skewed"))
+
+        result = self.call({"action": "advance", "item": 2, "item_text": "b", "state": "done"})
+
+        self.assertEqual(result["status"], "written")
+        self.assertNotIn("evidence", self.stored()["items"][1])
 
     def test_one_command_closes_at_most_one_item_in_a_set(self):
         self.call({"action": "set", "items": [{"text": "a"}, {"text": "b"}, {"text": "c"}]})
