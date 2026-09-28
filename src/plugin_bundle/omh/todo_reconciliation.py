@@ -656,12 +656,30 @@ def unverified_done_items(
         candidates.append((index, item, evidence))
     if not candidates:
         return []
+    # What every item of the plan holds, open ones included, so each judged
+    # item can skip the calls that answer for another.
+    holders = [
+        (position, evidence_key(checked))
+        for position, item in enumerate(items, start=1)
+        if isinstance(item, dict) and (checked := valid_evidence(item.get("evidence")))
+    ]
     queries = [
-        {"evidence": evidence, "from": _epoch(item.get("window_start")), "to": _epoch(item.get("done_at"))}
-        for _, item, evidence in candidates
+        {
+            "evidence": evidence,
+            "from": _epoch(item.get("window_start")),
+            "to": _epoch(item.get("done_at")),
+            "held": {key for position, key in holders if position != index},
+        }
+        for index, item, evidence in candidates
+    ]
+    dropped = todo.get("dropped_bindings") if isinstance(todo.get("dropped_bindings"), list) else []
+    orphans = [
+        {"evidence": checked, "at": _epoch(entry.get("dropped_at"))}
+        for entry in dropped
+        if isinstance(entry, dict) and (checked := valid_evidence(entry))
     ]
     try:
-        reading = item_verdicts(hermes_home or None, session_ref, queries)
+        reading = item_verdicts(hermes_home or None, session_ref, queries, orphans)
     except _READ_FAILURES:
         reading = {"store": STORE_UNREADABLE, "verdicts": []}
     store = reading.get("store")

@@ -536,6 +536,15 @@ class ToolBindsEvidenceTest(_PlanHomeTest):
         add_rows(self.hermes, [(SESSION, "terminal", call_id, _terminal(exit_code), None, stamp + 0.001)])
         time.sleep(0.02)
 
+    def write_file(self, call_id: str) -> None:
+        """Record a landed file write the way `run_command` records a command."""
+        stamp = datetime.fromisoformat(self.stored()["updated_at"].replace("Z", "+00:00")).timestamp()
+        add_rows(
+            self.hermes,
+            [(SESSION, "write_file", call_id, json.dumps({"bytes_written": 12}), None, stamp + 0.002)],
+        )
+        time.sleep(0.02)
+
     def test_advance_binds_the_command_that_ran_since_the_last_plan_write(self):
         self.call({"action": "set", "items": [{"text": "fix", "state": "active"}, {"text": "ship"}]})
         self.run_command("toolu_suite")
@@ -572,11 +581,11 @@ class ToolBindsEvidenceTest(_PlanHomeTest):
         self.assertEqual(items[0]["evidence"], shown)
         self.assertEqual(items[1]["evidence"], evidence("tool_call", "toolu_red"))
         self.assertNotIn("evidence", items[2])
-        # Item 3 is failed too: the last command the session ran before it
-        # was marked done did not pass.
+        # Item 3 stays open with no call of its own: both calls in its window
+        # answer for another item, and the failure is item 2's, not its.
         self.assertEqual(
             [(entry["item"], entry["reason"]) for entry in result["done_unverified"]],
-            [(2, EVIDENCE_REASON_FAILED), (3, EVIDENCE_REASON_FAILED)],
+            [(2, EVIDENCE_REASON_FAILED), (3, EVIDENCE_REASON_NONE)],
         )
         self.assertNotEqual(self.todo()["status"], "absent")
         self.assertIsNotNone(open_plan_position(self.todo(), self.unverified()))
@@ -760,6 +769,149 @@ class ToolBindsEvidenceTest(_PlanHomeTest):
         result = self.call({"action": "advance", "item": 1, "item_text": "a", "state": "done"})
 
         self.assertEqual(self.stored()["items"][0]["evidence"], evidence("tool_call", "toolu_green"))
+        self.assertNotIn("done_unverified", result)
+
+    def _failure_bound_then_b_passes(self) -> None:
+        # The reviewer's N1 setup: a's failure is bound to a, then b runs and
+        # closes on a pass of its own.
+        self._failing_then()
+        self.call({"action": "advance", "item": 1, "item_text": "a", "state": "done"})
+        self.call({"action": "advance", "item": 2, "item_text": "b", "state": "active"})
+        self.run_command("toolu_green_for_b")
+        self.call({"action": "advance", "item": 2, "item_text": "b", "state": "done"})
+
+    def test_n1_renaming_a_failed_item_after_another_items_pass_does_not_close_it(self):
+        self._failure_bound_then_b_passes()
+
+        result = self.call(
+            {"action": "set", "items": [{"text": "a (tests)", "state": "done"}, {"text": "b", "state": "done"}]}
+        )
+
+        self.assertEqual(
+            [(entry["item"], entry["reason"]) for entry in result["done_unverified"]],
+            [(1, EVIDENCE_REASON_FAILED)],
+        )
+        self.assertEqual(
+            self.stored()["dropped_bindings"],
+            [{**evidence("tool_call", "toolu_red"), "dropped_at": self.stored()["items"][0]["window_start"]}],
+        )
+
+    def test_n1b_splitting_a_failed_item_closes_neither_half(self):
+        self._failure_bound_then_b_passes()
+
+        self.call(
+            {
+                "action": "set",
+                "items": [
+                    {"text": "a1", "state": "done"},
+                    {"text": "a2", "state": "done"},
+                    {"text": "b", "state": "done"},
+                ],
+            }
+        )
+
+        self.assertEqual(
+            [pair for pair in self.reasons() if pair[0] in {1, 2}],
+            [(1, EVIDENCE_REASON_FAILED), (2, EVIDENCE_REASON_FAILED)],
+        )
+
+    def test_n1d_reopening_without_a_rename_stays_failed_and_drops_nothing(self):
+        self._failure_bound_then_b_passes()
+        self.call({"action": "set", "items": [{"text": "a", "state": "pending"}, {"text": "b", "state": "done"}]})
+        time.sleep(0.02)
+
+        self.call({"action": "set", "items": [{"text": "a", "state": "done"}, {"text": "b", "state": "done"}]})
+
+        self.assertEqual(self._a_reason(), [(1, EVIDENCE_REASON_FAILED)])
+        self.assertNotIn("dropped_bindings", self.stored())
+
+    def test_a_dropped_failure_holds_past_an_unheld_pass_until_the_renamed_work_passes(self):
+        # The pass after the failure is nobody's, so the session's latest
+        # unheld call passed; only the plan's memory of the drop says no.
+        self._failing_then()
+        self.call({"action": "advance", "item": 1, "item_text": "a", "state": "done"})
+        self.run_command("toolu_ls")
+        self.call({"action": "set", "items": [{"text": "a (tests)", "state": "done"}, {"text": "b"}]})
+        self.assertEqual(self._a_reason(), [(1, EVIDENCE_REASON_FAILED)])
+
+        # A file write in the renamed item's own window does not resolve it.
+        self.call({"action": "advance", "item": 1, "item_text": "a (tests)", "state": "active"})
+        self.write_file("toolu_edit")
+        self.call({"action": "advance", "item": 1, "item_text": "a (tests)", "state": "done"})
+        self.assertEqual(self.stored()["items"][0]["evidence"], evidence("file_write", "toolu_edit"))
+        self.assertEqual(self._a_reason(), [(1, EVIDENCE_REASON_FAILED)])
+
+        # A passing command of its own does, and the item closes.
+        self.call({"action": "advance", "item": 1, "item_text": "a (tests)", "state": "active"})
+        self.run_command("toolu_green")
+        self.call({"action": "advance", "item": 1, "item_text": "a (tests)", "state": "done"})
+        self.assertEqual(self._a_reason(), [])
+
+    def test_a_failure_never_bound_is_not_hidden_by_a_rename_after_another_items_pass(self):
+        # a never reached done, so nothing was bound to drop; the pass after
+        # the failure answers for b and is skipped.
+        self._failing_then()
+        self.call({"action": "advance", "item": 2, "item_text": "b", "state": "active"})
+        self.run_command("toolu_green_for_b")
+        self.call({"action": "advance", "item": 2, "item_text": "b", "state": "done"})
+
+        self.call(
+            {"action": "set", "items": [{"text": "a (tests)", "state": "done"}, {"text": "b", "state": "done"}]}
+        )
+
+        self.assertNotIn("dropped_bindings", self.stored())
+        self.assertEqual(self._a_reason(), [(1, EVIDENCE_REASON_FAILED)])
+
+    def test_n5_a_write_after_a_failing_command_needs_a_later_passing_command(self):
+        self.call({"action": "set", "items": [{"text": "a", "state": "active"}]})
+        self.run_command("toolu_red", exit_code=1)
+        self.write_file("toolu_edit")
+
+        self.call({"action": "advance", "item": 1, "item_text": "a", "state": "done"})
+        self.assertEqual(self.stored()["items"][0]["evidence"], evidence("file_write", "toolu_edit"))
+        self.assertEqual(self._a_reason(), [(1, EVIDENCE_REASON_FAILED)])
+
+        self.call({"action": "advance", "item": 1, "item_text": "a", "state": "active"})
+        self.run_command("toolu_green")
+        self.call({"action": "advance", "item": 1, "item_text": "a", "state": "done"})
+        self.assertEqual(self._a_reason(), [])
+
+    def test_n5_a_write_with_no_failing_command_in_its_window_closes_docs_only_work(self):
+        self.call({"action": "set", "items": [{"text": "docs", "state": "active"}]})
+        self.write_file("toolu_edit")
+
+        result = self.call({"action": "advance", "item": 1, "item_text": "docs", "state": "done"})
+
+        self.assertEqual(self.stored()["items"][0]["evidence"], evidence("file_write", "toolu_edit"))
+        self.assertNotIn("done_unverified", result)
+
+    def test_n5_a_failing_command_another_item_holds_does_not_block_a_write(self):
+        self.call({"action": "set", "items": [{"text": "docs", "state": "active"}, {"text": "b", "state": "active"}]})
+        self.run_command("toolu_red_for_b", exit_code=1)
+        self.call({"action": "advance", "item": 2, "item_text": "b", "state": "done"})
+        self.write_file("toolu_edit")
+
+        self.call({"action": "advance", "item": 1, "item_text": "docs", "state": "done"})
+
+        self.assertEqual(self.stored()["items"][0]["evidence"], evidence("file_write", "toolu_edit"))
+        self.assertEqual(self._a_reason(), [])
+
+    def test_n2_items_sharing_a_text_pair_with_the_stored_items_in_order(self):
+        self.call({"action": "set", "items": [{"text": "run", "state": "active"}, {"text": "run"}]})
+        self.run_command("toolu_first")
+        self.call({"action": "advance", "item": 1, "item_text": "run", "state": "done"})
+        self.call({"action": "advance", "item": 2, "item_text": "run", "state": "active"})
+        self.run_command("toolu_second")
+
+        result = self.call(
+            {"action": "set", "items": [{"text": "run", "state": "done"}, {"text": "run", "state": "done"}]}
+        )
+
+        self.assertEqual(result["status"], "written")
+        self.assertEqual(
+            [item["evidence"] for item in self.stored()["items"]],
+            [evidence("tool_call", "toolu_first"), evidence("tool_call", "toolu_second")],
+        )
         self.assertNotIn("done_unverified", result)
 
     def test_a_finished_plan_still_refuses_a_move_out_of_done(self):

@@ -554,6 +554,11 @@ One command closes at most one item: when a `set` marks three items done after
 one command, the first takes the call. A failed binding is sticky. It survives
 a reopen, and only a later call bound in its place replaces it.
 
+A `set` matches each item to the stored item with the same text. Items that
+share a text pair in order, the first with the first. A stored item's binding
+that no item of the new list continues (a rename, a split, a removal) is kept
+on the plan as `dropped_bindings`, with the time it was dropped.
+
 The `omh runtime todo set --items-json` path refuses all three fields, so a
 shell cannot write evidence. A hand edit of the record file is still possible
 for anything with write access to the OMH home. That is a stated limit, not a
@@ -574,13 +579,22 @@ the per-turn plan line, and in the tool's own result, in this order:
    field, or an `effect_disposition` of `none`.
 2. A bound call that passed closes the item when its result lies inside the
    window. A pass is `exit_code` 0 for `tool_call`, and `bytes_written` or
-   `patch` `success: true` for `file_write` (the #1922 outcome rules).
-3. Otherwise, if the session's latest evidence-capable call at or before the
-   done mark failed, the item is failed. No plan write, rename or `clear` in
-   between changes that.
-4. Otherwise, calls inside the window that are all held by other items leave
+   `patch` `success: true` for `file_write` (the #1922 outcome rules). A
+   `file_write` does not close the item when a failing check stands: the
+   window's latest command that no other item holds failed, or rule 3
+   applies. Run a passing command after the write. A write still closes
+   docs-only work whose window held no failing command.
+3. Otherwise, if the plan dropped a binding that failed, an item opened at or
+   after the drop is failed. The dropped failure is resolved once such an
+   item closes on a passing command of its own. A rename or a split does not
+   carry the work past its failing check.
+4. Otherwise, if the latest evidence-capable call at or before the done mark
+   that no other item holds failed, the item is failed. A pass that another
+   item holds is skipped, so passes that answer for other items do not hide a
+   failure nothing was bound to.
+5. Otherwise, calls inside the window that are all held by other items leave
    the item open.
-5. Otherwise, an empty window means a conversational item, and it closes.
+6. Otherwise, an empty window means a conversational item, and it closes.
 
 Any done item that does not close is `done_unverified`. It counts as open,
 including on a plan where every item says done. The plan line names it in
@@ -590,7 +604,7 @@ it failed". The tool result carries the reason code:
 | Reason | Meaning |
 | --- | --- |
 | `no_evidence` | Commands ran inside the item's window, and each one already holds another item. |
-| `evidence_failed` | The call bound to the item failed, or the session's last call before the done mark failed. |
+| `evidence_failed` | The call bound to the item failed, a write closed it over a failing check, the plan dropped a failure that is still unresolved, or the latest call before the done mark that no other item holds failed. |
 | `evidence_unresolved` | No recorded result matches the reference. It is an unknown id, another session's call, a pass from before the window, a rewound row, the wrong tool for the kind, an unknown outcome, or a kind that does not resolve yet. |
 | `evidence_unreadable` | The store exists and could not be read. This is reported, never taken as evidence, and it does not keep the loop going: running a command cannot fix it. |
 
@@ -599,10 +613,22 @@ A `done_unverified` item closes in one of two ways:
 - Run a passing command, then mark the item done again.
 - Give it a `blocked_reason`, which closes it as skipped.
 
-Rule 3 also catches an unrelated failing command, such as a `grep` that
-matched nothing, when it runs just before a done mark. The same two moves
-clear it. The stop criterion is still "every item closed, or the next item
-recorded blocked with its reason".
+Rule 4 also catches an unrelated failing command, such as a `grep` that
+matched nothing, when it is the latest call no other item holds before a done
+mark. That can reach back past calls that each hold another item. The same
+two moves clear it. The stop criterion is still "every item closed, or the
+next item recorded blocked with its reason".
+
+**What time-based association cannot prevent.** These are stated limits, not
+guarded paths:
+
+- `clear` removes the plan together with its `dropped_bindings`. After a
+  `clear`, a failure bound before it is hidden once any passing call that no
+  item holds follows it.
+- With two items active at once, a pass or a failure can be bound to the item
+  that did not run it. The window cannot tell which item a command was for.
+- A passing call that no item holds, run after a failure that nothing was
+  bound to, answers for that failure.
 
 **What does not change.** A done item with no `done_at` and no `evidence`
 counts as done, as it always did. That covers an item marked done before this

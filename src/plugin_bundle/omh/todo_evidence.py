@@ -36,12 +36,26 @@ could copy, so the ``omh_todo`` tool binds it from the records at the moment
 of the done write and ignores any it is sent. Each item has its own WINDOW,
 opened at its own last transition -- declared, pending to active, or out of
 done -- and closed by the done write; it takes the latest evidence-capable
-call recorded inside it that no other item holds (`observed_calls`). A failed
-binding is sticky: it survives a reopen until a later call replaces it, and
-whatever the window says, an item is failed while the session's latest call
-before its done mark failed, so no plan write, rename or clear can hide a
-failure. That is association by time, not by content, and it is stated as
-such: it proves a command ran and how it ended, never that the command tested
+call recorded inside it that no other item holds (`observed_calls`).
+
+What a plan write cannot hide (`_item_verdict`):
+
+* a failed binding is sticky: it survives a reopen until a later call bound
+  in its place replaces it;
+* a binding a `set` drops -- a rename, a split, a removal -- is kept on the
+  plan, and while it is a failure no item opened at or after the drop closes
+  until one closes on a passing command of its own;
+* an item is failed while the latest call before its done mark that no other
+  item holds failed, so a failure nothing was bound to is not hidden by a
+  rename or by passes that answer for other items;
+* a file write does not close an item over a failing command in its window.
+
+What it cannot prevent, because association is by time and not by content:
+``clear`` removes the plan with its dropped bindings, so a failure bound
+before a ``clear`` is hidden once any unheld passing call follows it; with
+two items active at once, a call can be bound to the one that did not run it;
+and an unheld passing call after a failure nothing was bound to answers for
+it. It proves a command ran and how it ended, never that the command tested
 the item.
 
 What is never read: the item's text, the command's text, its output, or the
@@ -105,6 +119,9 @@ MAX_LINEAGE_HOPS: Final = 8
 # item last opened, so this is far past any plan's work between two writes; it
 # bounds the read on a session with a very long history.
 MAX_OBSERVED_ROWS: Final = 500
+# How many of the latest calls a verdict may skip because another item
+# holds them: one per other item in the largest plan (`MAX_TODO_ITEMS`).
+MAX_BOUND_SKIP: Final = 20
 _CONNECT_TIMEOUT_SECONDS: Final = 0.5
 
 # Store readings.
@@ -146,18 +163,21 @@ def evidence_key(evidence: dict[str, str]) -> str:
 
 
 def item_verdicts(
-    hermes_home: str | Path | None, session_ref: str, items: list[dict[str, Any]]
+    hermes_home: str | Path | None,
+    session_ref: str,
+    items: list[dict[str, Any]],
+    orphans: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Judge each item against the records of ``session_ref`` and its ancestors.
 
     Each entry of ``items`` is ``{"evidence": dict | None, "from": epoch | None,
-    "to": epoch | None}`` -- the reference and the item's window. Returns
-    ``{"store": ..., "verdicts": [verdict per item]}``; on ``absent`` and
-    ``unreadable`` the list is empty and the caller decides what each means.
-
-    A reference closes only when its result row lies inside the item's window
-    (after ``from``): a call from before the window was already there when the
-    previous item was written, and binding it now would be a copy.
+    "to": epoch | None, "held": set of evidence keys other items hold}`` -- the
+    reference, the item's window, and what the rest of the plan holds.
+    ``orphans`` are ``{"evidence", "at": epoch}``: references the plan bound
+    to an item that a later write dropped (a rename, a split, a removal).
+    Returns ``{"store": ..., "verdicts": [verdict per item]}``; on ``absent``
+    and ``unreadable`` the list is empty and the caller decides what each
+    means.
     """
     session = str(session_ref or "").strip()
     if not session or not hermes_home:
@@ -171,12 +191,58 @@ def item_verdicts(
     try:
         live = _live_rows_clause(connection)
         lineage = _lineage(connection, session)
-        verdicts = [_item_verdict(connection, lineage, live, item) for item in items]
+        bound = [
+            _evidence_verdict(connection, lineage, live, item["evidence"], item.get("from"))
+            if isinstance(item.get("evidence"), dict)
+            else None
+            for item in items
+        ]
+        failures = _unresolved_orphan_failures(connection, lineage, live, orphans or [], items, bound)
+        verdicts = [
+            _item_verdict(connection, lineage, live, item, binding, failures)
+            for item, binding in zip(items, bound, strict=True)
+        ]
     except sqlite3.Error:
         return {"store": STORE_UNREADABLE, "verdicts": []}
     finally:
         connection.close()
     return {"store": STORE_READ, "verdicts": verdicts}
+
+
+def _unresolved_orphan_failures(
+    connection: sqlite3.Connection,
+    lineage: list[str],
+    live: str,
+    orphans: list[dict[str, Any]],
+    items: list[dict[str, Any]],
+    bound: list[str | None],
+) -> list[float]:
+    """When each still-unresolved dropped failure was dropped.
+
+    A dropped binding that failed is the plan's memory of work that did not
+    pass under a name the plan no longer uses. It is resolved once an item
+    opened at or after the drop closes on a passing COMMAND of its own -- the
+    renamed or split work passing -- and not by a pass some other, older item
+    holds, nor by a file write, which does not undo a failing check.
+    """
+    pending: list[float] = []
+    for orphan in orphans:
+        evidence = orphan.get("evidence")
+        at = orphan.get("at")
+        if not isinstance(evidence, dict) or not isinstance(at, (int, float)):
+            continue
+        if _evidence_verdict(connection, lineage, live, evidence, None) != EVIDENCE_FAILED:
+            continue
+        resolved = any(
+            verdict == EVIDENCE_CLOSED
+            and item["evidence"].get("kind") == EVIDENCE_KIND_TOOL_CALL
+            and isinstance(item.get("from"), (int, float))
+            and item["from"] >= at
+            for item, verdict in zip(items, bound, strict=True)
+        )
+        if not resolved:
+            pending.append(float(at))
+    return pending
 
 
 def observed_calls(
@@ -282,47 +348,68 @@ def _lineage(connection: sqlite3.Connection, session: str) -> list[str]:
 
 
 def _item_verdict(
-    connection: sqlite3.Connection, lineage: list[str], live: str, item: dict[str, Any]
+    connection: sqlite3.Connection,
+    lineage: list[str],
+    live: str,
+    item: dict[str, Any],
+    binding: str | None,
+    orphan_failures: list[float],
 ) -> str:
     """One done item's verdict over its window, ``from`` (exclusive) to ``to``.
 
-    Three rules, in order:
+    The rules, in order:
 
-    * a bound reference that FAILED stays failed wherever it sits in time: a
-      failure is replaced only by a later call bound in its place, never by
-      the window moving past it;
-    * a bound reference that passed closes when its result lies inside the
-      window, and is unresolved otherwise;
-    * with nothing that closes it bound, the session's most recent
-      evidence-capable call at or before ``to`` decides first -- if it
-      failed, the item is failed, because the last thing the session ran
-      before calling this done did not pass, whatever plan writes, renames or
-      clears came in between. Only after that does the window speak: calls
-      inside it, each holding another item, leave the item ``no_evidence``,
-      and an empty window is a conversational item and closes.
+    1. A bound reference that FAILED stays failed wherever it sits in time: a
+       failure is replaced only by a later call bound in its place.
+    2. A bound reference that passed closes when its result lies inside the
+       window -- except a file write where a failing check stands: the
+       window's latest command no other item holds failed, or rule 3
+       applies. A write alone does not undo a failing check; a later passing
+       command does. A write still closes docs-only work, whose window held
+       no failing command.
+    3. An item opened at or after the plan dropped a still-unresolved
+       failure (`_unresolved_orphan_failures`) is failed: a rename or split
+       does not carry work past its failing check.
+    4. The latest evidence-capable call at or before ``to`` that no OTHER
+       item holds decides next: if it failed, the item is failed. A pass
+       another item holds says nothing about this one, so it is skipped.
+    5. Calls inside the window, each holding another item, leave the item
+       ``no_evidence``; an empty window is a conversational item and closes.
     """
     evidence = item.get("evidence")
     start = item.get("from")
     end = item.get("to")
-    if isinstance(evidence, dict):
-        verdict = _evidence_verdict(connection, lineage, live, evidence, start)
-        if verdict in {EVIDENCE_CLOSED, EVIDENCE_FAILED}:
-            return verdict
+    if binding == EVIDENCE_FAILED:
+        return EVIDENCE_FAILED
+    held = item.get("held") if isinstance(item.get("held"), (set, frozenset)) else set()
+    after_drop = isinstance(start, (int, float)) and any(at <= start for at in orphan_failures)
+    if binding == EVIDENCE_CLOSED:
+        if evidence.get("kind") == EVIDENCE_KIND_FILE_WRITE and (
+            after_drop or _failing_command_in_window(connection, lineage, live, start, end, held)
+        ):
+            return EVIDENCE_FAILED
+        return EVIDENCE_CLOSED
+    if after_drop:
+        return EVIDENCE_FAILED
     upper = ""
     upper_params: list[Any] = []
     if isinstance(end, (int, float)):
         upper = " AND timestamp <= ?"
         upper_params.append(end)
-    latest = connection.execute(
-        f"SELECT tool_name, content, {_disposition_column(connection)} FROM messages "
+    recent = connection.execute(
+        f"SELECT tool_name, content, {_disposition_column(connection)}, tool_call_id FROM messages "
         f"WHERE session_id IN ({_marks(lineage)}) AND role = 'tool' "
-        f"AND tool_name IN ({_marks(EVIDENCE_TOOLS)}){upper}{live} ORDER BY timestamp DESC, id DESC LIMIT 1",
+        f"AND tool_name IN ({_marks(EVIDENCE_TOOLS)}){upper}{live} "
+        f"ORDER BY timestamp DESC, id DESC LIMIT {MAX_BOUND_SKIP + 1}",
         (*lineage, *EVIDENCE_TOOLS, *upper_params),
-    ).fetchone()
-    if latest is not None:
-        kind = EVIDENCE_KIND_TOOL_CALL if latest[0] == "terminal" else EVIDENCE_KIND_FILE_WRITE
-        if _result_verdict(kind, latest) == EVIDENCE_FAILED:
+    ).fetchall()
+    for tool_name, content, effect, call_id in recent:
+        kind = EVIDENCE_KIND_TOOL_CALL if tool_name == "terminal" else EVIDENCE_KIND_FILE_WRITE
+        if evidence_key({"kind": kind, "ref": str(call_id)}) in held:
+            continue
+        if _result_verdict(kind, (tool_name, content, effect)) == EVIDENCE_FAILED:
             return EVIDENCE_FAILED
+        break
     if isinstance(evidence, dict):
         return EVIDENCE_UNRESOLVED
     window = ""
@@ -338,6 +425,36 @@ def _item_verdict(
         params,
     ).fetchone()
     return WINDOW_HAS_COMMANDS if row is not None else WINDOW_EMPTY
+
+
+def _failing_command_in_window(
+    connection: sqlite3.Connection,
+    lineage: list[str],
+    live: str,
+    start: object,
+    end: object,
+    held: set[str] | frozenset[str],
+) -> bool:
+    """Whether the window's latest ``terminal`` call no other item holds failed."""
+    window = ""
+    params: list[Any] = [*lineage]
+    if isinstance(start, (int, float)):
+        window += " AND timestamp > ?"
+        params.append(start)
+    if isinstance(end, (int, float)):
+        window += " AND timestamp <= ?"
+        params.append(end)
+    rows = connection.execute(
+        f"SELECT tool_name, content, {_disposition_column(connection)}, tool_call_id FROM messages "
+        f"WHERE session_id IN ({_marks(lineage)}) AND role = 'tool' AND tool_name = 'terminal'"
+        f"{window}{live} ORDER BY timestamp DESC, id DESC LIMIT {MAX_BOUND_SKIP + 1}",
+        params,
+    ).fetchall()
+    for tool_name, content, effect, call_id in rows:
+        if evidence_key({"kind": EVIDENCE_KIND_TOOL_CALL, "ref": str(call_id)}) in held:
+            continue
+        return _result_verdict(EVIDENCE_KIND_TOOL_CALL, (tool_name, content, effect)) == EVIDENCE_FAILED
+    return False
 
 
 def _disposition_column(connection: sqlite3.Connection) -> str:

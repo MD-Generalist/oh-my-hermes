@@ -26,6 +26,7 @@ from ..todo_store import (
     bind_done_items,
     build_todo_record,
     clear_todo,
+    dropped_bindings,
     read_todo_record,
     todo_timestamp,
     write_todo,
@@ -245,6 +246,7 @@ def omh_todo_handler(args: dict[str, Any], **kwargs) -> str:
     if action == "set":
         try:
             items = args.get("items")
+            dropped: list[dict[str, str]] = []
             if isinstance(items, list):
                 # OMH binds items itself and ignores any binding the writer
                 # sent (`bind_done_items`). Each item is judged over its own
@@ -262,6 +264,15 @@ def omh_todo_handler(args: dict[str, Any], **kwargs) -> str:
                     if _declares_done(items)
                     else []
                 )
+                # A binding no item of the new list continues is kept on the
+                # plan (`dropped_bindings`): a rename or a split must not carry
+                # work past the check that failed under its old name.
+                dropped = dropped_bindings(
+                    items,
+                    prior_items=prior.get("items"),
+                    prior_dropped=prior.get("dropped_bindings"),
+                    now=now,
+                )
                 items = bind_done_items(
                     items,
                     prior_items=prior.get("items"),
@@ -277,6 +288,7 @@ def omh_todo_handler(args: dict[str, Any], **kwargs) -> str:
                 deferred_reason=args.get("deferred_reason", ""),
                 template=args.get("template", ""),
                 plan_stage=args.get("plan_stage", ""),
+                dropped=dropped,
             )
             write_todo(default_omh_home(), record)
             payload["status"] = "written"

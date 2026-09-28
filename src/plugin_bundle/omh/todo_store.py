@@ -177,6 +177,14 @@ _DIGESTED_ITEM_KEYS = (
 # criterion judges.
 TODO_DONE_BINDING_KEYS = ("evidence", "done_at", "window_start")
 MAX_TODO_STAMP_CHARS = 40
+# Plan-level: the bindings a whole-list `set` dropped because no item of the
+# new list carries the text they were bound under -- a rename, a split, a
+# removal -- each with when it was dropped. A binding that failed is the
+# plan's memory of a check that did not pass under a name it no longer uses,
+# so an item opened at or after the drop cannot close until a passing command
+# of its own resolves it (`todo_evidence`). Bounded to the newest entries, one
+# plan's worth. It lives in the record, so `clear` removes it with the plan.
+MAX_TODO_DROPPED_BINDINGS = 20
 # Optional nesting depth per item: 0 is a top-level task, 1..3 are subtask
 # levels rendered indented beneath it (e.g. "검증작업하기" with usability /
 # UI / load-verification children). Three levels is the owner's declared
@@ -328,7 +336,8 @@ def bind_done_items(
 
     Every binding field the writer sent is dropped first -- a reference it
     can send is a reference it can copy from a result it was shown. Each item
-    is then matched to the stored item with the same text, and:
+    is then matched to the stored item with the same text (items sharing a
+    text pair in order, `_paired_with_prior`), and:
 
     * an item done before and done now keeps exactly what it had, including
       nothing: an item done before evidence existed stays unbound and counts
@@ -348,17 +357,16 @@ def bind_done_items(
     """
     if not isinstance(items, list):
         return items
-    prior_by_text: dict[str, dict[str, Any]] = {}
-    for prior in prior_items if isinstance(prior_items, list) else []:
-        if isinstance(prior, dict):
-            prior_by_text.setdefault(strip_control_characters(prior.get("text", "")), prior)
-    entries: list[tuple[Any, dict[str, Any] | None]] = []
-    for item in items:
-        if not isinstance(item, dict):
-            entries.append((item, None))
-            continue
-        entry = {key: value for key, value in item.items() if key not in TODO_DONE_BINDING_KEYS}
-        entries.append((entry, prior_by_text.get(strip_control_characters(entry.get("text", "")))))
+    pairs, _ = _paired_with_prior(items, prior_items)
+    entries: list[tuple[Any, dict[str, Any] | None]] = [
+        (
+            {key: value for key, value in item.items() if key not in TODO_DONE_BINDING_KEYS}
+            if isinstance(item, dict)
+            else item,
+            prior,
+        )
+        for item, prior in pairs
+    ]
     held = {
         index: evidence_key(checked)
         for index, (entry, prior) in enumerate(entries)
@@ -393,6 +401,62 @@ def bind_done_items(
                 entry["window_start"] = now
         bound.append(entry)
     return bound
+
+
+def _paired_with_prior(
+    items: list[Any], prior_items: object
+) -> tuple[list[tuple[Any, dict[str, Any] | None]], list[dict[str, Any]]]:
+    """Each item with the stored item it continues, and the stored items none continues.
+
+    An item continues the stored item with the same text; items sharing a
+    text pair in order, the first with the first. Anything that is not a
+    dict item continues nothing.
+    """
+    by_text: dict[str, list[dict[str, Any]]] = {}
+    for prior in prior_items if isinstance(prior_items, list) else []:
+        if isinstance(prior, dict):
+            by_text.setdefault(strip_control_characters(prior.get("text", "")), []).append(prior)
+    pairs: list[tuple[Any, dict[str, Any] | None]] = []
+    for item in items:
+        queue = by_text.get(strip_control_characters(item.get("text", ""))) if isinstance(item, dict) else None
+        pairs.append((item, queue.pop(0) if queue else None))
+    return pairs, [prior for queue in by_text.values() for prior in queue]
+
+
+def dropped_bindings(
+    items: object, *, prior_items: object, prior_dropped: object, now: str
+) -> list[dict[str, str]]:
+    """The record's dropped bindings after a whole-list `set` of ``items``.
+
+    The ones already recorded, then the binding of every stored item the new
+    list does not continue, stamped ``now`` -- the stamp the same write opens
+    a new item's window at, so a renamed item opens at its own drop.
+    """
+    kept = [entry for entry in prior_dropped if isinstance(entry, dict)] if isinstance(prior_dropped, list) else []
+    if isinstance(items, list):
+        for prior in _paired_with_prior(items, prior_items)[1]:
+            checked = valid_evidence(prior.get("evidence"))
+            if checked is not None:
+                kept.append({**checked, "dropped_at": now})
+    return kept[-MAX_TODO_DROPPED_BINDINGS:]
+
+
+def _validated_dropped_bindings(value: object) -> list[dict[str, str]]:
+    """The plan's dropped bindings as they will be stored; an entry out of shape is refused."""
+    if value is None or value == [] or value == ():
+        return []
+    if not isinstance(value, (list, tuple)) or len(value) > MAX_TODO_DROPPED_BINDINGS:
+        raise TodoValidationError(
+            f"todo dropped_bindings must be a list of at most {MAX_TODO_DROPPED_BINDINGS} entries"
+        )
+    validated: list[dict[str, str]] = []
+    for entry in value:
+        checked = valid_evidence(entry) if isinstance(entry, dict) else None
+        stamp = _validated_stamp(entry.get("dropped_at"), "done", "dropped_at") if checked else ""
+        if checked is None or not stamp:
+            raise TodoValidationError("todo dropped_bindings entries must be {kind, ref, dropped_at}")
+        validated.append({**checked, "dropped_at": stamp})
+    return validated
 
 
 def _latest_call_after(
@@ -464,6 +528,7 @@ def build_todo_record(
     deferred_reason: object = "",
     template: object = "",
     plan_stage: object = "",
+    dropped: object = (),
 ) -> dict[str, Any]:
     """Build the on-disk todo record.
 
@@ -503,6 +568,10 @@ def build_todo_record(
     text, and an unrecognised value raises instead of being stored -- a stamp
     a reader cannot classify would make that gate silent on a plan that
     believes it is guarded, which is the worst of the three states.
+
+    ``dropped`` is the plan's ``dropped_bindings`` (`dropped_bindings`),
+    written only when non-empty, so a plan that never dropped a binding is
+    byte-identical to one written before the field existed.
     """
     safe_title = strip_control_characters(title)
     if len(safe_title) > MAX_TODO_TITLE_CHARS:
@@ -512,6 +581,7 @@ def build_todo_record(
     safe_deferred_reason = _validated_deferred_reason(deferred_reason)
     safe_template = _validated_template(template)
     safe_plan_stage = _validated_plan_stage(plan_stage)
+    safe_dropped = _validated_dropped_bindings(dropped)
     if safe_template and items in (None, []):
         items = template_items(safe_template)
     # The cap refusal, answered here rather than in `validate_todo_items`,
@@ -540,6 +610,8 @@ def build_todo_record(
         record["template"] = safe_template
     if safe_plan_stage:
         record["plan_stage"] = safe_plan_stage
+    if safe_dropped:
+        record["dropped_bindings"] = safe_dropped
     return record
 
 
@@ -992,6 +1064,9 @@ def advance_todo_item(
                 deferred_reason=deferred_reason,
                 template=stored_template,
                 plan_stage=stored_plan_stage,
+                # An advance moves one item and drops none, so it carries the
+                # plan's dropped bindings exactly as they were.
+                dropped=record.get("dropped_bindings", ()),
             )
         except TodoValidationError as error:
             raise _advance_template_error(stored_template, error) from error
