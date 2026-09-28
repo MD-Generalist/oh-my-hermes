@@ -4,9 +4,11 @@ from __future__ import annotations
 from collections.abc import Mapping
 import json
 
+from ..orchestration_say import board_say, with_say
+
 OMH_AGENT_BOARD_SCHEMA = {
     "name": "omh_agent_board",
-    "description": "Prepare a durable native Kanban action or inspect its metadata-only receipt. Preparation is not authorization or execution; invoke the returned native tool through Hermes' normal tool loop. A durable create may state lane_role (builder, verifier, reviewer, docs or qa): OMH fills that lane's skills and workspace_kind from the role, refuses a verifier or reviewer that declares no parents, and removes the role before the native action. Bounded child research uses delegation instead. No uploads, downloads, dispatch or JSON grants.",
+    "description": "Prepare a durable native Kanban action or inspect its metadata-only receipt. Preparation is not authorization or execution; invoke the returned native tool through Hermes' normal tool loop. A durable create may state lane_role (builder, verifier, reviewer, docs or qa): OMH fills that lane's skills and workspace_kind from the role, refuses a verifier or reviewer that declares no parents, and removes the role before the native action. Bounded child research uses delegation instead. No uploads, downloads, dispatch or JSON grants. Relay any `say` field to the user once, in their language and your own words.",
     "parameters": {
         "type": "object",
         "properties": {
@@ -52,7 +54,7 @@ def omh_agent_board_handler(args: Mapping[str, object], **kwargs: object) -> str
         bridge = installed_bridge(board)
         schemas, hooks = host_capabilities()
         prepared = bridge.prepare(args, host=identity, schemas=schemas, hooks=hooks)
-        return json.dumps(prepared, sort_keys=True)
+        return json.dumps(with_say(dict(prepared), board_say(prepared)), sort_keys=True)
     except BoardCoreUnavailable:
         # The module imported, but this host cannot import the engine behind
         # it; that is a missing component, not an invalid request.

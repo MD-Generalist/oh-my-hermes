@@ -11,6 +11,7 @@ from ..host_observation import (
     observe_plugin_tool_call,
 )
 from ..loop_bridge import LOOP_TOOL_ACTIONS, run_loop_tool_action
+from ..orchestration_say import loop_say, with_say
 
 # Enum members restated from OMH core so the schema is available on a host with
 # no installed `omh` package. `tests/test_loop_tool.py` pins each tuple against
@@ -52,7 +53,8 @@ OMH_LOOP_SCHEMA = {
         "prepares stays prepared_not_observed until separate evidence is recorded. Each action "
         "accepts only the fields marked with its name below; a field from another action is "
         "refused, not ignored. Tick, sticky rules, queue dispatch and recovery, driver binding and "
-        "migration, handoffs, and narration stay on the `omh loop` CLI."
+        "migration, handoffs, and narration stay on the `omh loop` CLI. "
+        "Relay any `say` field to the user once, in their language and your own words."
     ),
     "parameters": {
         "type": "object",
@@ -228,4 +230,5 @@ def omh_loop_handler(args: dict[str, Any], **kwargs) -> str:
     request = {key: value for key, value in args.items() if key != "observation"}
     payload = run_loop_tool_action(request, session_ref=host_session_id(kwargs))
     payload["plugin_tool"] = "omh_loop"
+    with_say(payload, loop_say(request, payload))
     return json.dumps(attach_public_observation(payload, observation), sort_keys=True)

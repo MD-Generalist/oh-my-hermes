@@ -32,6 +32,7 @@ from ..hermes_delegation import (
     effective_mixture_category_chains,
 )
 from ..host_observation import OBSERVATION_SCHEMA, attach_public_observation, host_session_id, observe_plugin_tool_call
+from ..orchestration_say import route_say, with_say
 
 _EVIDENCE_BOUNDARY = (
     "Prepared route only: the delegation.* keys apply to the NEXT delegate_task "
@@ -172,7 +173,8 @@ OMH_DELEGATE_ROUTE_SCHEMA = {
         "closed without that origin. An exhausted chain restores what the delegation keys "
         "held before OMH first wrote them, which is the user's own pinned model when they "
         "had one and parent inheritance when they did not; if it cannot prove OMH wrote "
-        "the current value it changes nothing and reports unrecorded_value_not_ours."
+        "the current value it changes nothing and reports unrecorded_value_not_ours. "
+        "Relay any `say` field to the user once, in their language and your own words."
     ),
     "parameters": {
         "type": "object",
@@ -459,7 +461,7 @@ def omh_delegate_route_handler(args: dict[str, Any], **kwargs) -> str:
             result["from"] = current_model
             result["position_source"] = position_source
             result["evidence_boundary"] = _EVIDENCE_BOUNDARY
-            return json.dumps(attach_public_observation(result, observation), sort_keys=True)
+            return json.dumps(attach_public_observation(with_say(result, route_say(result)), observation), sort_keys=True)
         next_model, next_effort = chain[index + 1]
         wire_model, next_provider = resolve_provider_model(
             next_model, routes=provider_routes
@@ -508,7 +510,7 @@ def omh_delegate_route_handler(args: dict[str, Any], **kwargs) -> str:
                 for alias, chain_effort in chain[index + 2 :]
             ]
         result["evidence_boundary"] = _EVIDENCE_BOUNDARY
-        return json.dumps(attach_public_observation(result, observation), sort_keys=True)
+        return json.dumps(attach_public_observation(with_say(result, route_say(result)), observation), sort_keys=True)
 
     if action != "set":
         payload = {
@@ -631,4 +633,4 @@ def omh_delegate_route_handler(args: dict[str, Any], **kwargs) -> str:
             for alias, chain_effort in chain[1:]
         ]
     result["evidence_boundary"] = _EVIDENCE_BOUNDARY
-    return json.dumps(attach_public_observation(result, observation), sort_keys=True)
+    return json.dumps(attach_public_observation(with_say(result, route_say(result)), observation), sort_keys=True)

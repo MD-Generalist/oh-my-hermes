@@ -11,10 +11,12 @@ merge here" and reporting it.
 
 This module reads reply text and reports where it departs from those rules:
 
-- ``record_term_leak``: an OMH record term in the reply (the rail's list, plus
-  the Korean renderings that reached the owner's replies).
-- ``awareness_line_quoted``: an ``[OMH Awareness]`` or ``Boundary:`` line
-  quoted into the reply.
+- ``record_term_leak``: an OMH record term in the reply (the rail's list, the
+  OMH schema ids and record ids, plus the Korean renderings that reached the
+  owner's replies).
+- ``awareness_line_quoted``: an ``[OMH ...]`` head OMH writes (``[OMH
+  Awareness]``, ``[OMH plan todo]``, ...) or a ``Boundary:`` line quoted into
+  the reply.
 - ``refusal_closer``: the closing paragraph declares what will not be done
   and offers no question.
 - ``decision_without_question``: the closing paragraph names an approval or a
@@ -62,6 +64,8 @@ _ENGLISH_RECORD_TERMS: tuple[str, ...] = (
     "not_observed",
     "not_available",
     "routing_observation",
+    "evidence_boundary",
+    "claim_boundary",
     "evidence boundary",
     "claim boundary",
     "evidence-bounded",
@@ -76,6 +80,150 @@ _ENGLISH_RECORD_TERMS: tuple[str, ...] = (
     "wrapper card",
     "OMH wrapper",
     "handoff",
+    # Qualified forms only, from the 2026-09-28 leak audit: bare `fanout` is
+    # an everyday word, so it is matched only in the command OMH spells it in
+    # (`omh coding fanout dispatch`), never alone and never as "the fanout
+    # dispatch queue" of someone's broker. `goal ledger` is held back: "update
+    # the goal ledger in the finance sheet" is ordinary bookkeeping, and so is
+    # `closure receipt` ("keep the account closure receipt"), which no surface
+    # a Hermes model reads spells.
+    "route_question",
+    "coding fanout dispatch",
+)
+
+# OMH record ids a tool result carries as values, as exact literals: the
+# routable categories (`hermes_delegation.HERMES_MIXTURE_CATEGORY_CHAINS`),
+# the todo evidence codes and derived state (`todo_reconciliation`), the
+# route exhaustion origin, and the fanout repair loop's blocked reasons and
+# in-flight status (`omh.coding.fanout_repair`). Scope rule: an id that is an
+# ordinary English word or phrase is held back in `_ORDINARY_CATEGORY_IDS`,
+# because "a quick fix" or "a deep-work block" is not a leak; every other id
+# is OMH's coinage. Matched case-sensitively and whole: a letter or digit
+# after it (`unspecified-higher`) or a hyphen continuing it
+# (`unspecified-high-tier`, `no_evidence-free`) makes it a different word.
+# `tests/test_reply_lint.py` re-derives both sets from those producers and
+# fails with the id to add or remove.
+_RECORD_ID_TERMS: tuple[str, ...] = (
+    "ultrabrain",
+    "visual-engineering",
+    "simple-work",
+    "unspecified-high",
+    "unspecified-low",
+    "done_unverified",
+    "no_evidence",
+    "evidence_failed",
+    "evidence_unresolved",
+    "evidence_unreadable",
+    "exhausted_to_inherit",
+    "repair_budget_exhausted",
+    "repair_worktree_missing",
+    "repair_in_flight",
+)
+_ORDINARY_CATEGORY_IDS: frozenset[str] = frozenset(
+    {"architect", "artistry", "capable", "deep", "deep-work", "quick", "writing"}
+)
+
+# OMH schema ids, as exact literals. Scope rule: every `omh_`-prefixed id the
+# plugin bundle or a shipped plugin tool schema spells -- OMH's own namespace,
+# which no ordinary sentence uses. Everything else stays out, including the
+# unprefixed ids a tool schema names (`done_check/v1`, `route_question/v1`):
+# none reached a reply in the 2026-09-28 audit, whose measured ids were all
+# `omh_`-prefixed, and `done_check/v1` reads as a person's own versioned
+# check as easily as OMH's. A one-word id like `governance/v2` reads as an
+# ordinary version reference, and a shape pattern would flag `apps/v1` and
+# `/api/v2/users`. `tests/test_reply_lint.py` re-derives this set from the
+# bundle and the schemas and fails with the id to add or remove.
+_SCHEMA_ID_TERMS: tuple[str, ...] = (
+    "omh_approval_bypass/v1",
+    "omh_awareness/v1",
+    "omh_awareness_delivery/v1",
+    "omh_buzz_probe/v1",
+    "omh_capability_gap_roadmap/v1",
+    "omh_capability_impact_report/v1",
+    "omh_capability_inspect/v1",
+    "omh_capability_list/v1",
+    "omh_capability_manifest/v1",
+    "omh_capability_summary/v1",
+    "omh_catalog_question_hint/v1",
+    "omh_code_mode_guidance/v1",
+    "omh_context_brief/v1",
+    "omh_context_brief_error/v1",
+    "omh_context_response_contract/v1",
+    "omh_cost_receipt/v1",
+    "omh_degradation/v1",
+    "omh_desktop_hud/v1",
+    "omh_dispatch_outcome/v1",
+    "omh_document_plan_result/v1",
+    "omh_engagement_nudge/v1",
+    "omh_engagement_nudges/v1",
+    "omh_evidence_probe/v1",
+    "omh_executor_progress_binding/v1",
+    "omh_generic_tool_checkpoint/v1",
+    "omh_group_activity_checkpoint/v1",
+    "omh_group_activity_event/v1",
+    "omh_group_activity_observer_status/v1",
+    "omh_hook_manifest/v1",
+    "omh_hud/v1",
+    "omh_inflight_marker/v1",
+    "omh_interact_result/v1",
+    "omh_jev_ask_record/v1",
+    "omh_jev_ask_result/v1",
+    "omh_kanban_readback/v1",
+    "omh_lifecycle_projection/v1",
+    "omh_loop_result/v1",
+    "omh_memory_audience/v1",
+    "omh_memory_block/v1",
+    "omh_memory_block/v2",
+    "omh_memory_block_listing/v2",
+    "omh_memory_block_read/v1",
+    "omh_memory_block_read/v2",
+    "omh_memory_bridge_unavailable/v1",
+    "omh_memory_consolidation_handoff/v1",
+    "omh_memory_dreaming_state/v1",
+    "omh_memory_eviction_plan/v1",
+    "omh_memory_identity/v1",
+    "omh_memory_open_reminders/v1",
+    "omh_memory_pins/v1",
+    "omh_memory_prefetch_receipt/v1",
+    "omh_memory_prefetch_receipt/v2",
+    "omh_memory_prefetch_receipt/v3",
+    "omh_memory_recall_selector/v1",
+    "omh_memory_recall_usage/v1",
+    "omh_memory_replay_evaluation/v1",
+    "omh_memory_scope/v1",
+    "omh_memory_scope/v2",
+    "omh_memory_scope/v3",
+    "omh_memory_unknown_action/v1",
+    "omh_memory_write_journal_entry/v1",
+    "omh_observation_event/v1",
+    "omh_parity_matrix/v1",
+    "omh_platform_envelope/v1",
+    "omh_plugin_host_observation/v1",
+    "omh_plugin_host_observation_error/v1",
+    "omh_plugin_session_end/v1",
+    "omh_progress_event/v1",
+    "omh_progress_report/v1",
+    "omh_recommend_result/v1",
+    "omh_remote_wait/v1",
+    "omh_role_catalog/v1",
+    "omh_role_context/v1",
+    "omh_route_answer_result/v1",
+    "omh_route_hint/v1",
+    "omh_run_context_budget/v1",
+    "omh_run_summary/v1",
+    "omh_running_work_board/v1",
+    "omh_skill_picker/v1",
+    "omh_skill_shortlist_index/v1",
+    "omh_status/v1",
+    "omh_todo/v1",
+    "omh_todo_result/v1",
+    "omh_tool_activity/v1",
+    "omh_tool_bursts/v1",
+    "omh_toolcall_rule_faults/v1",
+    "omh_toolcall_rules/v1",
+    "omh_truncated_read/v1",
+    "omh_work_resume/v1",
+    "omh_wrapper_session_ref/v1",
 )
 
 # Korean renderings observed in live replies ("두 표면을 서빙합니다", "레인을
@@ -93,10 +241,52 @@ _KOREAN_RECORD_TERMS: tuple[str, ...] = (
 _KOREAN_PARTICLES = "(?:이|가|을|를|은|는|의|에|과|와|로|도|만|들|으로|입니다|이다)?"
 _HANGUL = "가-힣"
 
+# Every `[OMH ...]` head OMH writes into context or appends to a reply, as an
+# exact literal. `tests/test_reply_lint.py` re-derives the set from `src/` and
+# fails with the tag to add, so a new head cannot ship unseen. Exact, never a
+# generic `[OMH ...]` shape: "[OMH README](...)" is a link and "[OMH 2.0.2]" a
+# version, and neither is a tag OMH writes. A literal followed by `(`, `[`
+# or `:` is markdown link text (`[OMH](url)`, `[OMH][1]`) or a reference
+# definition (`[OMH]: https://...`), never a quoted line.
+#
+# The user carve-out does not apply to these heads: Hermes stores OMH's
+# injected context inside the user turn's content, so a carve-out keyed on
+# the user text would excuse every tag the model saw there.
+_AWARENESS_TAGS: tuple[str, ...] = (
+    "[OMH]",
+    "[OMH Active Workflow]",
+    "[OMH approval gate]",
+    "[OMH Awareness]",
+    "[OMH board readback]",
+    "[OMH board]",
+    "[OMH Code-Mode Discipline]",
+    "[OMH Context Budget]",
+    "[OMH continuation claim]",
+    "[OMH Degraded]",
+    "[OMH delegation]",
+    "[OMH plan todo]",
+    "[OMH Repeat Guard]",
+    "[OMH Role Warning]",
+    "[OMH Route Hint]",
+    "[OMH Rule]",
+    "[OMH truncated read]",
+    "[OMH unarmed wait]",
+)
+
+# Heads built at runtime around a value (`[OMH Role: reviewer]`): the fixed
+# prefix is the literal, and the value runs to the closing bracket.
+_AWARENESS_TAG_PREFIXES: tuple[str, ...] = ("[OMH Role:",)
+
 _AWARENESS_LINE_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
-    ("[OMH Awareness]", re.compile(r"\[OMH Awareness\]")),
-    ("Boundary:", re.compile(r"(?m)^\s*(?:>\s*)?Boundary:")),
-    ("Route hint:", re.compile(r"(?m)^\s*(?:>\s*)?Route hint:")),
+    tuple((tag, re.compile(re.escape(tag) + r"(?![\(\[:])")) for tag in _AWARENESS_TAGS)
+    + tuple(
+        (prefix + "]", re.compile(re.escape(prefix) + r"[^\]\n]*\](?![\(\[:])"))
+        for prefix in _AWARENESS_TAG_PREFIXES
+    )
+    + (
+        ("Boundary:", re.compile(r"(?m)^\s*(?:>\s*)?Boundary:")),
+        ("Route hint:", re.compile(r"(?m)^\s*(?:>\s*)?Route hint:")),
+    )
 )
 
 # A closing that says what will not be done. English forms are first person;
@@ -140,7 +330,9 @@ _CLOSING_EXCERPT_CHARS = 240
 
 def _english_term_pattern(term: str) -> re.Pattern[str]:
     if "_" in term:
-        return re.compile(r"(?<![A-Za-z0-9_])" + re.escape(term) + r"(?![A-Za-z0-9_])")
+        # An identifier followed by `(` is a call in the person's own code
+        # (`route_question(q)`), not OMH's record word.
+        return re.compile(r"(?<![A-Za-z0-9_])" + re.escape(term) + r"(?![A-Za-z0-9_(])")
     return re.compile(r"(?<![A-Za-z0-9])" + re.escape(term) + r"(?![A-Za-z0-9])", re.IGNORECASE)
 
 
@@ -150,8 +342,20 @@ def _korean_term_pattern(term: str) -> re.Pattern[str]:
     )
 
 
+def _schema_id_pattern(schema_id: str) -> re.Pattern[str]:
+    # Exact: `omh_todo/v1` never matches inside `omh_todo_result/v1` or
+    # `omh_todo/v12`, and a path segment (`x/omh_todo/v1`) is still the id.
+    return re.compile(r"(?<![A-Za-z0-9_.-])" + re.escape(schema_id) + r"(?![A-Za-z0-9_])")
+
+
+def _record_id_pattern(record_id: str) -> re.Pattern[str]:
+    return re.compile(r"(?<![A-Za-z0-9_-])" + re.escape(record_id) + r"(?![A-Za-z0-9_(-])")
+
+
 _RECORD_TERM_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = tuple(
     [(term, _english_term_pattern(term)) for term in _ENGLISH_RECORD_TERMS]
+    + [(term, _record_id_pattern(term)) for term in _RECORD_ID_TERMS]
+    + [(term, _schema_id_pattern(term)) for term in _SCHEMA_ID_TERMS]
     + [(term, _korean_term_pattern(term)) for term in _KOREAN_RECORD_TERMS]
 )
 

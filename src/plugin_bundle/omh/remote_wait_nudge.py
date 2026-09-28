@@ -360,11 +360,89 @@ _declines: "Counter[str]" = Counter()
 # message. It deliberately does not say the remote work is still running --
 # a foreground poll may already have seen it finish -- and it does not say the
 # model claimed to be waiting, because nothing here reads what the model said.
-HONEST_STOP_TEXT: Final = (
-    "[OMH] This turn started remote work and armed nothing to wake the session "
-    "when it finishes, so the session has stopped here: it resumes only when "
-    "someone sends it a message."
+#
+# The sentence is in the reply's own language (owner decision, 2026-09-28) and
+# carries no OMH vocabulary: no `[OMH]` head, no "armed". The language comes
+# from the response text alone -- see `reply_language` -- and never from the OS
+# locale. The copy is vendored here because this bundle cannot import `omh.*`.
+HONEST_STOP_TEXTS: Final[dict[str, str]] = {
+    "en": (
+        "This session has stopped: the remote work it started will not wake it "
+        "when it finishes, so send a message to pick it back up."
+    ),
+    "ko": (
+        "원격 작업이 끝나도 이 세션은 자동으로 다시 시작되지 않습니다. "
+        "이어서 하려면 메시지를 보내 주세요."
+    ),
+    "ja": (
+        "リモートの作業が終わっても、このセッションは自動では再開しません。"
+        "続けるには、メッセージを送ってください。"
+    ),
+    "zh": "远程工作完成后，此会话不会自动恢复。如需继续，请发送一条消息。",
+}
+HONEST_STOP_TEXT: Final = HONEST_STOP_TEXTS["en"]
+
+# When a reply outside code is written in a non-Latin script rather than
+# quoting one. A script counts only through a run of at least
+# `REPLY_SCRIPT_MIN_RUN` of its characters in a row, so "CI 대기 중" is Korean
+# and one stray syllable is nothing. Then its characters have to number at
+# least the Latin words beside them -- words, not letters, so "Kubernetes
+# deployment rollout status 확인 완료" is not outweighed by the letters of four
+# product words. Two kinds of token are dropped whole before either side is
+# counted, because neither says what language the reply is written in:
+# path- and identifier-shaped tokens (`src/x.py`, `reply_language`,
+# `REPLY_SCRIPT_MIN_RUN`, `GitHub`, `설정파일.md`), which a coding reply is full
+# of, and quotations ("...", “...”, 「...」, 『...』), which are someone else's
+# words: an English reply quoting a Korean sentence stays English, and a
+# Korean reply quoting an English error message stays Korean.
+REPLY_SCRIPT_MIN_RUN: Final = 2
+
+# A fence closes only on a line of the same character at least as long as the
+# opening one, so a ```` block that shows a ``` block is removed whole.
+_FENCED_CODE = re.compile(r"(?ms)^[ \t]*((`|~)\2{2,})[^\n]*$.*?(?:^[ \t]*\1\2*[ \t]*$|\Z)")
+_INLINE_CODE = re.compile(r"`[^`\n]*`")
+_LATIN_WORDS = re.compile(r"[A-Za-z]+")
+# A token with `/`, `.` or `_` between two word characters, or a lowercase
+# letter directly before an uppercase one, is a path, a file name, an
+# identifier or a camel-cased name. A sentence-ending period has no word
+# character after it, so "완료." and "done." stay prose.
+_NAME_TOKEN = re.compile(r"\S*(?:\w[/._]\w|[a-z][A-Z])\S*")
+_HANGUL = "ᄀ-ᇿ㄰-㆏가-힣"
+_KANA = "぀-ゟ゠-ヿㇰ-ㇿｦ-ﾟ"
+_HAN = "㐀-䶿一-鿿豈-﫿"
+_CJK_CHARS = re.compile(f"[{_HANGUL}{_KANA}{_HAN}]")
+_QUOTATION = re.compile(r'"[^"\n]*"|“[^”\n]*”|「[^」\n]*」|『[^』\n]*』')
+_SCRIPT_RUNS: Final = tuple(
+    (language, re.compile(f"[{chars}]{{{REPLY_SCRIPT_MIN_RUN},}}"))
+    for language, chars in (("ko", _HANGUL), ("ja", _KANA), ("zh", _HAN))
 )
+
+
+def reply_language(text: object) -> str:
+    """The language of *text*: ``ko``, ``ja``, ``zh`` or ``en``.
+
+    Fenced and inline code are removed first, because a Korean string in a
+    code block says nothing about the language the reply is written in, and
+    so are quotations and path- or identifier-shaped tokens. Then the reply
+    is English unless its CJK characters number at least its Latin words. A
+    non-Latin reply takes the first script in precedence order -- Hangul,
+    then kana, then Han -- that has a run long enough to count, not the
+    majority script: a Japanese reply is often mostly kanji, so a majority
+    rule would call it Chinese.
+
+    The stated limit: a Japanese reply with no run of two kana (all kanji, or
+    kanji with single-kana particles) reads as Chinese. Nothing in the text
+    tells the two apart without a dictionary. Anything else, including a
+    script with no copy here, is English.
+    """
+    prose = _INLINE_CODE.sub("", _FENCED_CODE.sub("", str(text or "")))
+    prose = _NAME_TOKEN.sub(" ", _QUOTATION.sub(" ", prose))
+    if len(_CJK_CHARS.findall(prose)) < len(_LATIN_WORDS.findall(prose)):
+        return "en"
+    for language, run in _SCRIPT_RUNS:
+        if run.search(prose):
+            return language
+    return "en"
 
 
 def remote_wait_declines() -> dict[str, int]:
@@ -608,7 +686,7 @@ def _honest_stop(
     if armed:
         _declines["end_of_turn_waiter_armed"] += 1
         return None
-    return f"{response_text}\n\n{HONEST_STOP_TEXT}"
+    return f"{response_text}\n\n{HONEST_STOP_TEXTS[reply_language(response_text)]}"
 
 
 def _observe_background_spawn(session: str, result: object) -> bool | None:

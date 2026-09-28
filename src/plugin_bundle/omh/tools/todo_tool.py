@@ -12,6 +12,7 @@ from ..host_observation import (
     observe_plugin_tool_call,
 )
 from ..dispatch_outcomes import _parse_timestamp
+from ..orchestration_say import todo_say, with_say
 from ..runtime_reader import default_omh_home, read_omh_todo
 from ..todo_evidence import observed_calls
 from ..todo_reconciliation import unverified_done_items
@@ -81,7 +82,8 @@ OMH_TODO_SCHEMA = {
         "Items are plan declarations, never execution evidence. "
         "To finish or resume accepted work, read the plan and recall its checkpoint; do exactly the "
         "accepted items, never rejected ideas. No action executes work or grants approval; templates are "
-        "optional and tiny tasks need fewer phases."
+        "optional and tiny tasks need fewer phases. "
+        "Relay any `say` field to the user once, in their language and your own words."
     ),
     "parameters": {
         "type": "object",
@@ -348,6 +350,10 @@ def omh_todo_handler(args: dict[str, Any], **kwargs) -> str:
     unverified = _unverified(payload["todo"], session_ref)
     if unverified:
         payload["done_unverified"] = unverified
+    with_say(
+        payload,
+        todo_say(action, payload["status"], payload["todo"], item=args.get("item"), unverified=unverified),
+    )
     return json.dumps(attach_public_observation(payload, observation), sort_keys=True)
 
 

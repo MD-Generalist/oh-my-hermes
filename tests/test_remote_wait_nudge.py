@@ -57,6 +57,8 @@ from omh.plugin_bundle.omh.remote_wait_nudge import (
     APPROVAL_GATE_CAUSE,
     APPROVAL_GATE_TEXT,
     HONEST_STOP_TEXT,
+    HONEST_STOP_TEXTS,
+    REPLY_SCRIPT_MIN_RUN,
     PROCESS_RECORD_FILENAME,
     REMOTE_WAIT_NUDGE_KEY,
     REMOTE_WORK_COMMANDS,
@@ -71,6 +73,7 @@ from omh.plugin_bundle.omh.remote_wait_nudge import (
     remote_wait_declines,
     remote_work_command,
     reset_remote_wait_state,
+    reply_language,
 )
 from omh.plugin_bundle.omh.truncated_read_recovery import TRUNCATED_READ_TOOL
 
@@ -477,13 +480,17 @@ class EndOfTurnHonestStopTests(RemoteWaitTestCase):
         # The CLI prints only the suffix when the new text starts with the
         # streamed one (`cli.py::_post_stream_transform_output`), so trailing
         # whitespace must survive untouched.
-        self.fire("git push")
+        # Once per language: localizing the sentence must keep it a suffix.
         # Ends in spaces on purpose: a newline would survive an `rstrip`
         # followed by the "\n\n" separator and hide the mutation.
-        streamed = "Pushed; CI is running.  "
-        ended = self.end(streamed)
-        self.assertIsNotNone(ended)
-        self.assertTrue(str(ended).startswith(streamed))
+        for language, streamed in LOCALIZED_REPLIES.items():
+            with self.subTest(language=language):
+                self.fire("git push", turn=f"t-{language}")
+                streamed = f"{streamed}  "
+                ended = self.end(streamed, turn=f"t-{language}")
+                self.assertIsNotNone(ended)
+                self.assertTrue(str(ended).startswith(streamed))
+                self.assertEqual(str(ended), f"{streamed}\n\n{HONEST_STOP_TEXTS[language]}")
 
     def test_an_armed_turn_is_left_untouched(self) -> None:
         self.fire("git push")
@@ -517,10 +524,14 @@ class EndOfTurnHonestStopTests(RemoteWaitTestCase):
     def test_wording_alone_cannot_trigger_the_sentence(self) -> None:
         # Nothing ran and the record is empty, so "nothing armed" is TRUE
         # here; the response says every thing a waiting session says, and
-        # even carries the sentence itself. Without the latch record: silence.
+        # even carries the sentence itself, in every language it ships in.
+        # Without the latch record: silence.
         self.assertIsNone(self.end("I'll wait for CI. Waiting for CI to finish."))
-        self.assertIsNone(self.end(f"Pushed with git push. {HONEST_STOP_TEXT}"))
-        self.assertEqual(remote_wait_declines().get("end_of_turn_no_unarmed_wait"), 2)
+        for text in HONEST_STOP_TEXTS.values():
+            self.assertIsNone(self.end(f"Pushed with git push. {text}"))
+        self.assertEqual(
+            remote_wait_declines().get("end_of_turn_no_unarmed_wait"), 1 + len(HONEST_STOP_TEXTS)
+        )
 
     def test_a_push_the_directive_never_reached_does_not_end_on_it(self) -> None:
         # A failed push records no latch, so the end of the turn is silent.
@@ -570,15 +581,196 @@ class EndOfTurnHonestStopTests(RemoteWaitTestCase):
         )
         self.assertEqual(ended, f"Pushed.\n\n{HONEST_STOP_TEXT}")
 
-    def test_the_sentence_is_short_english_and_executor_neutral(self) -> None:
-        # Pinned so a later edit moves the number deliberately. It rides the
+    def test_the_sentence_is_short_and_executor_neutral_in_every_language(self) -> None:
+        # Pinned so a later edit moves the numbers deliberately. It rides the
         # displayed response only: the host persists the transcript before
         # this transform runs (`agent/turn_finalizer.py::finalize_turn`), so
         # the sentence never enters the model's context on a later turn.
-        self.assertEqual(len(HONEST_STOP_TEXT), 173)
-        self.assertTrue(HONEST_STOP_TEXT.isascii())
-        for name in ("Codex", "Claude", "Hermes", "gh ", "git "):
-            self.assertNotIn(name, HONEST_STOP_TEXT)
+        self.assertEqual(sorted(HONEST_STOP_TEXTS), ["en", "ja", "ko", "zh"])
+        self.assertEqual(HONEST_STOP_TEXT, HONEST_STOP_TEXTS["en"])
+        self.assertEqual(
+            {language: len(text) for language, text in HONEST_STOP_TEXTS.items()},
+            {"en": 125, "ko": 56, "ja": 53, "zh": 31},
+        )
+        self.assertTrue(HONEST_STOP_TEXTS["en"].isascii())
+        for language, text in HONEST_STOP_TEXTS.items():
+            with self.subTest(language=language):
+                for name in ("Codex", "Claude", "Hermes", "gh ", "git "):
+                    self.assertNotIn(name, text)
+                if language != "en":
+                    self.assertFalse(text.isascii())
+                    self.assertNotEqual(text, HONEST_STOP_TEXTS["en"])
+                # Each copy is in the language the detector would give it.
+                self.assertEqual(reply_language(text), language)
+
+    def test_the_sentence_carries_no_omh_vocabulary_in_any_language(self) -> None:
+        from omh.quality.reply_lint import build_reply_lint, record_term_vocabulary
+
+        for language, text in HONEST_STOP_TEXTS.items():
+            with self.subTest(language=language):
+                self.assertTrue(build_reply_lint(text)["ok"], build_reply_lint(text)["findings"])
+                self.assertNotIn("[OMH", text)
+                self.assertNotIn("armed", text.lower())
+                # The lint knows English and Korean only. For ja and zh this
+                # structural check is what stands in for it: no ASCII record
+                # term can appear in the copy at all.
+                for term in record_term_vocabulary():
+                    if term.isascii():
+                        self.assertNotIn(term.lower(), text.lower())
+
+    def test_the_appended_sentence_leaves_a_question_closing_clean(self) -> None:
+        # The sentence becomes the reply's closing paragraph, so the question
+        # the Turn Ending rule asks for is no longer last; the lint then
+        # judges this sentence, and it must not read as a refusal.
+        from omh.quality.reply_lint import build_reply_lint
+
+        for language, reply in QUESTION_REPLIES.items():
+            with self.subTest(language=language):
+                self.assertEqual(reply_language(reply), language)
+                ended = f"{reply}\n\n{HONEST_STOP_TEXTS[language]}"
+                self.assertTrue(build_reply_lint(ended)["ok"], build_reply_lint(ended)["findings"])
+
+    def test_the_sentence_follows_the_reply_language(self) -> None:
+        for language, reply in LOCALIZED_REPLIES.items():
+            with self.subTest(language=language):
+                self.fire("git push", turn=f"t-{language}")
+                self.assertEqual(
+                    self.end(reply, turn=f"t-{language}"), f"{reply}\n\n{HONEST_STOP_TEXTS[language]}"
+                )
+
+
+# One ordinary closing per language, as a session would end on a push.
+LOCALIZED_REPLIES = {
+    "en": "Pushed the branch; CI is running on it now.",
+    "ko": "브랜치를 푸시했고 지금 CI가 돌고 있습니다.",
+    "ja": "ブランチをプッシュしました。いまCIが動いています。",
+    "zh": "已推送分支，持续集成正在运行。",
+}
+
+QUESTION_REPLIES = {
+    "en": "Pushed the branch.\n\nShall I watch CI, or stop here for review?",
+    "ko": "브랜치를 푸시했습니다.\n\nCI를 지켜볼까요, 아니면 리뷰를 기다릴까요?",
+    "ja": "ブランチをプッシュしました。\n\nCIを見守りますか、それともレビューを待ちますか？",
+    "zh": "已推送分支。\n\n要我继续关注持续集成，还是先等评审？",
+}
+
+
+class ReplyLanguageTests(unittest.TestCase):
+    """A run of the script, a share against the Latin letters, then precedence.
+
+    Each case is the mutation it kills: swap the Hangul/kana precedence, drop
+    the code stripping or the fence-length match, drop the run minimum or the
+    share, move either threshold by one, or give an unsupported script its
+    own copy.
+    """
+
+    def test_hangul_wins_over_kana(self) -> None:
+        # A Korean reply quoting a Japanese product name stays Korean.
+        self.assertEqual(reply_language("설정 화면에서 「プッシュ通知」를 켰습니다."), "ko")
+        # Unquoted kana is still counted, so only the precedence keeps this
+        # Korean; the quoted case above is decided by the quotation drop.
+        self.assertEqual(reply_language("일본 앱의 プッシュ 알림을 켰습니다."), "ko")
+
+    def test_camel_case_identifiers_do_not_outvote_a_korean_reply(self) -> None:
+        # Four camel-case hook names against two Hangul characters: counted
+        # as words they would make this reply English.
+        self.assertEqual(reply_language("useEffect useState useMemo useCallback 정리"), "ko")
+
+    def test_kana_wins_over_han(self) -> None:
+        # Kanji-heavy Japanese: Han characters outnumber kana four to one,
+        # so a majority rule would call this Chinese.
+        reply = "設定変更完了、全試験合格確認済。次段階移行予定ですので、ご確認ください。"
+        self.assertEqual(reply_language(reply), "ja")
+
+    def test_a_kanji_only_japanese_reply_reads_as_chinese(self) -> None:
+        # The stated limit: with no run of two kana nothing in the text tells
+        # Japanese from Chinese, so it gets the Chinese copy.
+        self.assertEqual(reply_language("設定変更完了。全試験合格。"), "zh")
+        self.assertEqual(reply_language("設定を変更し完了。"), "zh")
+
+    def test_code_is_not_prose(self) -> None:
+        fenced = "Updated the greeting.\n\n```python\nGREETING = \"안녕하세요 여러분\"\n```\n\nCI is green."
+        self.assertEqual(reply_language(fenced), "en")
+        tilde = "Updated the label.\n~~~\nlabel = \"設定を保存しました\"\n~~~\nDone."
+        self.assertEqual(reply_language(tilde), "en")
+        inline = "Renamed `설정_저장하기` to `save_settings` and pushed."
+        self.assertEqual(reply_language(inline), "en")
+
+    def test_a_longer_fence_is_closed_only_by_its_own_length(self) -> None:
+        # A four-backtick block showing a three-backtick one: the inner ```
+        # does not close it, so the Korean after it is still code.
+        nested = (
+            "Here is the snippet.\n\n````markdown\n```python\nx = 1\n```\n"
+            "안녕하세요 여러분 반갑습니다\n````\n\nPushed."
+        )
+        self.assertEqual(reply_language(nested), "en")
+        # And the block does close at its own length: prose after it counts.
+        self.assertEqual(reply_language("````\nx = 1\n````\n\n브랜치를 푸시했습니다."), "ko")
+
+    def test_prose_after_an_unclosed_fence_is_still_code(self) -> None:
+        self.assertEqual(reply_language("Here it is:\n```\n안녕하세요 여러분"), "en")
+
+    def test_a_short_korean_status_is_korean(self) -> None:
+        self.assertEqual(reply_language("CI 대기 중"), "ko")
+        self.assertEqual(reply_language("완료."), "ko")
+        self.assertEqual(reply_language("PR #1930 올렸고 CI 대기 중입니다."), "ko")
+
+    def test_a_reply_naming_paths_and_identifiers_keeps_its_language(self) -> None:
+        # The CI-wait coding turn the honest stop ends: bare paths,
+        # identifiers and product words around a Korean or Chinese sentence.
+        for reply, language in (
+            ("src/quality/reply_lint.py 와 tests/test_reply_lint.py 를 수정했습니다.", "ko"),
+            ("reply_language 함수에서 REPLY_SCRIPT_MIN_RUN 기준을 적용했습니다", "ko"),
+            ("GitHub Actions workflow 가 실패했습니다", "ko"),
+            ("Kubernetes deployment rollout status 확인 완료", "ko"),
+            (
+                "테스트 결과 tests/test_reply_lint.py tests/test_orchestration_say.py "
+                "tests/test_remote_wait_nudge.py 모두 통과했습니다. 다음은 merge 입니다.",
+                "ko",
+            ),
+            ("修改了 src/quality/reply_lint.py 文件", "zh"),
+            ('빌드가 "error: could not resolve the module path for the test runner" 로 실패했습니다.', "ko"),
+        ):
+            with self.subTest(reply=reply):
+                self.assertEqual(reply_language(reply), language)
+
+    def test_an_english_reply_quoting_korean_stays_english(self) -> None:
+        for reply in (
+            "You asked about 설정 on the settings page.",
+            "I updated 설정파일.md with the new timeout and pushed the branch.",
+            'The user wrote "배포가 끝나면 알려주세요" so I set up a notification for it.',
+            "The user wrote “배포가 끝나면 알려주세요” so I set it up.",
+            "The screen now reads 「プッシュ通知」 after the rename.",
+        ):
+            with self.subTest(reply=reply):
+                self.assertEqual(reply_language(reply), "en")
+
+    def test_the_run_minimum_is_exact(self) -> None:
+        self.assertEqual(REPLY_SCRIPT_MIN_RUN, 2)
+        # Two in a row count; the same two apart do not.
+        self.assertEqual(reply_language("대기"), "ko")
+        self.assertEqual(reply_language("대 기"), "en")
+        self.assertEqual(reply_language("ですね"), "ja")
+        self.assertEqual(reply_language("で す"), "en")
+
+    def test_the_share_threshold_is_exact(self) -> None:
+        # Two Hangul against two Latin words ties and is Korean; a third word
+        # outweighs them. Words, not letters: long words weigh the same.
+        self.assertEqual(reply_language("대기 ab cd"), "ko")
+        self.assertEqual(reply_language("대기 deployment rollout"), "ko")
+        self.assertEqual(reply_language("대기 ab cd ef"), "en")
+
+    def test_a_name_token_is_dropped_whole_and_a_period_is_not_one(self) -> None:
+        # Its Hangul goes with it, so the file name cannot make a reply Korean.
+        self.assertEqual(reply_language("설정파일.md"), "en")
+        # A sentence-ending period has no word character after it.
+        self.assertEqual(reply_language("대기 ab cd."), "ko")
+        self.assertEqual(reply_language("대기 ab cd ef."), "en")
+
+    def test_an_unsupported_script_falls_back_to_english(self) -> None:
+        self.assertEqual(reply_language("Готово, изменения отправлены."), "en")
+        self.assertEqual(reply_language(""), "en")
+        self.assertEqual(reply_language(None), "en")
 
 
 class CommandAnchorTests(unittest.TestCase):
@@ -864,7 +1056,7 @@ class InstalledPluginTests(unittest.TestCase):
                 turn_id="turn-1", hermes_home=str(hermes_home),
             )
             self.assertIsInstance(ended, str)
-            self.assertIn("the session has stopped here", str(ended))
+            self.assertEqual(str(ended), f"Pushed.\n\n{HONEST_STOP_TEXT}")
 
             (hermes_home / PROCESS_RECORD_FILENAME).write_text(
                 json.dumps(
