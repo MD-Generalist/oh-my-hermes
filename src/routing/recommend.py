@@ -455,6 +455,42 @@ _MODEL_FINETUNING_EXPLICIT_PHRASES = tuple(
     )
 )
 
+# `internal-audit` holds back every everyday token its phrases are built from.
+# Listed are the phrases that name testing or grading an internal control. A
+# bare "sox", "internal control", "control testing" or "material weakness" is
+# not: the Red Sox play baseball, a person lacks internal control over
+# snacking, a factory tests quality control, and a bridge has a material
+# weakness; those route here only beside a word of auditing
+# (`EVERYDAY_SENSE_PHRASES`).
+_INTERNAL_AUDIT_EXPLICIT_PHRASES = tuple(
+    normalized_phrase(phrase)
+    for phrase in (
+        "internal-audit",
+        "internal audit",
+        "internal control audit",
+        "test of controls",
+        "tests of controls",
+        "sox 404",
+        "sox testing",
+        "sox control",
+        "icfr",
+        "itgc",
+        "itgcs",
+        "significant deficiency",
+        "control deficiency",
+        "deficiency severity",
+        "reperform",
+        "reperform the control",
+        "reperformance",
+        "re-performance",
+        "audit sampling",
+        "attribute sampling",
+        "audit evidence",
+        "audit workpaper",
+        "segregation of duties",
+    )
+)
+
 # `mobile-release` holds back every everyday token its phrases are built from.
 # Listed are the phrases that name releasing through a store. A bare "play
 # store", "app store" or "google play" is not: a phone's store app, a gift card
@@ -1187,6 +1223,18 @@ _SKILL_POLICIES = {
             "Prepare finetune_decision/v1 first, returning do_not_finetune when prompting or retrieval closes the gap; "
             "training_method_choice/v1 from the data's shape; training_data_plan/v1 with a held-out split; "
             "baseline_comparison/v1 on the same eval; and checkpoint_promotion_gate/v1 with its margin and tolerance."
+        ),
+    ),
+    "internal-audit": RecommendationPolicy(
+        next_action="prepare_control_test_plan",
+        evidence_boundary=(
+            "A control test plan is not a pulled population, obtained evidence, or a re-performed control until observed; "
+            "OMH reads no ledger and signs off nothing, and no severity grade is given without its stated criteria."
+        ),
+        wrapper_guidance=(
+            "Prepare control_under_test/v1 with the population and its completeness check; sample_design/v1 sized from the "
+            "control's frequency; evidence_request/v1 per item; reperformance_record/v1; and deficiency_severity_grade/v1 "
+            "derived from stated likelihood, magnitude against materiality, and compensating controls, or withheld."
         ),
     ),
     "mobile-release": RecommendationPolicy(
@@ -3021,6 +3069,42 @@ _WHOLE_PHRASE_ONLY_TRIGGER_TOKENS = {
             "verifiable",
         }
     ),
+    # `internal-audit` is built from "internal", "control", "audit", "test",
+    # "sampling", "evidence", "material", "weakness", "significant",
+    # "deficiency", "segregation", "duties" and "sox" -- a codebase audit, a
+    # bridge's material weakness, a significant other and the Red Sox all
+    # reached it as bare tokens. Only the complete phrases score, and "sox",
+    # "internal control", "control testing" and "material weakness" also need
+    # a word of auditing beside them (`EVERYDAY_SENSE_PHRASES`). Holding "sox"
+    # back stops it being credited from "sox 404"; the one-word "sox" trigger
+    # still scores as a phrase, which only the everyday-sense row withdraws.
+    # Tokens that mean nothing else stay creditable: `icfr`, `itgc`,
+    # `reperform`, `reperformance`, `workpaper`.
+    "internal-audit": frozenset(
+        {
+            "404",
+            "attribute",
+            "audit",
+            "control",
+            "controls",
+            "deficiency",
+            "duties",
+            "evidence",
+            "internal",
+            "material",
+            "performance",
+            "population",
+            "sampling",
+            "segregation",
+            "severity",
+            "significant",
+            "sox",
+            "test",
+            "testing",
+            "tests",
+            "weakness",
+        }
+    ),
     # `mobile-release` is built from "app", "store", "play", "google",
     # "release", "code", "signing", "privacy", "data", "safety", "form",
     # "review", "track" and "android" -- a phone's store app, a gift card, a
@@ -4170,6 +4254,9 @@ def _score_definition(
     if definition.name == "release-cut" and _release_cut_explicit_match(normalized_query):
         score += 30
         matched.add("direct:release_cut")
+    if definition.name == "internal-audit" and _internal_audit_explicit_match(normalized_query):
+        score += 30
+        matched.add("direct:internal_audit")
     if definition.name == "mobile-release" and _mobile_release_explicit_match(normalized_query):
         score += 30
         matched.add("direct:mobile_release")
@@ -4994,6 +5081,10 @@ def _relational_db_explicit_match(normalized_query: str) -> bool:
 
 def _release_cut_explicit_match(normalized_query: str) -> bool:
     return any(_explicit_phrase_match(normalized_query, phrase) for phrase in _RELEASE_CUT_EXPLICIT_PHRASES)
+
+
+def _internal_audit_explicit_match(normalized_query: str) -> bool:
+    return any(_explicit_phrase_match(normalized_query, phrase) for phrase in _INTERNAL_AUDIT_EXPLICIT_PHRASES)
 
 
 def _mobile_release_explicit_match(normalized_query: str) -> bool:

@@ -96,6 +96,8 @@ NEXT_ACTION_LABELS: dict[str, str] = {
     "show_promotion_gate": "showing the checkpoint promotion gate",
     "prepare_mobile_release_plan": "preparing a store release plan",
     "show_rollout_halt": "showing the rollout halt thresholds",
+    "prepare_control_test_plan": "preparing a control test plan",
+    "show_severity_grade": "showing the criteria behind the severity grade",
     "prepare_release_plan": "preparing a release plan",
     "show_release_readiness": "showing the release readiness verdict",
     "prepare_accessibility_audit": "preparing an accessibility audit",

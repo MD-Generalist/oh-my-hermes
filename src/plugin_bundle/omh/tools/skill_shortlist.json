@@ -38,7 +38,7 @@
 }
 },
 {
-"anchors":"10k engineer exhaustion feedback goal good horizon improv iterat known long met never permission profil resum star stop token until yet",
+"anchors":"10k engineer exhaustion feedback goal good horizon improv iterat known long met permission profil resum star stop token until yet",
 "hangul":"계속 고갈 까지 끝까 끝날 돌려 드백 때까 루프 목표 장기 토큰 피드",
 "hangul_anchors":"계속 고갈 까지 끝까 끝날 돌려 드백 때까 루프 목표 장기 토큰 피드",
 "label":"ulw-loop",
@@ -1599,6 +1599,22 @@
 }
 },
 {
+"anchors":"access actually auditor bad committee creat enough entry found happen icfr invoic itgc journal payment person proof pull quarterly re reconciliation reperform reperformanc three unapprov vendor workpaper",
+"hangul":"",
+"hangul_anchors":"",
+"label":"omh-internal-audit",
+"name":"internal-audit",
+"situation":"Testing an internal control -- SOX, ICFR or ITGC",
+"terms":{
+"1":"assertion compensat decid defin deriv design failur general itself ledger likelihood magnitud name never noth output owner prov read record transaction whether",
+"2":"404 access actually approv attribut auditor bad check committee creat criteria duty enough entry external fail found grad happen invoic item journal payment perform person proof pull quarterly reperform reperformanc report review segregation stat step three unapprov vendor workpaper",
+"3":"approval itgc material performanc reconciliation severity significant weakness",
+"4":"control deficiency evidenc icfr population re sox test",
+"6":"sampl",
+"7":"audit internal"
+}
+},
+{
 "anchors":"bad five number percent restor semver send yesterday",
 "hangul":"",
 "hangul_anchors":"",
@@ -1633,7 +1649,7 @@
 }
 },
 {
-"anchors":"activation campaign churn come conversion engagement experiment growth holdout increas journey led lifecycl market messag monetization never nudg onboard paid re referral retention sign trial win",
+"anchors":"activation campaign churn come conversion engagement experiment growth holdout increas journey led lifecycl market messag monetization nudg onboard paid re referral retention sign trial win",
 "hangul":"그로 라이 로스 마케 보딩 사이 실험 여정 온보 이클 이프 케팅 프사",
 "hangul_anchors":"그로 라이 로스 마케 보딩 사이 실험 여정 온보 이클 이프 케팅 프사",
 "label":"omh-lifecycle-growth",
@@ -1886,7 +1902,7 @@
 }
 },
 {
-"anchors":"approv attach attachment client deck deliver deliverabl document generat mode pdf thread",
+"anchors":"attach attachment client deck deliver deliverabl document generat mode pdf thread",
 "hangul":"상태 전달 첨부",
 "hangul_anchors":"상태 전달 첨부",
 "label":"omh-deliverable-package",

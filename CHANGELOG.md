@@ -4,6 +4,26 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **Internal-control testing has an owner: `omh-internal-audit`.** "is this a
+  significant deficiency or a material weakness", "reperform the bank
+  reconciliation control for march" and "how many samples do we need to test
+  a daily control for icfr" used to get a direct answer or a question led by
+  an unrelated skill. They now dispatch to a skill that derives the grade
+  instead of asserting it:
+  - `control_under_test/v1` and `sample_design/v1` define the population,
+    check its completeness, and size the sample from the control's frequency;
+  - `evidence_request/v1` and `reperformance_record/v1` separate evidence
+    obtained from evidence described and re-perform each item;
+  - `deficiency_severity_grade/v1` shows the stated likelihood, magnitude
+    against materiality and compensating controls beside the grade, and
+    withholds the grade when one is missing.
+
+  The sample-size table, the evidence hierarchy and the severity decision
+  table load on demand from `references/control-audit-method.md`. The Red
+  Sox, a lack of internal control over snacking, factory quality control and
+  a bridge's material weakness stay away. OMH reads no ledger and signs off
+  nothing (#1569).
+
 - **Store releases have an owner: `omh-mobile-release`.** "we are shipping
   3.2 to the app store and google play next week", "our testflight build is
   stuck in beta review" and "set up code signing and provisioning profiles for

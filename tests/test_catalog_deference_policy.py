@@ -231,9 +231,13 @@ NON_SKILL_BACKTICKS = frozenset(
 # `mobile-release` (#1568) defers to `release-cut`, `deploy-and-monitor`,
 # `production-audit`, and `app-debugging`, and `release-cut` gains the
 # statement pointing back. Five cases, five pairs, one owner.
-EXPECTED_DEFERENCE_CASES = 321
-EXPECTED_DEFERENCE_PAIRS = 332
-EXPECTED_DEFERRING_OWNERS = 90
+# `internal-audit` (#1569) defers to `finance-analysis`,
+# `legal-compliance-review`, `production-audit`, and `tech-debt-audit`, and
+# `finance-analysis` gains the statement pointing back. Five cases, five
+# pairs, one owner.
+EXPECTED_DEFERENCE_CASES = 326
+EXPECTED_DEFERENCE_PAIRS = 337
+EXPECTED_DEFERRING_OWNERS = 91
 
 # The ratchet. Recording a new inversion must be a visible edit to this number,
 # not one more dict line with a plausible sentence attached.
