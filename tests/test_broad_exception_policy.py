@@ -93,6 +93,13 @@ CLASSIFIED_SITES: tuple[ClassifiedSite, ...] = (
         "reader error can only remove the tool, never enable a send.",
     ),
     ClassifiedSite(
+        "src/plugin_bundle/omh/tools/team_tool.py",
+        "_host_floor",
+        INTENTIONAL,
+        "Hermes' own command floor raising is not a yes: the team command is refused with the named "
+        "reason host_command_floor_unavailable, so a check is never run past a floor that failed.",
+    ),
+    ClassifiedSite(
         "src/plugin_bundle/omh/tools/jev_ask_tool.py",
         "jev_ask_available",
         INTENTIONAL,
@@ -462,8 +469,8 @@ CLASSIFIED_SITES: tuple[ClassifiedSite, ...] = (
 # function. `_write_candidate_batch`, `_is_catalog_question`, `pre_llm_call`,
 # `_resume_unlocked`, and `_execute_cell` each hold two handlers, so the handler
 # count is five above the anchor count.
-EXPECTED_HANDLER_COUNT = 48
-EXPECTED_ANCHOR_COUNT = 43
+EXPECTED_HANDLER_COUNT = 49
+EXPECTED_ANCHOR_COUNT = 44
 
 
 class DerivedSite(NamedTuple):

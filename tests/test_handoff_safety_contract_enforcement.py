@@ -1438,6 +1438,16 @@ class NoRemoteMutation(unittest.TestCase):
         commands += [f"git -C checkout {verb}" for verb in sorted(FORBIDDEN_GIT_VERBS)]
         commands += ["sh run.sh", "bash -x run.sh", "zsh run.sh", "env A=1 pytest", "python -c print",
                      "python3 -c print", "uv run bash run.sh"]
+        # Probes from the #1931 security review. The first four executed a
+        # file write under the earlier name-only policy.
+        commands += [
+            'git -c "alias.x=!touch F" x', 'perl -e "system q[touch F]"', "ruby -e \"system 'touch F'\"",
+            'python -Ic "import os"', "node -e 1", "osascript -e beep", "rm -rf /", "sudo pytest",
+            "ssh host pytest", "curl -X POST https://api.github.com/repos/o/r/issues", "npm publish",
+            "uv publish", "twine upload dist/x.whl", "docker push image", "python -m pip install x", "npx pkg",
+            "npm install", "uv pip install x", "git reset --hard", "git clean -fdx", "git checkout main",
+            "git commit -m x", "git -C /tmp status", "mv a b", "chmod 777 a", "chown me a", "dd if=a of=b",
+        ]
         for command in commands:
             with self.subTest(command=command):
                 with self.assertRaises(
@@ -1447,6 +1457,12 @@ class NoRemoteMutation(unittest.TestCase):
                     "src/workflows/team.py `validate_team_command`.",
                 ):
                     validate_team_command(command)
+        # A policy that refused everything would pass the loop above; these
+        # ordinary test commands must stay approvable.
+        for command in ("pytest -q", "python -m pytest", "python -m unittest", "npm test", "make test",
+                        "cargo test", "go test ./..."):
+            with self.subTest(command=command):
+                self.assertEqual(validate_team_command(command), command.split())
 
 
 # --------------------------------------------------------------------------

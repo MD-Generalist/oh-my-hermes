@@ -22,14 +22,24 @@ from .. import runtime_paths
 from ..host_observation import host_session_id
 
 KANBAN_TASK_ENV = "HERMES_KANBAN_TASK"
+# Hermes marks a cron run with this; its approval can be an automatic `approve`.
+CRON_SESSION_ENV = "HERMES_CRON_SESSION"
 _OUTPUT_TAIL_CHARS = 4000
+
+# Process memory, never disk (`omh.workflows.team.TeamContext`): the exact
+# command lists a person approved through the host gate since this Hermes
+# started, keyed (durable session, team_id, commands_digest), and the nonce of
+# every check this process ran. Only a successful `team_start` below adds to
+# the first, and the host runs that handler only after its approval gate.
+_APPROVED_TEAMS: set[tuple[str, str, str]] = set()
+_OBSERVED_CHECKS: set[str] = set()
 
 OMH_TEAM_SCHEMA = {
     "name": "omh_team",
     "description": (
         "Run an accepted plan as parallel helper parts that each count as done only when OMH runs "
         "that part's check command itself and it exits 0. team_start needs the accepted plan's "
-        "plan_ref and a check command written word for word in that plan; the person approves the "
+        "plan_ref and each check command written in that plan as check: `<command>`; the person approves the "
         "command list. Dispatch the returned delegate_task entries unchanged, call team_reconcile "
         "after helpers return, and follow its fix-up entries until team_state is done or blocked. "
         "Relay each say line; events newer than since_seq describe each helper's progress."
@@ -92,8 +102,13 @@ def omh_team_handler(args: Mapping[str, object], **kwargs: object) -> str:
             return _refused(action, "session_required", "A team needs a named chat session.")
         ctx = team.TeamContext(
             omh_home=omh_home, session_ref=durable, runner=_runner(team),
-            fingerprint=_fingerprint, now=_now,
+            fingerprint=_fingerprint, now=_now, host_guard=_host_floor,
+            approved=_APPROVED_TEAMS, observed_checks=_OBSERVED_CHECKS,
         )
+        if action == "team_start" and _cron_session():
+            # A cron run's approval can be answered by `approve` mode with no
+            # person reading the command list.
+            return _refused(action, "called_from_cron", "A scheduled run cannot start a team; start it in a chat.")
         if action == "team_start":
             plan = dict(read_omh_todo(omh_home, hermes_home, session_ref=session))
             plan["items_digest"] = todo_items_digest(plan.get("items"))
@@ -111,6 +126,7 @@ def omh_team_handler(args: Mapping[str, object], **kwargs: object) -> str:
                     # verbatim command match and the person's own prompt.
                     payload["plan_ref"] = plan["items_digest"]
                 return json.dumps(payload, sort_keys=True)
+            _APPROVED_TEAMS.add((durable, str(result["team_id"]), str(result["commands_digest"])))
         elif action == "team_reconcile":
             result = team.team_reconcile(ctx, team_id=args.get("team_id"), since_seq=args.get("since_seq", 0))
         else:
@@ -122,6 +138,38 @@ def omh_team_handler(args: Mapping[str, object], **kwargs: object) -> str:
     except (runtime_paths.RuntimeBindingError, OSError, ValueError):
         # Never echo exception strings, paths or command output.
         return _refused(action, "team_store_unavailable", "The team record could not be reached.")
+    except (KeyError, TypeError):
+        # A record that passed the shape check yet misses a field it is read by.
+        return _refused(action, "team_store_unreadable", "The team record could not be read.")
+
+
+def _host_floor(command: str) -> str | None:
+    """Hermes' own command floor and the person's `approvals.deny`, or a refusal.
+
+    The plugin runs inside the Hermes process, so `tools.approval` is the
+    host's own module: its hardline floor ("never, even under yolo") and the
+    operator's deny rules. Without it there is no second layer, and no team
+    command is allowed at all.
+    """
+    try:
+        from tools.approval import _floor_block, _user_deny_block
+    except ImportError:
+        return "host_command_floor_unavailable"
+    try:
+        if _floor_block(command) is not None or _user_deny_block(command) is not None:
+            return "command_refused_by_host"
+    except Exception:
+        # A floor that raises has not said yes: fail closed, reason only.
+        return "host_command_floor_unavailable"
+    return None
+
+
+def _cron_session() -> bool:
+    try:
+        from tools.approval_context import _is_cron_approval_context
+    except ImportError:
+        return os.environ.get(CRON_SESSION_ENV, "").strip().lower() in ("1", "true", "yes", "on")
+    return bool(_is_cron_approval_context())
 
 
 def _runner(team: Any) -> Any:

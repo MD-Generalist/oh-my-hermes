@@ -13,10 +13,12 @@ import json
 import os
 from pathlib import Path
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest import mock
 
 from _local_package import load_local_package
+from _module_patch import patch_modules
 
 load_local_package()
 
@@ -32,7 +34,7 @@ SESSION = "20260928_120000_team01"
 
 
 def plan_for(*commands: str, stage: str = "accepted", own: bool = True) -> dict[str, object]:
-    items = [{"text": f"Part {index}: check with {command}", "state": "pending"}
+    items = [{"text": f"Part {index}: check: `{command}`", "state": "pending"}
              for index, command in enumerate(commands, start=1)]
     plan: dict[str, object] = {"own_record": own, "status": "established", "items": items}
     if stage:
@@ -78,6 +80,10 @@ class TeamHarness(unittest.TestCase):
         self.clock = 1_790_000_000.0
         self.runner = FakeRunner({CHECK_A: [exited(0)], CHECK_B: [exited(0)], CHECK_C: [exited(0)]})
         self.fingerprints: list[tuple[str, str | None]] = []
+        # Process memory (`TeamContext`): one set pair per simulated Hermes process.
+        self.approved: set[tuple[str, str, str]] = set()
+        self.observed: set[str] = set()
+        self.host_refuses: dict[str, str] = {}
 
     def now(self) -> float:
         self.clock += 1.0
@@ -86,18 +92,30 @@ class TeamHarness(unittest.TestCase):
     def fingerprint(self, workdir: Path) -> tuple[str, str | None]:
         return self.fingerprints.pop(0) if self.fingerprints else ("clean", "tree-1")
 
+    def host_guard(self, command: str) -> str | None:
+        return self.host_refuses.get(command)
+
+    def restart(self) -> None:
+        """A new Hermes process: nothing approved, no check observed."""
+        self.approved = set()
+        self.observed = set()
+
     @property
     def ctx(self) -> team.TeamContext:
         return team.TeamContext(omh_home=self.home, session_ref=SESSION, runner=self.runner,
-                                fingerprint=self.fingerprint, now=self.now)
+                                fingerprint=self.fingerprint, now=self.now, host_guard=self.host_guard,
+                                approved=self.approved, observed_checks=self.observed)
 
     def start(self, units: list[dict[str, object]], *, plan: dict[str, object] | None = None,
               **extra: object) -> dict[str, object]:
         commands = [str(item["verification_command"]) for item in units]
         plan = plan if plan is not None else plan_for(*commands)
-        return team.team_start(self.ctx, team_id="t1", units=units, plan=plan,
-                               plan_ref=extra.pop("plan_ref", plan["items_digest"]),
-                               workdir=self.workdir, **extra)
+        result = team.team_start(self.ctx, team_id="t1", units=units, plan=plan,
+                                 plan_ref=extra.pop("plan_ref", plan["items_digest"]),
+                                 workdir=self.workdir, **extra)
+        # What the handler does once the host's approval gate let the call through.
+        self.approved.add((SESSION, "t1", result["commands_digest"]))
+        return result
 
     def dispatch_all(self, result: dict[str, object]) -> list[str]:
         """Play the host: start every returned helper, then report each back."""
@@ -425,14 +443,26 @@ class T10ResumeReEmitsWhatWasReserved(TeamHarness):
 
     def test_restart_re_emits_the_identical_reserved_entries(self) -> None:
         first = self.start([unit("a", CHECK_A), unit("b", CHECK_B)])
+        self.restart()
         again = self.start([unit("a", CHECK_A), unit("b", CHECK_B)])
         self.assertEqual(self.entries(again), self.entries(first))
         self.assertIn("already running", again["say"])
 
+    def test_a_repeat_start_in_the_same_process_does_not_hand_out_entries_in_flight(self) -> None:
+        """L4. Mutation: drop the emitted-but-not-started grace from `_reemit` or from the barrier."""
+        self.start([unit("a", CHECK_A)])
+        self.assertEqual(self.entries(self.start([unit("a", CHECK_A)])), [])
+        waiting = self.reconcile()
+        self.assertEqual((waiting["reason"], self.entries(waiting)), ("delegations_in_flight", []))
+        self.clock += team.EMIT_GRACE_SECONDS
+        self.assertEqual(len(self.entries(self.reconcile())), 1)
+
     def test_undispatched_attempts_block_after_the_re_emit_bound(self) -> None:
         self.start([unit("a", CHECK_A)])
         for _ in range(team.MAX_REEMITS):
+            self.clock += team.EMIT_GRACE_SECONDS
             self.assertEqual(len(self.entries(self.reconcile())), 1)
+        self.clock += team.EMIT_GRACE_SECONDS
         result = self.reconcile()
         self.assertEqual(result["units"][0]["blocked"]["reason"], "dispatch_not_observed")
 
@@ -569,35 +599,90 @@ class TeamEventsAreRenderable(TeamHarness):
         self.assertFalse(team._events_since(record, 6)["events_truncated"])
 
 
+def fake_hermes_floor(blocked: frozenset[str] = frozenset(), *, cron: bool = False,
+                      raises: bool = False) -> dict[str, object]:
+    """`tools.approval` / `tools.approval_context` as the Hermes process would provide them."""
+    def floor(command: str) -> dict[str, object] | None:
+        if raises:
+            raise RuntimeError("floor exploded")
+        return {"approved": False} if command in blocked else None
+
+    approval = SimpleNamespace(_floor_block=floor, _user_deny_block=lambda command: None)
+    context = SimpleNamespace(_is_cron_approval_context=lambda: cron)
+    return {"tools": SimpleNamespace(approval=approval, approval_context=context),
+            "tools.approval": approval, "tools.approval_context": context}
+
+
 class TeamToolHandler(unittest.TestCase):
-    """The plugin handler end to end: plan read, start, and the cost read on status."""
+    """The plugin handler end to end: plan read, start, the host floor, and process-memory approval."""
+
+    SESSION = "20260928_130000_handler"
 
     def setUp(self) -> None:
-        nudge_budget.reset_nudge_budget()
-        self.addCleanup(nudge_budget.reset_nudge_budget)
-        temporary = tempfile.TemporaryDirectory()
-        self.addCleanup(temporary.cleanup)
-        self.workdir = Path(temporary.name)
-
-    def test_start_reads_this_sessions_accepted_plan_and_hands_back_the_plan_ref(self) -> None:
         from omh.plugin_bundle.omh import runtime_paths
         from omh.plugin_bundle.omh.todo_store import build_todo_record, write_todo
         from omh.plugin_bundle.omh.tools import team_tool
 
-        session = "20260928_130000_handler"
-        record = build_todo_record("Team plan", [{"text": f"Build it; check {CHECK_A}", "state": "active"}],
-                                   source="omh_todo", session_ref=session, plan_stage="accepted")
+        nudge_budget.reset_nudge_budget()
+        self.addCleanup(nudge_budget.reset_nudge_budget)
+        for memory in (team_tool._APPROVED_TEAMS, team_tool._OBSERVED_CHECKS):
+            memory.clear()
+            self.addCleanup(memory.clear)
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.workdir = Path(temporary.name)
+        self.team_tool = team_tool
+        record = build_todo_record("Team plan", [{"text": f"Build it; check: `{CHECK_A}`", "state": "active"}],
+                                   source="omh_todo", session_ref=self.SESSION, plan_stage="accepted")
         write_todo(runtime_paths.default_omh_home(), record)
-        args = {"action": "team_start", "team_id": "handler", "units": [unit("a", CHECK_A)], "plan_ref": "x"}
-        with mock.patch.dict(os.environ, {"HERMES_KANBAN_TASK": ""}), \
-                mock.patch.object(runtime_paths, "runtime_cwd", return_value=self.workdir):
-            refused = json.loads(team_tool.omh_team_handler(args, session_id=session))
-            self.assertEqual(refused["reason"], "plan_ref_mismatch")
-            started = json.loads(team_tool.omh_team_handler({**args, "plan_ref": refused["plan_ref"]},
-                                                            session_id=session))
+        self.args = {"action": "team_start", "team_id": "handler", "units": [unit("a", CHECK_A)],
+                     "plan_ref": todo_items_digest(record["items"])}
+        env = mock.patch.dict(os.environ, {"HERMES_KANBAN_TASK": "", "HERMES_CRON_SESSION": ""})
+        cwd = mock.patch.object(runtime_paths, "runtime_cwd", return_value=self.workdir)
+        env.start()
+        cwd.start()
+        self.addCleanup(env.stop)
+        self.addCleanup(cwd.stop)
+
+    def call(self, args: dict[str, object], hermes: dict[str, object] | None = None) -> dict[str, object]:
+        with patch_modules(hermes if hermes is not None else fake_hermes_floor()):
+            return json.loads(self.team_tool.omh_team_handler(args, session_id=self.SESSION))
+
+    def test_start_reads_this_sessions_accepted_plan_and_hands_back_the_plan_ref(self) -> None:
+        refused = self.call({**self.args, "plan_ref": "x"})
+        self.assertEqual(refused["reason"], "plan_ref_mismatch")
+        started = self.call({**self.args, "plan_ref": refused["plan_ref"]})
         self.assertEqual(started["status"], "ok")
         self.assertEqual(started["team_state"], "running")
         self.assertEqual(len(started["delegate_task"]["arguments"]["tasks"]), 1)
+
+    def test_no_reachable_hermes_floor_refuses_every_start(self) -> None:
+        """H1(f). Mutation: let `_host_floor` return None when `tools.approval` cannot be imported."""
+        missing = self.call(self.args, hermes={"tools": SimpleNamespace()})
+        self.assertEqual((missing["status"], missing["reason"]), ("refused", "host_command_floor_unavailable"))
+        raising = self.call(self.args, hermes=fake_hermes_floor(raises=True))
+        self.assertEqual(raising["reason"], "host_command_floor_unavailable")
+        self.assertEqual(self.team_tool._APPROVED_TEAMS, set())
+
+    def test_the_hermes_floor_refuses_a_command_it_blocks(self) -> None:
+        """H1(f). Mutation: ignore `_floor_block`'s answer."""
+        refused = self.call(self.args, hermes=fake_hermes_floor(frozenset({CHECK_A})))
+        self.assertEqual((refused["status"], refused["reason"]), ("refused", "command_refused_by_host"))
+
+    def test_a_cron_session_cannot_start_a_team(self) -> None:
+        """M3. Mutation: drop the cron refusal."""
+        refused = self.call(self.args, hermes=fake_hermes_floor(cron=True))
+        self.assertEqual((refused["status"], refused["reason"]), ("refused", "called_from_cron"))
+
+    def test_only_a_start_in_this_process_approves_a_reconcile(self) -> None:
+        """H2. Mutation: add to `_APPROVED_TEAMS` anywhere but after a successful start, or not at all."""
+        reconcile = {"action": "team_reconcile", "team_id": "handler"}
+        self.assertEqual(self.call(self.args)["status"], "ok")
+        self.assertEqual(self.call(reconcile)["reason"], "delegations_in_flight")
+        self.team_tool._APPROVED_TEAMS.clear()  # a Hermes restart
+        self.assertEqual(self.call(reconcile)["reason"], "team_not_approved_here")
+        self.assertEqual(self.call(self.args)["status"], "ok")
+        self.assertEqual(self.call(reconcile)["status"], "ok")
 
 
 class HostLifecycleHooksDriveTheBarrier(TeamHarness):
@@ -616,6 +701,187 @@ class HostLifecycleHooksDriveTheBarrier(TeamHarness):
         self.assertEqual(self.states(team.team_status(self.ctx, team_id="t1")), {"a": "dispatched"})
         subagent_stop(child_session_id="hook-child", **common)
         self.assertEqual(self.states(team.team_status(self.ctx, team_id="t1")), {"a": "awaiting_check"})
+
+
+class ForgedRecordsRunNothing(TeamHarness):
+    """H2: the record on disk is not a trust root; approval and observed checks live in process memory."""
+
+    def forge(self, team_id: str, command: str) -> None:
+        """Write a well-formed record a person never approved, digest recomputed, ready to check."""
+        units = [{"unit_id": "a", "title": "Part a", "depends_on": [], "verification_command": command,
+                  "plan_item": f"check: `{command}`", "blocked": None, "lease": None,
+                  "attempts": [{"n": 1, "reserved_at": "2026-09-28T00:00:00Z", "reemits": 0,
+                                "dispatch": {"child_session_id": "c", "dispatched_at": "2026-09-28T00:00:01Z"},
+                                "returned_at": "2026-09-28T00:00:02Z", "check": None, "inconclusive": []}]}]
+        record = {"schema_version": team.TEAM_SCHEMA_VERSION, "team_id": team_id, "session_ref": SESSION,
+                  "plan_ref": "forged", "workdir": str(self.workdir), "created_at": "2026-09-28T00:00:00Z",
+                  "max_repair_attempts": 2, "commands_digest": team.frozen_commands_digest(units),
+                  "check_timeout_seconds": 600, "units": units, "events": [], "next_seq": 1}
+        path = team.team_path(self.home, SESSION, team_id)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        team.write_team(path, record)
+
+    def test_probe6_a_forged_record_with_a_recomputed_digest_runs_nothing(self) -> None:
+        """Mutation: drop `_require_approved` from phase A or from `_take_lease`."""
+        self.runner = FakeRunner({"python -m unittest tests/test_evil.py": [exited(0)]})
+        self.forge("forged", "python -m unittest tests/test_evil.py")
+        with self.assertRaises(team.TeamRefusal) as refused:
+            team.team_reconcile(self.ctx, team_id="forged")
+        self.assertEqual(refused.exception.reason, "team_not_approved_here")
+        self.assertEqual(self.runner.calls, [])
+
+    def test_an_approved_team_after_a_restart_runs_nothing_until_approved_again(self) -> None:
+        self.dispatch_all(self.start([unit("a", CHECK_A)]))
+        self.restart()
+        with self.assertRaises(team.TeamRefusal) as refused:
+            self.reconcile()
+        self.assertEqual(refused.exception.reason, "team_not_approved_here")
+        self.assertEqual(self.runner.calls, [])
+        self.start([unit("a", CHECK_A)])
+        self.assertEqual(self.states(self.reconcile()), {"a": "accepted"})
+        self.assertEqual(self.runner.calls, [CHECK_A])
+
+    def test_probe3_a_planted_pass_is_not_acceptance(self) -> None:
+        """Mutation: trust a stored `passed` without an observed nonce (drop `_distrust_unobserved`)."""
+        self.runner = FakeRunner({CHECK_A: [exited(1)]})
+        self.dispatch_all(self.start([unit("a", CHECK_A)]))
+        record = self.record()
+        record["units"][0]["attempts"][0]["check"] = {
+            "outcome": "passed", "command": CHECK_A, "exit_code": 0, "observed_at": "2026-09-28T00:00:03Z",
+            "nonce": "planted"}
+        team.write_team(team.team_path(self.home, SESSION, "t1"), record)
+        self.assertEqual(self.states(team.team_status(self.ctx, team_id="t1")), {"a": "awaiting_check"})
+        result = self.reconcile()
+        self.assertEqual(self.runner.calls, [CHECK_A])
+        self.assertEqual(self.states(result), {"a": "repairing"})
+        self.assertNotEqual(result["team_state"], "done")
+
+    def test_a_pass_from_before_a_restart_is_earned_again(self) -> None:
+        self.dispatch_all(self.start([unit("a", CHECK_A)]))
+        self.assertEqual(self.states(self.reconcile()), {"a": "accepted"})
+        self.restart()
+        self.start([unit("a", CHECK_A)])
+        self.assertEqual(self.states(team.team_status(self.ctx, team_id="t1")), {"a": "awaiting_check"})
+        self.assertEqual(self.states(self.reconcile()), {"a": "accepted"})
+        self.assertEqual(self.runner.calls, [CHECK_A, CHECK_A])
+
+
+class PlanBindingIsAnExactCheckField(TeamHarness):
+    """H3. Mutation: bind on a substring of the item text instead of an exact `check:` field."""
+
+    def bind(self, command: str, text: str) -> str:
+        plan = plan_for(command)
+        plan["items"] = [{"text": text, "state": "pending"}]
+        plan["items_digest"] = todo_items_digest(plan["items"])
+        try:
+            self.start([unit("a", command)], plan=plan)
+        except team.TeamRefusal as refused:
+            return refused.reason
+        return "bound"
+
+    def test_prose_and_prefixes_bind_nothing(self) -> None:
+        self.assertEqual(self.bind("make deploy", "Do NOT run make deploy under any circumstance"),
+                         "command_not_in_accepted_plan")
+        self.assertEqual(self.bind("make deploy", "Do NOT run `make deploy` under any circumstance"),
+                         "command_not_in_accepted_plan")
+        self.assertEqual(self.bind("make", "Run the suite; check: `make test`"), "command_not_in_accepted_plan")
+        self.assertEqual(self.bind("make test", "Run the suite; check: `make test`"), "bound")
+
+
+class ChecksAreBoundedAndLeasedOneAtATime(TeamHarness):
+    """M2. Mutation: lease every unit up front, or drop MAX_CHECKS_PER_RECONCILE."""
+
+    def test_one_reconcile_runs_at_most_the_cap_and_leases_each_just_before_it_runs(self) -> None:
+        self.dispatch_all(self.start([unit("a", CHECK_A), unit("b", CHECK_B), unit("c", CHECK_C)]))
+        leases_while_a_ran: list[object] = []
+        self.runner.during = lambda: leases_while_a_ran.extend(
+            item["lease"] for item in self.record()["units"])
+        first = self.reconcile()
+        self.assertEqual(self.runner.calls, [CHECK_A, CHECK_B][:team.MAX_CHECKS_PER_RECONCILE])
+        self.assertEqual(first["reason"], "checks_pending")
+        self.assertIsNotNone(leases_while_a_ran[0])
+        self.assertEqual(leases_while_a_ran[1:], [None, None])
+        self.assertEqual(self.states(self.reconcile()), {"a": "accepted", "b": "accepted", "c": "accepted"})
+        self.assertEqual(self.runner.calls, [CHECK_A, CHECK_B, CHECK_C])
+
+
+class InconclusiveOutsideGitAndOnASignal(TeamHarness):
+    """M1 and L2. Mutation: run the check in a non-git workspace, or read a signal exit as a failure."""
+
+    def test_a_workspace_outside_git_is_inconclusive_and_runs_nothing(self) -> None:
+        self.dispatch_all(self.start([unit("a", CHECK_A)]))
+        for state in ("not_a_repository", "unsupported", "not_a_repository"):
+            self.fingerprints = [(state, None)]
+            result = self.reconcile()
+        self.assertEqual(self.runner.calls, [])
+        self.assertEqual(result["units"][0]["attempts_used"], 1)
+        self.assertEqual(result["units"][0]["blocked"],
+                         {"reason": "check_inconclusive", "last_reason": "workspace_not_tracked",
+                          "observed_at": result["units"][0]["blocked"]["observed_at"]})
+
+    def test_a_negative_return_code_is_inconclusive(self) -> None:
+        self.runner = FakeRunner({CHECK_A: [exited(-9), exited(0)]})
+        self.dispatch_all(self.start([unit("a", CHECK_A)]))
+        killed = self.reconcile()
+        self.assertEqual((self.states(killed), killed["units"][0]["attempts_used"]), ({"a": "awaiting_check"}, 1))
+        self.assertIn("stopped by a signal", killed["say"])
+        self.assertEqual(self.states(self.reconcile()), {"a": "accepted"})
+
+
+class HostFloorAtStartAndAtRun(TeamHarness):
+    """H1(f) in the engine. Mutation: skip `host_guard` at start or before a check runs."""
+
+    def test_a_command_the_host_refuses_never_starts(self) -> None:
+        self.host_refuses[CHECK_A] = "command_refused_by_host"
+        with self.assertRaises(team.TeamRefusal) as refused:
+            self.start([unit("a", CHECK_A)])
+        self.assertEqual(refused.exception.reason, "command_refused_by_host")
+
+    def test_a_command_the_host_refuses_later_blocks_without_running(self) -> None:
+        self.dispatch_all(self.start([unit("a", CHECK_A)]))
+        self.host_refuses[CHECK_A] = "host_command_floor_unavailable"
+        result = self.reconcile()
+        self.assertEqual(self.runner.calls, [])
+        self.assertEqual(result["units"][0]["blocked"]["reason"], "host_command_floor_unavailable")
+
+
+class DamagedRecordsAreRefused(TeamHarness):
+    """L1. Mutation: drop `_record_shape_ok` from `read_team`."""
+
+    def test_a_record_missing_fields_is_a_refusal_not_a_crash(self) -> None:
+        self.dispatch_all(self.start([unit("a", CHECK_A)]))
+        path = team.team_path(self.home, SESSION, "t1")
+        good = self.record()
+        damages = {
+            "title missing": lambda r: r["units"][0].pop("title"),
+            "attempt number missing": lambda r: r["units"][0]["attempts"][0].pop("n"),
+            "next_seq missing": lambda r: r.pop("next_seq"),
+            "unknown parent": lambda r: r["units"][0].__setitem__("depends_on", ["ghost"]),
+            "event without a seq": lambda r: r["events"].append({"seq": "x", "event": "started"}),
+        }
+        for name, damage in damages.items():
+            record = json.loads(json.dumps(good))
+            damage(record)
+            path.write_text(json.dumps(record), encoding="utf-8", newline="\n")
+            for call in (self.reconcile, lambda: team.team_status(self.ctx, team_id="t1")):
+                with self.subTest(damage=name), self.assertRaises(team.TeamRefusal) as refused:
+                    call()
+                self.assertEqual(refused.exception.reason, "team_store_unreadable")
+
+
+class HiddenCharactersAreRefused(TeamHarness):
+    """L3. Mutation: drop `_HIDDEN_CHARACTERS` from the command or the title check."""
+
+    def test_bidi_and_zero_width_characters(self) -> None:
+        for character in ("\u202e", "\u2066", "\u200b", "\u200f"):
+            with self.subTest(character=repr(character)):
+                with self.assertRaises(team.TeamRefusal) as refused:
+                    team.validate_team_command(f"pytest{character} -q")
+                self.assertEqual(refused.exception.reason, "command_hidden_characters")
+                titled = {**unit("a", CHECK_A), "title": f"Part{character} a"}
+                with self.assertRaises(team.TeamRefusal) as refused:
+                    self.start([titled])
+                self.assertEqual(refused.exception.reason, "invalid_title")
 
 
 class AgentBoardStaysByteIdentical(unittest.TestCase):

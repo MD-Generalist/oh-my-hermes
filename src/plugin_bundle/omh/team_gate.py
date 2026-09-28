@@ -80,6 +80,7 @@ def team_start_directive(
         f"Start a team of {len(commands)} helper part(s)? When each part comes back, OMH runs its check "
         "below in this workspace, as your user account with your real home folder, so it runs code the "
         f"helpers wrote:\n{listed}\n"
+        "Each command must be written in the accepted plan as check: `<command>`, exactly. "
         "Approving allows exactly these commands for this team; denying starts nothing."
     )
     return {"action": "approve", "message": message, "rule_key": team_start_rule_key(commands)}

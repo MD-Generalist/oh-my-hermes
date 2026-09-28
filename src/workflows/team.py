@@ -18,8 +18,15 @@ summary or command output is stored -- a check keeps a digest of its output
 tail, never the tail.
 
 Team state (``running`` / ``done`` / ``blocked``) is never stored. It is
-derived from the units on every read (`team_state`), so no writer can declare
-a team finished.
+derived from the units on every read (`team_state`). The record is not a
+trust root: anyone who can write the file can also recompute its unkeyed
+``commands_digest``. So two facts live only in process memory
+(`TeamContext`): which exact command lists a person approved through the
+host's gate in this process, and the nonce of every check this process ran.
+`team_reconcile` runs nothing for a team whose digest is not in the first,
+and a check result whose nonce is not in the second is discarded on read and
+the check re-run -- a planted `passed` accepts nothing, and after a restart
+every pass is re-earned once the person has approved the team again.
 
 Attempts are write-ahead
 ------------------------
@@ -34,10 +41,13 @@ identifier OMH minted, looked up exactly, never text that is interpreted.
 Check outcomes
 --------------
 ``passed`` accepts the unit. ``failed`` (the command ran and exited non-zero)
-spends an attempt. ``inconclusive`` (timeout, command not found, missing
-workspace, or the working tree changed while the check ran) spends nothing,
-and three of them on one attempt block the unit with that reason so the team
-still reaches a stop.
+spends an attempt. ``inconclusive`` (timeout, command not found, killed by a
+signal, missing workspace, a workspace outside git, or the working tree
+changed while the check ran) spends nothing, and three of them on one attempt
+block the unit with that reason so the team still reaches a stop. ``refused``
+(the command policy or Hermes' own floor refuses it at run time) runs nothing
+and blocks the unit. One `team_reconcile` runs at most
+MAX_CHECKS_PER_RECONCILE checks, each leased just before it runs.
 
 What this does not see
 ----------------------
@@ -46,6 +56,10 @@ is, but a different unit's edits are in the same tree; the barrier (no check
 while any team delegation is in flight) narrows that, it does not remove it.
 A check executes code the helpers wrote, as the operator's OS user with the
 real HOME. Both are stated in `team_status` and in the approval prompt.
+The approval is the host's: under ``--yolo``, ``approvals.mode: off`` or a
+cron ``approve`` mode Hermes answers it without asking anyone. The command
+policy and Hermes' own floor still apply there, and `team_start` refuses in a
+cron session, but a person who turned approvals off has not seen the list.
 """
 from __future__ import annotations
 
@@ -87,6 +101,14 @@ MAX_REEMITS: Final = 3
 # A dispatched helper the host never reported returning is treated as lost
 # after this long; the unit blocks rather than holding the barrier forever.
 DELEGATION_STALE_SECONDS: Final = 4 * 3600
+# An entry handed out but not yet reported started by the host counts as in
+# flight for this long: the host fires `subagent_start` within seconds of a
+# `delegate_task` call, so a later reconcile neither checks around it nor hands
+# the same entry out twice. Past it, the entry is handed back (MAX_REEMITS).
+EMIT_GRACE_SECONDS: Final = 120
+# Checks one `team_reconcile` runs; the rest wait for the next call. Each check
+# can take TEAM_CHECK_TIMEOUT_SECONDS, so this bounds one turn at two of them.
+MAX_CHECKS_PER_RECONCILE: Final = 2
 MAX_TEAM_RECORD_BYTES: Final = 262_144
 MAX_TITLE_CHARS: Final = 80
 MAX_COMMAND_CHARS: Final = 200
@@ -94,7 +116,7 @@ UNIT_STATES: Final = (
     "waiting", "prepared", "dispatched", "awaiting_check", "repairing", "accepted", "blocked",
 )
 TEAM_STATES: Final = ("running", "done", "blocked")
-CHECK_OUTCOMES: Final = ("passed", "failed", "inconclusive")
+CHECK_OUTCOMES: Final = ("passed", "failed", "inconclusive", "refused")
 EVIDENCE_KIND: Final = "team_check"
 # Renderable team events: a header (`teammate` + `event`), one plain summary
 # line, and a `detail_ref` into this record. Append-only with a monotonic
@@ -112,14 +134,67 @@ TEAM_CAVEAT: Final = (
 # the one command-execution surface that does NOT go through the evidence
 # allowlist: a team command is approved by the person, not matched against a
 # prefix list, so these are refused by program wherever they appear in argv.
+# This is one layer. The handler also passes every command through Hermes'
+# own hardline floor and the person's `approvals.deny` rules before it is
+# frozen and again before it runs (`TeamContext.host_guard`), and refuses when
+# that floor cannot be reached.
 TEAM_FORGE_PROGRAMS: Final = frozenset({"gh", "hub", "glab", "tea"})
 TEAM_FORBIDDEN_GIT_VERBS: Final = frozenset({"push", "merge", "rebase", "remote", "fetch", "pull"})
-# A shell or `env` as the program turns one approved line into any line.
+# Git verbs that rewrite the local checkout or its history. A check reads the
+# tree; it never moves it.
+TEAM_GIT_MUTATING_VERBS: Final = frozenset({
+    "reset", "clean", "checkout", "commit", "switch", "restore", "stash", "am", "apply", "cherry-pick",
+    "revert", "tag", "branch", "config", "update-ref", "filter-branch", "submodule", "gc", "prune",
+})
+# `git -c alias.x=!cmd x` runs any program: configuration and a moved git
+# directory are refused as options, and `alias.` / `core.` wherever they appear.
+TEAM_GIT_CONFIG_OPTIONS: Final = frozenset({"-c", "-C", "--config", "--config-env", "--exec-path"})
+# A shell, `env` or `xargs` as the program turns one approved line into any line.
 TEAM_SHELL_PROGRAMS: Final = frozenset({
-    "sh", "bash", "zsh", "dash", "ksh", "fish", "csh", "tcsh", "env", "cmd", "cmd.exe",
+    "sh", "bash", "zsh", "dash", "ksh", "fish", "csh", "tcsh", "env", "xargs", "cmd", "cmd.exe",
     "powershell", "powershell.exe", "pwsh", "pwsh.exe",
 })
+# Interpreters whose options take program text inline. Any of these option
+# letters in a short cluster (`-e`, `-Ic`, `-ec`), a long `--eval` / `--print`
+# style option, or an `eval` subcommand is refused.
+TEAM_INTERPRETERS: Final = frozenset({
+    "perl", "ruby", "node", "nodejs", "deno", "bun", "php", "osascript", "lua", "luajit",
+})
+_INLINE_OPTION_LETTERS: Final = frozenset("ceEpr")
+_INLINE_LONG_OPTIONS: Final = ("--eval", "--print", "--command", "--exec")
+TEAM_PRIVILEGE_PROGRAMS: Final = frozenset({"sudo", "doas", "su"})
+TEAM_NETWORK_PROGRAMS: Final = frozenset({
+    "ssh", "scp", "sftp", "rsync", "curl", "wget", "nc", "ncat", "netcat", "socat", "telnet", "ftp",
+})
+TEAM_FILE_PROGRAMS: Final = frozenset({"rm", "rmdir", "mv", "chmod", "chown", "chgrp", "dd", "shred", "truncate"})
+# Programs whose only job is to fetch, install or publish a package.
+TEAM_PACKAGE_PROGRAMS: Final = frozenset({
+    "pip", "pip3", "pipx", "twine", "npx", "pnpx", "bunx", "uvx", "ensurepip",
+})
+# Package managers whose ordinary test verbs stay allowed, with the verbs that
+# install, run a fetched package, or publish.
+TEAM_PACKAGE_VERBS: Final[dict[str, frozenset[str]]] = {
+    "npm": frozenset({"publish", "unpublish", "install", "i", "ci", "add", "exec", "x", "link", "login",
+                      "adduser", "dist-tag", "owner", "access", "deprecate"}),
+    "pnpm": frozenset({"publish", "install", "i", "add", "dlx", "exec", "link", "login"}),
+    "yarn": frozenset({"publish", "install", "add", "dlx", "exec", "link", "login", "npm"}),
+    "bun": frozenset({"publish", "install", "i", "add", "x", "link", "pm"}),
+    "uv": frozenset({"publish", "pip", "tool", "add", "remove", "self"}),
+    "cargo": frozenset({"publish", "install", "login", "yank", "owner"}),
+    "poetry": frozenset({"publish", "add", "remove", "install", "self", "config"}),
+    "gem": frozenset({"push", "install", "owner", "yank", "signin"}),
+    "go": frozenset({"install", "get"}),
+    "docker": frozenset({"push", "login"}),
+    "podman": frozenset({"push", "login"}),
+}
+_FIND_ACTIONS: Final = frozenset({"-delete", "-exec", "-execdir", "-ok", "-okdir"})
 _SHELL_METACHARACTERS: Final = re.compile(r"[\n\r;&|`$<>(){}]")
+# Bidirectional overrides and zero-width characters make a line read
+# differently from what runs; refused in commands and titles.
+_HIDDEN_CHARACTERS: Final = re.compile("[​-‏‪-‮⁦-⁩  ﻿]")
+# The plan binding: a command is approved only as the exact text of a
+# `check: `<command>`` field in an accepted plan item.
+_CHECK_FIELD: Final = re.compile(r"check:\s*`([^`\n]+)`", re.IGNORECASE)
 _TEAM_ID: Final = re.compile(r"[a-z0-9][a-z0-9-]{0,47}")
 _UNIT_ID: Final = re.compile(r"[a-z0-9][a-z0-9_-]{0,47}")
 _MARKER: Final = re.compile(
@@ -127,6 +202,9 @@ _MARKER: Final = re.compile(
 )
 _CONTROL: Final = re.compile(r"[\x00-\x1f\x7f-\x9f]")
 _FINGERPRINT_UNAVAILABLE: Final = frozenset({"timed_out", "unavailable"})
+# Outside a git checkout the fingerprint cannot see a change, so a check there
+# is never conclusive: the team is for git workspaces.
+_FINGERPRINT_UNTRACKED: Final = frozenset({"not_a_repository", "unsupported"})
 
 
 class TeamRefusal(ValueError):
@@ -149,15 +227,29 @@ class CheckRun:
 
 Runner = Callable[[list[str], Path, int], CheckRun]
 Fingerprint = Callable[[Path], tuple[str, str | None]]
+# The host's own command floor: None to allow, else a refusal reason code.
+HostGuard = Callable[[str], str | None]
 
 
 @dataclass(frozen=True)
 class TeamContext:
+    """What one call needs. ``approved`` and ``observed_checks`` live in process memory.
+
+    ``approved`` holds ``(session_ref, team_id, commands_digest)`` for every
+    team whose `team_start` passed the host's approval gate in this process;
+    the handler adds to it and nothing else does. ``observed_checks`` holds the
+    nonce of every check this process ran. Neither is ever read from disk, so a
+    record written by anyone else can neither run a command nor carry a pass.
+    """
+
     omh_home: Path
     session_ref: str
     runner: Runner
     fingerprint: Fingerprint
     now: Callable[[], float]
+    host_guard: HostGuard
+    approved: set[tuple[str, str, str]]
+    observed_checks: set[str]
 
 
 # --------------------------------------------------------------------------
@@ -169,12 +261,15 @@ def validate_team_command(command: object) -> list[str]:
     """The argv of an approvable team check, or a refusal naming why not.
 
     Deliberately stricter than "not on a denylist": the command is refused when
-    ANY argv word is a forge program, a shell, or `git` followed by a verb that
-    moves a remote, because `uv run gh ...` runs `gh` just as surely as `gh`.
+    ANY argv word is a refused program, because `uv run gh ...` runs `gh` just
+    as surely as `gh`. The lists are one layer, not the boundary: the handler
+    also runs each command past Hermes' own floor (`TeamContext.host_guard`).
     """
     if not isinstance(command, str) or not command.strip():
         raise TeamRefusal("command_required", "Every part needs a check command.")
     text = command.strip()
+    if _HIDDEN_CHARACTERS.search(text):
+        raise TeamRefusal("command_hidden_characters", "A check command cannot contain invisible characters.")
     if len(text) > MAX_COMMAND_CHARS or _CONTROL.search(text):
         raise TeamRefusal("command_too_long", "A check command must be one short line.")
     if _SHELL_METACHARACTERS.search(text):
@@ -185,17 +280,52 @@ def validate_team_command(command: object) -> list[str]:
         raise TeamRefusal("command_unparseable", "A check command could not be read as one command.") from None
     if not tokens:
         raise TeamRefusal("command_required", "Every part needs a check command.")
-    names = [_program_name(token) for token in tokens]
-    for index, name in enumerate(names):
-        if name in TEAM_SHELL_PROGRAMS:
-            raise TeamRefusal("command_runs_a_shell", "A check command cannot start a shell.")
-        if name in TEAM_FORGE_PROGRAMS:
-            raise TeamRefusal("command_talks_to_a_forge", "A check command cannot call GitHub or another forge.")
-        if name == "git" and set(tokens[index + 1:]) & TEAM_FORBIDDEN_GIT_VERBS:
-            raise TeamRefusal("command_moves_a_remote", "A check command cannot push, pull, merge or rebase.")
-        if name.startswith("python") and "-c" in tokens[index + 1:]:
-            raise TeamRefusal("command_inline_program", "A check command cannot run inline Python code.")
+    for index, token in enumerate(tokens):
+        _refuse_program(_program_name(token), tokens[index + 1:])
     return tokens
+
+
+def _refuse_program(name: str, rest: list[str]) -> None:
+    """Refuse one argv word as a program, given every word after it."""
+    if name in TEAM_SHELL_PROGRAMS:
+        raise TeamRefusal("command_runs_a_shell", "A check command cannot start a shell.")
+    if name in TEAM_FORGE_PROGRAMS:
+        raise TeamRefusal("command_talks_to_a_forge", "A check command cannot call GitHub or another forge.")
+    if name in TEAM_PRIVILEGE_PROGRAMS:
+        raise TeamRefusal("command_escalates_privilege", "A check command cannot run as another user.")
+    if name in TEAM_NETWORK_PROGRAMS:
+        raise TeamRefusal("command_uses_the_network", "A check command cannot reach another machine.")
+    if name in TEAM_FILE_PROGRAMS or (name == "find" and set(rest) & _FIND_ACTIONS):
+        raise TeamRefusal("command_changes_files", "A check command cannot delete, move or re-permission files.")
+    if name in TEAM_PACKAGE_PROGRAMS or set(rest) & TEAM_PACKAGE_VERBS.get(name, frozenset()):
+        raise TeamRefusal("command_installs_or_publishes", "A check command cannot install or publish a package.")
+    if name == "git":
+        _refuse_git(rest)
+    if name.startswith(("python", "pypy")):
+        # Python's own options end at `-m`; what follows belongs to the module.
+        _refuse_inline(rest[:rest.index("-m")] if "-m" in rest else rest)
+    elif name in TEAM_INTERPRETERS:
+        _refuse_inline(rest)
+
+
+def _refuse_git(rest: list[str]) -> None:
+    words = set(rest)
+    if words & TEAM_FORBIDDEN_GIT_VERBS:
+        raise TeamRefusal("command_moves_a_remote", "A check command cannot push, pull, merge or rebase.")
+    if words & TEAM_GIT_MUTATING_VERBS:
+        raise TeamRefusal("command_rewrites_git", "A check command cannot change the checkout or its history.")
+    for word in rest:
+        lowered = word.lower()
+        if (word in TEAM_GIT_CONFIG_OPTIONS or lowered.startswith(("--config", "--exec-path"))
+                or "alias." in lowered or "core." in lowered):
+            raise TeamRefusal("command_rewrites_git", "A check command cannot pass git settings or move git's folder.")
+
+
+def _refuse_inline(options: list[str]) -> None:
+    for word in options:
+        cluster = word.startswith("-") and not word.startswith("--") and set(word[1:]) & _INLINE_OPTION_LETTERS
+        if cluster or word.startswith(_INLINE_LONG_OPTIONS) or word == "eval":
+            raise TeamRefusal("command_inline_program", "A check command cannot run program text written inline.")
 
 
 def _program_name(token: str) -> str:
@@ -266,7 +396,56 @@ def read_team(path: Path) -> dict[str, Any] | None:
         raise TeamRefusal("team_store_unreadable", "The team record could not be read.") from None
     if not isinstance(record, dict) or record.get("schema_version") != TEAM_SCHEMA_VERSION:
         raise TeamRefusal("team_store_unreadable", "The team record could not be read.")
+    if not _record_shape_ok(record):
+        raise TeamRefusal("team_store_unreadable", "The team record could not be read.")
     return record
+
+
+def _record_shape_ok(record: Mapping[str, Any]) -> bool:
+    """Every field a reader indexes has the type it is read as, so a damaged record is refused, not a crash."""
+    if not all(isinstance(record.get(key), str) for key in ("team_id", "session_ref", "commands_digest", "workdir")):
+        return False
+    if not _is_int(record.get("max_repair_attempts")) or not _is_int(record.get("next_seq")):
+        return False
+    units = record.get("units")
+    events = record.get("events")
+    if not isinstance(units, list) or not 1 <= len(units) <= MAX_TEAM_UNITS or not isinstance(events, list):
+        return False
+    if not all(isinstance(event, dict) and _is_int(event.get("seq")) and isinstance(event.get("event"), str)
+               for event in events):
+        return False
+    ids = [unit.get("unit_id") if isinstance(unit, dict) else None for unit in units]
+    return all(_unit_shape_ok(unit, ids) for unit in units)
+
+
+def _unit_shape_ok(unit: object, ids: list[object]) -> bool:
+    if not isinstance(unit, dict):
+        return False
+    if not all(isinstance(unit.get(key), str) for key in ("unit_id", "title", "verification_command", "plan_item")):
+        return False
+    depends_on = unit.get("depends_on")
+    if not isinstance(depends_on, list) or not all(isinstance(item, str) and item in ids for item in depends_on):
+        return False
+    if not all(unit.get(key) is None or isinstance(unit.get(key), dict) for key in ("blocked", "lease")):
+        return False
+    attempts = unit.get("attempts")
+    if not isinstance(attempts, list):
+        return False
+    for number, attempt in enumerate(attempts, start=1):
+        if not isinstance(attempt, dict) or attempt.get("n") != number or not isinstance(attempt.get("inconclusive"), list):
+            return False
+        dispatch = attempt.get("dispatch")
+        if dispatch is not None and not (isinstance(dispatch, dict) and isinstance(dispatch.get("child_session_id"), str)):
+            return False
+        check = attempt.get("check")
+        if check is not None and not (isinstance(check, dict) and check.get("outcome") in ("passed", "failed")
+                                      and all(key in check for key in ("command", "exit_code", "observed_at"))):
+            return False
+    return True
+
+
+def _is_int(value: object) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool)
 
 
 def write_team(path: Path, record: Mapping[str, Any]) -> None:
@@ -469,7 +648,8 @@ def _ready(record: Mapping[str, Any], unit: Mapping[str, Any]) -> bool:
 
 
 def _plain(value: object, limit: int, reason: str, say: str) -> str:
-    if not isinstance(value, str) or not value.strip() or len(value.strip()) > limit or _CONTROL.search(value):
+    if (not isinstance(value, str) or not value.strip() or len(value.strip()) > limit or _CONTROL.search(value)
+            or _HIDDEN_CHARACTERS.search(value)):
         raise TeamRefusal(reason, say)
     return value.strip()
 
@@ -516,7 +696,12 @@ def _require_acyclic(units: list[Mapping[str, Any]]) -> None:
 
 
 def _bind_to_plan(units: list[dict[str, Any]], plan: Mapping[str, Any], plan_ref: object) -> None:
-    """The approval binding (R7): accepted plan, same digest, every command verbatim in it."""
+    """The approval binding (R7): accepted plan, same digest, every command a `check:` field in it.
+
+    A command binds only to an item that names it exactly as ``check: `<command>```.
+    A command merely mentioned in prose ("do NOT run make deploy"), or a prefix
+    of one, binds nothing.
+    """
     if not plan.get("own_record") or plan.get("status") not in ("established", "all_done"):
         raise TeamRefusal("plan_not_found", "Start a team only from this session's own current plan.")
     if plan.get("plan_stage") != "accepted":
@@ -526,13 +711,30 @@ def _bind_to_plan(units: list[dict[str, Any]], plan: Mapping[str, Any], plan_ref
         raise TeamRefusal("plan_ref_mismatch", "The plan changed since it was accepted, or plan_ref names another plan.")
     texts = [str(item.get("text", "")) for item in items or [] if isinstance(item, Mapping)]
     for unit in units:
-        item = next((text for text in texts if unit["verification_command"] in text), None)
+        item = next((text for text in texts if unit["verification_command"] in _check_fields(text)), None)
         if item is None:
             raise TeamRefusal(
                 "command_not_in_accepted_plan",
-                f"The check for '{unit['title']}' is not written in the accepted plan, so it was never approved.",
+                f"The check for '{unit['title']}' is not written in the accepted plan as check: `<command>`, "
+                "so it was never approved.",
             )
         unit["plan_item"] = item
+
+
+def _check_fields(text: str) -> list[str]:
+    return [match.group(1).strip() for match in _CHECK_FIELD.finditer(text)]
+
+
+def _require_host_allows(ctx: TeamContext, command: str) -> None:
+    reason = ctx.host_guard(command)
+    if reason is not None:
+        raise TeamRefusal(reason, _HOST_REFUSAL_SAY.get(reason, _HOST_REFUSAL_SAY["command_refused_by_host"]))
+
+
+_HOST_REFUSAL_SAY: Final[dict[str, str]] = {
+    "command_refused_by_host": "Hermes' own command rules refuse this check command.",
+    "host_command_floor_unavailable": "Hermes' own command rules could not be reached, so no check command is allowed.",
+}
 
 
 def team_start(
@@ -549,24 +751,36 @@ def team_start(
     repairs = DEFAULT_MAX_REPAIR_ATTEMPTS if max_repair_attempts is None else max_repair_attempts
     if isinstance(repairs, bool) or not isinstance(repairs, int) or not 0 <= repairs <= MAX_REPAIR_ATTEMPTS_CAP:
         raise TeamRefusal("invalid_max_repair_attempts", f"Fix-up tries can be 0 to {MAX_REPAIR_ATTEMPTS_CAP}.")
+    for unit in validated:
+        _require_host_allows(ctx, unit["verification_command"])
     _bind_to_plan(validated, plan, plan_ref)
     if workdir is None or not Path(workdir).is_dir():
         raise TeamRefusal("workspace_missing", "This session has no workspace folder to run checks in.")
     tid = str(team_id)
+    digest = frozen_commands_digest(validated)
     with locked_team(ctx.omh_home, ctx.session_ref, tid) as path:
         record = read_team(path)
         now = ctx.now()
         if record is not None:
-            if (record.get("commands_digest") != frozen_commands_digest(validated)
+            if (record.get("session_ref") != ctx.session_ref
+                    or record.get("commands_digest") != digest
+                    or frozen_commands_digest(record["units"]) != digest
                     or record.get("plan_ref") != plan_ref
                     or [unit["depends_on"] for unit in record["units"]] != [unit["depends_on"] for unit in validated]):
                 raise TeamRefusal(
                     "commands_frozen",
                     "This team already started with different parts or checks; they cannot change after start.",
                 )
-            entries = _reemit(record, now)
+            _distrust_unobserved(record, ctx.observed_checks)
+            # A resume in the process that already approved this team is a
+            # repeat call: entries still inside their grace are in flight and
+            # are not handed out again. The first approval after a restart
+            # hands back every undispatched entry, since no helper survived it.
+            same_process = (ctx.session_ref, tid, digest) in ctx.approved
+            entries = _reemit(record, now, respect_grace=same_process)
             write_team(path, record)
-            return _result(record, "team_start", entries=entries, say=_say(record, resumed=True))
+            return _result(record, "team_start", entries=entries, say=_say(record, resumed=True),
+                           commands_digest=digest)
         if sum(1 for _ in path.parent.glob("*.json")) >= MAX_TEAMS_PER_SESSION:
             raise TeamRefusal("too_many_teams", "This session already has as many teams as it can keep.")
         record = {
@@ -577,7 +791,7 @@ def team_start(
             "workdir": str(Path(workdir).resolve()),
             "created_at": _iso(now),
             "max_repair_attempts": repairs,
-            "commands_digest": frozen_commands_digest(validated),
+            "commands_digest": digest,
             "check_timeout_seconds": TEAM_CHECK_TIMEOUT_SECONDS,
             "units": [{**unit, "attempts": [], "blocked": None, "lease": None} for unit in validated],
             "events": [],
@@ -586,19 +800,24 @@ def team_start(
         entries = []
         for unit in record["units"]:
             if not unit["depends_on"]:
-                entries.append(_delegate_entry(tid, unit, _reserve(unit, now)))
+                entries.append(_hand_out(tid, unit, _reserve(unit, now), now))
         write_team(path, record)
     started = len(entries)
     say = (f"Split into {len(validated)} parts; {started} start now in parallel, and each part is done "
            f"only when its check passes.")
-    return _result(record, "team_start", entries=entries, say=say)
+    return _result(record, "team_start", entries=entries, say=say, commands_digest=digest)
 
 
-def _reemit(record: dict[str, Any], now: float, *, reserved_now: frozenset[str] = frozenset()) -> list[dict[str, str]]:
+def _reemit(
+    record: dict[str, Any], now: float, *, reserved_now: frozenset[str] = frozenset(), respect_grace: bool = True,
+) -> list[dict[str, str]]:
     """Hand back every reserved attempt the host has not reported dispatching (H5.1).
 
     ``reserved_now`` names the attempts this same call just reserved: they are
-    handed out once as new entries, not counted as a repeat of themselves.
+    handed out once as new entries, not counted as a repeat of themselves. An
+    entry handed out less than EMIT_GRACE_SECONDS ago is in flight, not lost,
+    and is skipped unless ``respect_grace`` is False (the first start after a
+    restart, when no helper can still be on its way).
     """
     entries = []
     for unit in record["units"]:
@@ -609,12 +828,28 @@ def _reemit(record: dict[str, Any], now: float, *, reserved_now: frozenset[str] 
             continue
         if attempt_key(str(record["team_id"]), str(unit["unit_id"]), int(attempt["n"])) in reserved_now:
             continue
+        if respect_grace and _emit_pending(attempt, now):
+            continue
         attempt["reemits"] = int(attempt.get("reemits", 0)) + 1
         if attempt["reemits"] > MAX_REEMITS:
             _block(record, unit, now, {"reason": "dispatch_not_observed", "observed_at": _iso(now)})
             continue
-        entries.append(_delegate_entry(str(record["team_id"]), unit, attempt))
+        entries.append(_hand_out(str(record["team_id"]), unit, attempt, now))
     return entries
+
+
+def _hand_out(team_id: str, unit: Mapping[str, Any], attempt: dict[str, Any], now: float) -> dict[str, str]:
+    """The entry for a reserved attempt, stamped as handed out now (emitted, not yet started)."""
+    attempt["emitted_at"] = _iso(now)
+    return _delegate_entry(team_id, unit, attempt)
+
+
+def _emit_pending(attempt: Mapping[str, Any], now: float) -> bool:
+    """Handed out, not yet reported started, and still inside its grace."""
+    if attempt.get("dispatch") or attempt.get("returned_at") or attempt.get("check"):
+        return False
+    emitted = _epoch(attempt.get("emitted_at"))
+    return emitted is not None and now - emitted < EMIT_GRACE_SECONDS
 
 
 # --------------------------------------------------------------------------
@@ -629,15 +864,57 @@ def _load(ctx: TeamContext, team_id: object) -> tuple[Path, dict[str, Any]]:
         raise TeamRefusal("team_not_found", "No team with that name was started in this session.")
     if record.get("commands_digest") != frozen_commands_digest(record["units"]):
         raise TeamRefusal("frozen_commands_changed", "The team's check commands were changed after start, so nothing runs.")
+    _distrust_unobserved(record, ctx.observed_checks)
     return path, record
 
 
-def _in_flight(record: dict[str, Any], now: float) -> list[str]:
-    """Units with a helper out, after expiring ones the host never reported back."""
+def _require_approved(ctx: TeamContext, record: Mapping[str, Any]) -> None:
+    """Nothing runs for a team whose exact commands this process did not see approved.
+
+    The record's digest is an unkeyed hash anyone who can write the file can
+    recompute, so it proves the commands were not edited, never that a person
+    approved them. The approval lives only in ``ctx.approved``.
+    """
+    if (ctx.session_ref, str(record["team_id"]), str(record["commands_digest"])) not in ctx.approved:
+        raise TeamRefusal(
+            "team_not_approved_here",
+            "This team's check commands were not approved since Hermes started; call team_start again with "
+            "the same parts so the person is asked again.",
+        )
+
+
+def _distrust_unobserved(record: dict[str, Any], observed: set[str]) -> None:
+    """A check this process did not run is not a result: its unit is checked again.
+
+    Applies to the latest attempt of every unit that is not blocked. The check
+    is re-run rather than trusted, so a `passed` planted on disk (or left from
+    before a restart) accepts nothing until OMH has run the command itself.
+    """
+    for unit in record["units"]:
+        attempt = _latest(unit)
+        if unit.get("blocked") or attempt is None:
+            continue
+        check = attempt.get("check")
+        if isinstance(check, Mapping) and check.get("nonce") not in observed:
+            attempt["check"] = None
+
+
+def _in_flight(record: dict[str, Any], now: float, *, include_emitted: bool = True) -> list[str]:
+    """Units with a helper out or about to start, after expiring ones the host never reported back.
+
+    ``include_emitted=False`` is for a check inside the same reconcile that
+    handed entries out: those have not reached the model yet, so nothing can
+    have started them.
+    """
     flying = []
     for unit in record["units"]:
         attempt = _latest(unit)
-        if unit.get("blocked") or attempt is None or not attempt.get("dispatch") or attempt.get("returned_at"):
+        if unit.get("blocked") or attempt is None:
+            continue
+        if _emit_pending(attempt, now) and include_emitted:
+            flying.append(str(unit["unit_id"]))
+            continue
+        if not attempt.get("dispatch") or attempt.get("returned_at"):
             continue
         started = _epoch(attempt["dispatch"].get("dispatched_at"))
         if started is not None and now - started > DELEGATION_STALE_SECONDS:
@@ -655,10 +932,16 @@ def _lease_live(unit: Mapping[str, Any], now: float) -> bool:
     return started is not None and now - started < TEAM_CHECK_TIMEOUT_SECONDS + TEAM_LEASE_MARGIN_SECONDS
 
 
+def _unit(record: Mapping[str, Any], unit_id: str) -> dict[str, Any]:
+    return next(item for item in record["units"] if str(item["unit_id"]) == unit_id)
+
+
 def team_reconcile(ctx: TeamContext, *, team_id: object, since_seq: object = 0) -> dict[str, Any]:
-    # Phase A, under the lock: barrier, then lease every unit that needs a check.
-    with locked_team(ctx.omh_home, ctx.session_ref, str(team_id)):
-        path, record = _load(ctx, team_id)
+    tid = str(team_id)
+    # Phase A, under the lock: approval, barrier, and which units need a check.
+    with locked_team(ctx.omh_home, ctx.session_ref, tid):
+        path, record = _load(ctx, tid)
+        _require_approved(ctx, record)
         now = ctx.now()
         flying = _in_flight(record, now)
         if flying:
@@ -666,67 +949,100 @@ def team_reconcile(ctx: TeamContext, *, team_id: object, since_seq: object = 0) 
             return _result(record, "team_reconcile", entries=[], reason="delegations_in_flight",
                            say=f"{len(flying)} part(s) are still being worked on; nothing is checked until they come back.",
                            since_seq=since_seq)
-        nonce = secrets.token_hex(8)
-        to_check: list[str] = []
-        busy: list[str] = []
-        for unit in record["units"]:
-            if unit_state(unit) != "awaiting_check":
-                continue
-            if _lease_live(unit, now):
-                busy.append(str(unit["unit_id"]))
-                continue
-            unit["lease"] = {"attempt": _latest(unit)["n"], "nonce": nonce, "started_at": _iso(now)}
-            to_check.append(str(unit["unit_id"]))
-        write_team(path, record)
-        workdir = Path(str(record["workdir"]))
-        commands = {str(unit["unit_id"]): str(unit["verification_command"]) for unit in record["units"]}
-    # Phase B, outside the lock: run each leased check in the session workspace.
-    results = {unit_id: _run_check(ctx, commands[unit_id], workdir) for unit_id in to_check}
-    # Phase C, under the lock: apply only what this call leased, then release.
-    with locked_team(ctx.omh_home, ctx.session_ref, str(team_id)):
-        path, record = _load(ctx, team_id)
-        now = ctx.now()
-        entries: list[dict[str, str]] = []
-        events: list[str] = []
+        waiting = [str(unit["unit_id"]) for unit in record["units"] if unit_state(unit) == "awaiting_check"]
         before = {str(unit["unit_id"]): len(unit.get("attempts") or []) for unit in record["units"]}
-        for unit in record["units"]:
-            unit_id = str(unit["unit_id"])
+        write_team(path, record)
+    # Phase B, one unit at a time: lease it just before its own check, run the
+    # check outside the lock, apply the result only while the lease is ours.
+    entries: list[dict[str, str]] = []
+    events: list[str] = []
+    busy: list[str] = []
+    checked = 0
+    pending = 0
+    for unit_id in waiting:
+        if checked >= MAX_CHECKS_PER_RECONCILE:
+            pending += 1
+            continue
+        leased = _take_lease(ctx, tid, unit_id)
+        if leased is None:
+            busy.append(unit_id)
+            continue
+        nonce, command, workdir = leased
+        result = _run_check(ctx, command, workdir)
+        checked += 1
+        with locked_team(ctx.omh_home, ctx.session_ref, tid):
+            path, record = _load(ctx, tid)
+            unit = _unit(record, unit_id)
             lease = unit.get("lease")
-            if unit_id not in results or not isinstance(lease, Mapping) or lease.get("nonce") != nonce:
-                continue
-            unit["lease"] = None
-            attempt = _latest(unit)
-            if attempt is None or attempt["n"] != lease.get("attempt") or attempt.get("check"):
-                continue
-            events.extend(_apply_check(record, unit, attempt, results[unit_id], now, entries))
+            if isinstance(lease, Mapping) and lease.get("nonce") == nonce:
+                unit["lease"] = None
+                attempt = _latest(unit)
+                if attempt is not None and attempt["n"] == lease.get("attempt") and not attempt.get("check"):
+                    events.extend(_apply_check(ctx, record, unit, attempt, result, nonce, ctx.now(), entries))
+                write_team(path, record)
+    # Phase C, under the lock: release ready units, hand back lost entries, stop rule.
+    with locked_team(ctx.omh_home, ctx.session_ref, tid):
+        path, record = _load(ctx, tid)
+        now = ctx.now()
         for unit in record["units"]:
             if unit_state(unit) == "waiting" and not unit.get("blocked") and _ready(record, unit):
-                entries.append(_delegate_entry(str(record["team_id"]), unit, _reserve(unit, now)))
+                entries.append(_hand_out(tid, unit, _reserve(unit, now), now))
         reserved_now = frozenset(
-            attempt_key(str(record["team_id"]), str(unit["unit_id"]), int(attempt["n"]))
+            attempt_key(tid, str(unit["unit_id"]), int(attempt["n"]))
             for unit in record["units"]
-            for attempt in (unit.get("attempts") or [])[before[str(unit["unit_id"])]:]
+            for attempt in (unit.get("attempts") or [])[before.get(str(unit["unit_id"]), 0):]
         )
         entries.extend(_reemit(record, now, reserved_now=reserved_now))
         if team_state(record) == "done" and not any(item["event"] == "done" for item in record.get("events", [])):
             _emit(record, now, unit=None, event="done",
-                  summary=f"All {len(record['units'])} parts passed their checks.", detail_ref=str(record["team_id"]))
+                  summary=f"All {len(record['units'])} parts passed their checks.", detail_ref=tid)
         write_team(path, record)
-    reason = "check_in_progress" if busy and not to_check else ""
+    reason = ""
+    if pending:
+        reason = "checks_pending"
+        events.append(f"{pending} more part(s) wait for their check; call team_reconcile again.")
+    elif busy and not checked:
+        reason = "check_in_progress"
     return _result(record, "team_reconcile", entries=entries, reason=reason, say=_say(record, events=events),
                    since_seq=since_seq)
 
 
+def _take_lease(ctx: TeamContext, team_id: str, unit_id: str) -> tuple[str, str, Path] | None:
+    """Stamp one unit's lease just before its check; None when it no longer needs one."""
+    with locked_team(ctx.omh_home, ctx.session_ref, team_id):
+        path, record = _load(ctx, team_id)
+        _require_approved(ctx, record)
+        now = ctx.now()
+        if _in_flight(record, now, include_emitted=False):
+            write_team(path, record)
+            return None
+        unit = _unit(record, unit_id)
+        if unit_state(unit) != "awaiting_check" or _lease_live(unit, now):
+            return None
+        nonce = secrets.token_hex(8)
+        unit["lease"] = {"attempt": _latest(unit)["n"], "nonce": nonce, "started_at": _iso(now)}
+        write_team(path, record)
+        return nonce, str(unit["verification_command"]), Path(str(record["workdir"]))
+
+
 def _run_check(ctx: TeamContext, command: str, workdir: Path) -> dict[str, Any]:
     started = ctx.now()
+    try:
+        tokens = validate_team_command(command)
+        _require_host_allows(ctx, command)
+    except TeamRefusal as refusal:
+        return {"outcome": "refused", "reason": refusal.reason, "observed_at": _iso(started)}
     if not workdir.is_dir():
         return {"outcome": "inconclusive", "reason": "workspace_missing", "observed_at": _iso(started)}
-    tokens = validate_team_command(command)
     before = ctx.fingerprint(workdir)
+    if before[0] in _FINGERPRINT_UNTRACKED:
+        return {"outcome": "inconclusive", "reason": "workspace_not_tracked", "observed_at": _iso(started)}
+    if before[0] in _FINGERPRINT_UNAVAILABLE:
+        return {"outcome": "inconclusive", "reason": "workspace_fingerprint_unavailable", "observed_at": _iso(started)}
     run = ctx.runner(tokens, workdir, TEAM_CHECK_TIMEOUT_SECONDS)
     after = ctx.fingerprint(workdir)
     observed_at = _iso(ctx.now())
-    if before[0] in _FINGERPRINT_UNAVAILABLE or after[0] in _FINGERPRINT_UNAVAILABLE:
+    if after[0] in _FINGERPRINT_UNAVAILABLE | _FINGERPRINT_UNTRACKED:
         return {"outcome": "inconclusive", "reason": "workspace_fingerprint_unavailable", "observed_at": observed_at}
     if before != after:
         return {"outcome": "inconclusive", "reason": "workspace_changed_during_check", "observed_at": observed_at}
@@ -734,6 +1050,9 @@ def _run_check(ctx: TeamContext, command: str, workdir: Path) -> dict[str, Any]:
         return {"outcome": "inconclusive", "reason": "check_timeout", "observed_at": observed_at}
     if run.outcome == "not_found" or run.exit_code is None:
         return {"outcome": "inconclusive", "reason": "command_not_found", "observed_at": observed_at}
+    if run.exit_code < 0:
+        # Killed by a signal (an OOM kill, a stray SIGTERM): not the check's answer.
+        return {"outcome": "inconclusive", "reason": "check_killed", "observed_at": observed_at}
     return {
         "outcome": "passed" if run.exit_code == 0 else "failed",
         "command": command,
@@ -745,14 +1064,19 @@ def _run_check(ctx: TeamContext, command: str, workdir: Path) -> dict[str, Any]:
 
 
 def _apply_check(
+    ctx: TeamContext,
     record: dict[str, Any],
     unit: dict[str, Any],
     attempt: dict[str, Any],
     result: Mapping[str, Any],
+    nonce: str,
     now: float,
     entries: list[dict[str, str]],
 ) -> list[str]:
     title = str(unit["title"])
+    if result["outcome"] == "refused":
+        _block(record, unit, now, {"reason": result["reason"], "observed_at": result["observed_at"]})
+        return [f"Stopped '{title}': its check command was refused before it ran."]
     if result["outcome"] == "inconclusive":
         attempt.setdefault("inconclusive", []).append(
             {"reason": result["reason"], "observed_at": result["observed_at"]})
@@ -762,7 +1086,8 @@ def _apply_check(
             return [f"Stopped '{title}': its check could not give a clear answer ({_REASON_SAY[result['reason']]})."]
         return [f"The check for '{title}' could not give a clear answer ({_REASON_SAY[result['reason']]}); "
                 "no try was used, and it will run again."]
-    attempt["check"] = dict(result)
+    attempt["check"] = {**result, "nonce": nonce}
+    ctx.observed_checks.add(nonce)
     check_ref = f"{attempt_key(str(record['team_id']), str(unit['unit_id']), int(attempt['n']))}/check"
     if result["outcome"] == "passed":
         _emit(record, now, unit=unit, event="check_passed", summary="Its check passed (exit code 0).",
@@ -772,7 +1097,7 @@ def _apply_check(
           summary=f"Its check failed with exit code {result['exit_code']}.", detail_ref=check_ref)
     if int(attempt["n"]) < _attempt_limit(record):
         repair = _reserve(unit, now, repairs_check=result)
-        entries.append(_delegate_entry(str(record["team_id"]), unit, repair))
+        entries.append(_hand_out(str(record["team_id"]), unit, repair, now))
         _emit(record, now, unit=unit, event="repairing",
               summary=f"Sent back for a fix, try {repair['n']} of {_attempt_limit(record)}.",
               detail_ref=attempt_key(str(record["team_id"]), str(unit["unit_id"]), int(repair["n"])))
@@ -788,9 +1113,11 @@ def _apply_check(
 
 _REASON_SAY: Final[dict[str, str]] = {
     "workspace_missing": "the workspace folder is gone",
+    "workspace_not_tracked": "the workspace is not a git checkout, so OMH cannot tell whether files changed",
     "workspace_fingerprint_unavailable": "the workspace could not be read before and after",
     "workspace_changed_during_check": "files changed while it ran",
     "check_timeout": f"it ran past {TEAM_CHECK_TIMEOUT_SECONDS // 60} minutes",
+    "check_killed": "it was stopped by a signal before it finished",
     "command_not_found": "the command was not found",
 }
 
@@ -799,6 +1126,8 @@ _BLOCKED_SAY: Final[dict[str, str]] = {
     "check_inconclusive": "its check never gave a clear answer",
     "dispatch_not_observed": "its helper was never seen starting",
     "delegation_not_returned": "its helper never came back",
+    "command_refused_by_host": "Hermes' own command rules refuse its check",
+    "host_command_floor_unavailable": "Hermes' own command rules could not be reached",
 }
 
 
@@ -898,6 +1227,7 @@ def _result(
     say: str,
     reason: str = "",
     since_seq: object = 0,
+    commands_digest: str = "",
 ) -> dict[str, Any]:
     units = [_unit_view(record, unit) for unit in record["units"]]
     counts = {state: 0 for state in UNIT_STATES}
@@ -917,6 +1247,9 @@ def _result(
     result.update(_events_since(record, since_seq))
     if reason:
         result["reason"] = reason
+    if commands_digest:
+        # What the handler records as approved in process memory (`TeamContext.approved`).
+        result["commands_digest"] = commands_digest
     return result
 
 
