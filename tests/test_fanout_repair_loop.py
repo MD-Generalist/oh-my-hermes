@@ -520,6 +520,23 @@ class RepairConcurrencyTests(unittest.TestCase):
         self.assertEqual(outcome["first"]["unit_state"], "verified")
 
 
+    def test_a_loop_settled_before_the_lock_is_taken_is_not_repaired_again(self) -> None:
+        # The selection read said pending; by the time this dispatch holds the
+        # lock another one has verified the unit. Nothing may spawn.
+        harness = _Harness(self, plan=["broken", "fixed"], max_repair_attempts=2)
+        harness.dispatch()
+        unit = harness.contract["units"][0]
+        stale = {"attempts_used": 0, "failing_checks": [{"command": _CHECK, "exit_code": 1, "failure_kind": "nonzero"}]}
+
+        entry = fanout_dispatch._dispatch_unit_until_repaired(
+            harness.paths, unit, resume=stale, dry_run=False, run_verification=True
+        )
+
+        self.assertEqual(entry["status"], "already_completed")
+        self.assertEqual(entry["repair"]["status"], "passed")
+        self.assertEqual(len(harness.prompts), 2)
+
+
 class RepairWorktreeMissingTests(unittest.TestCase):
     def tearDown(self) -> None:
         fanout_dispatch._INTERRUPT_FLAG.clear()
