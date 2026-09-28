@@ -2,8 +2,8 @@
 
 A done mark on the plan todo is a declaration: it says done was claimed, not
 that anything ran. The continuation rule stops a plan when every item is done,
-so a run that marks its items done in words -- three advances in a row with no
-command between them -- stopped its own loop without doing the work. This
+so a run that marked an item done over a failed command, or ticked several
+items off one command, stopped its own loop without the work behind it. This
 module is what the stop criterion reads instead of the word.
 
 An item's evidence is a typed reference, ``{"kind": ..., "ref": ...}``, and
@@ -17,7 +17,9 @@ to ``<hermes_home>/state.db`` for one tool call id:
   #1922's `session_file_activity` outcome rules.
 
 ``effect_disposition`` ``none`` (the call had no effect) is a failure and
-``unknown`` an unknown, the host's own two dispositions.
+``unknown`` an unknown, the host's own two dispositions. A row Hermes rewound
+out of the transcript (``active = 0`` and not ``compacted``) is not a record
+of anything the session still stands on, so no query here reads one.
 
 ``pr``, ``ci_run`` and ``team_check`` are accepted and stored so every lane
 writes one vocabulary, and none of them resolves yet: OMH makes no network
@@ -29,12 +31,14 @@ a CI run closes an item today through the ``tool_call`` that observed it --
 
 Who names the call. Models do not reliably see tool call ids -- no assistant
 reply in the owner's session store quoted a ``toolu_`` id (measured
-2026-09-28) -- so the ``omh_todo`` tool picks it from the records at the moment
-of the done write: the latest evidence-capable call this session recorded
-since the plan was last written (`latest_observed_evidence`). That is
-association by time, not by content, and it is stated as such: it proves a
-command ran and how it ended between the previous plan write and this one,
-never that the command tested the item.
+2026-09-28) -- and a reference a writer could send would be a reference it
+could copy, so the ``omh_todo`` tool binds it from the records at the moment
+of the done write and ignores any it is sent. Each item marked done gets the
+item's WINDOW -- from the plan's previous write to the done write -- and at
+most one evidence-capable call recorded inside it that no other item holds
+(`observed_calls`). That is association by time, not by content, and it is
+stated as such: it proves a command ran and how it ended inside the item's
+window, never that the command tested the item.
 
 What is never read: the item's text, the command's text, its output, or the
 model's reply. A verdict comes from a result field or it does not come.
@@ -93,6 +97,10 @@ _REF_SHAPES: Final = {
 # walk is bounded so a cycle in a hand-edited store costs a fixed number of
 # queries.
 MAX_LINEAGE_HOPS: Final = 8
+# The most calls one done write binds: one per item, and a plan holds at most
+# this many (`todo_store.MAX_TODO_ITEMS`, restated to keep this module free of
+# the store it is imported by).
+MAX_BOUND_CALLS: Final = 20
 _CONNECT_TIMEOUT_SECONDS: Final = 0.5
 
 # Store readings.
@@ -100,10 +108,18 @@ STORE_READ: Final = "read"
 STORE_ABSENT: Final = "absent"
 STORE_UNREADABLE: Final = "unreadable"
 
-# Per-reference verdicts. Only `closed` closes an item.
+# Per-item verdicts. Only `closed` and `window_empty` close an item.
 EVIDENCE_CLOSED: Final = "closed"
 EVIDENCE_FAILED: Final = "failed"
 EVIDENCE_UNRESOLVED: Final = "unresolved"
+# No reference, and no evidence-capable call recorded inside the item's own
+# window: nothing a command could have closed, so the done mark stands. This
+# is what keeps a conversational item after a command-backed one from being
+# held open for good.
+WINDOW_EMPTY: Final = "window_empty"
+# No reference, and calls WERE recorded inside the window -- each one already
+# holding another item. One command closes at most one item.
+WINDOW_HAS_COMMANDS: Final = "window_has_commands"
 
 
 def valid_evidence(value: object) -> dict[str, str] | None:
@@ -121,83 +137,97 @@ def valid_evidence(value: object) -> dict[str, str] | None:
 
 
 def evidence_key(evidence: dict[str, str]) -> str:
-    """One string per reference, for keying verdicts."""
+    """One string per reference, for keying and de-duplicating."""
     return f"{evidence['kind']}:{evidence['ref']}"
 
 
-def evidence_reading(
-    hermes_home: str | Path | None, session_ref: str, evidence: list[dict[str, str]]
+def item_verdicts(
+    hermes_home: str | Path | None, session_ref: str, items: list[dict[str, Any]]
 ) -> dict[str, Any]:
-    """Judge ``evidence`` against the records of ``session_ref`` and its ancestors.
+    """Judge each item against the records of ``session_ref`` and its ancestors.
 
-    Returns ``{"store": ..., "observable_lane": bool, "verdicts": {key: verdict}}``
-    keyed by `evidence_key`. ``observable_lane`` says whether the session
-    recorded ANY evidence-capable call, which is what separates a plan worked
-    with commands from a conversational one. On ``absent`` and ``unreadable``
-    it is false and ``verdicts`` is empty; the caller decides what each of
-    those means, because only it knows whether a done item without a
-    reference is a claim to check.
+    Each entry of ``items`` is ``{"evidence": dict | None, "from": epoch | None,
+    "to": epoch | None}`` -- the reference and the item's window. Returns
+    ``{"store": ..., "verdicts": [verdict per item]}``; on ``absent`` and
+    ``unreadable`` the list is empty and the caller decides what each means.
+
+    A reference closes only when its result row lies inside the item's window
+    (after ``from``): a call from before the window was already there when the
+    previous item was written, and binding it now would be a copy.
     """
-    empty: dict[str, Any] = {"store": STORE_ABSENT, "observable_lane": False, "verdicts": {}}
     session = str(session_ref or "").strip()
     if not session or not hermes_home:
-        return empty
+        return {"store": STORE_ABSENT, "verdicts": []}
     opened = _open_readonly(hermes_home)
     if opened is None:
-        return empty
+        return {"store": STORE_ABSENT, "verdicts": []}
     connection, store = opened
     if connection is None:
-        return {**empty, "store": store}
+        return {"store": store, "verdicts": []}
     try:
+        live = _live_rows_clause(connection)
         lineage = _lineage(connection, session)
-        observable = _observable_lane(connection, lineage)
-        verdicts = _verdicts(connection, lineage, evidence)
+        verdicts = [_item_verdict(connection, lineage, live, item) for item in items]
     except sqlite3.Error:
-        return {**empty, "store": STORE_UNREADABLE}
+        return {"store": STORE_UNREADABLE, "verdicts": []}
     finally:
         connection.close()
-    return {"store": STORE_READ, "observable_lane": observable, "verdicts": verdicts}
+    return {"store": STORE_READ, "verdicts": verdicts}
 
 
-def latest_observed_evidence(
-    hermes_home: str | Path | None, session_ref: str, *, since_epoch: float | None
-) -> dict[str, str] | None:
-    """The latest evidence-capable call recorded after ``since_epoch``, as evidence, or ``None``.
+def observed_calls(
+    hermes_home: str | Path | None,
+    session_ref: str,
+    *,
+    after_epoch: float,
+    exclude: set[str],
+    limit: int,
+) -> list[dict[str, str]]:
+    """Evidence-capable calls recorded after ``after_epoch``, oldest first, as evidence.
 
-    Read at a done write, so the call it names is one whose RESULT Hermes had
+    Read at a done write, so a call it names is one whose RESULT Hermes had
     already persisted: the host flushes a round's results before it runs the
     next round's tools, so a call from an earlier round is on disk and a
-    sibling call in the same round as the ``omh_todo`` call is not. ``None``
-    for ``since_epoch`` means no window -- a plan declared for the first time.
+    sibling call in the same round as the ``omh_todo`` call is not. Calls in
+    ``exclude`` (keys from `evidence_key`) already hold another item and are
+    skipped, so no call is bound twice.
     """
     session = str(session_ref or "").strip()
-    if not session or not hermes_home:
-        return None
+    if not session or not hermes_home or limit <= 0:
+        return []
     opened = _open_readonly(hermes_home)
     if opened is None or opened[0] is None:
-        return None
+        return []
     connection = opened[0]
     try:
+        live = _live_rows_clause(connection)
         lineage = _lineage(connection, session)
-        sessions = ",".join("?" for _ in lineage)
-        tools = ",".join("?" for _ in EVIDENCE_TOOLS)
-        query = (
-            f"SELECT tool_name, tool_call_id FROM messages WHERE session_id IN ({sessions}) "
-            f"AND role = 'tool' AND tool_name IN ({tools}) AND COALESCE(tool_call_id, '') <> ''"
-        )
-        params: list[Any] = [*lineage, *EVIDENCE_TOOLS]
-        if since_epoch is not None:
-            query += " AND timestamp > ?"
-            params.append(since_epoch)
-        row = connection.execute(query + " ORDER BY id DESC LIMIT 1", params).fetchone()
+        rows = connection.execute(
+            f"SELECT tool_name, tool_call_id FROM messages WHERE session_id IN ({_marks(lineage)}) "
+            f"AND role = 'tool' AND tool_name IN ({_marks(EVIDENCE_TOOLS)}) "
+            f"AND COALESCE(tool_call_id, '') <> '' AND timestamp > ?{live} ORDER BY id",
+            (*lineage, *EVIDENCE_TOOLS, after_epoch),
+        ).fetchall()
     except sqlite3.Error:
-        return None
+        return []
     finally:
         connection.close()
-    if not row:
-        return None
-    kind = EVIDENCE_KIND_TOOL_CALL if row[0] == "terminal" else EVIDENCE_KIND_FILE_WRITE
-    return valid_evidence({"kind": kind, "ref": row[1]})
+    calls: list[dict[str, str]] = []
+    seen: set[str] = set(exclude)
+    for tool_name, call_id in rows:
+        kind = EVIDENCE_KIND_TOOL_CALL if tool_name == "terminal" else EVIDENCE_KIND_FILE_WRITE
+        evidence = valid_evidence({"kind": kind, "ref": call_id})
+        if evidence is None or evidence_key(evidence) in seen:
+            continue
+        seen.add(evidence_key(evidence))
+        calls.append(evidence)
+        if len(calls) >= min(limit, MAX_BOUND_CALLS):
+            break
+    return calls
+
+
+def _marks(values: tuple[str, ...] | list[str]) -> str:
+    return ",".join("?" for _ in values)
 
 
 def _open_readonly(hermes_home: str | Path) -> tuple[sqlite3.Connection | None, str] | None:
@@ -218,6 +248,19 @@ def _open_readonly(hermes_home: str | Path) -> tuple[sqlite3.Connection | None, 
     return connection, STORE_READ
 
 
+def _live_rows_clause(connection: sqlite3.Connection) -> str:
+    """The filter that drops rewound rows, on a store that records rewinds at all.
+
+    Hermes marks a rewound turn's rows ``active = 0`` and keeps rows a
+    compaction folded as ``compacted = 1`` (`hermes_state_messages.py`); a
+    store older than those columns has rewound nothing.
+    """
+    columns = {row[1] for row in connection.execute("PRAGMA table_info(messages)").fetchall()}
+    if {"active", "compacted"} <= columns:
+        return " AND (active = 1 OR compacted = 1)"
+    return ""
+
+
 def _lineage(connection: sqlite3.Connection, session: str) -> list[str]:
     lineage = [session]
     current = session
@@ -233,50 +276,63 @@ def _lineage(connection: sqlite3.Connection, session: str) -> list[str]:
     return lineage
 
 
-def _observable_lane(connection: sqlite3.Connection, lineage: list[str]) -> bool:
-    sessions = ",".join("?" for _ in lineage)
-    tools = ",".join("?" for _ in EVIDENCE_TOOLS)
+def _item_verdict(
+    connection: sqlite3.Connection, lineage: list[str], live: str, item: dict[str, Any]
+) -> str:
+    evidence = item.get("evidence")
+    start = item.get("from")
+    end = item.get("to")
+    if isinstance(evidence, dict):
+        return _evidence_verdict(connection, lineage, live, evidence, start)
+    window = ""
+    params: list[Any] = [*lineage, *EVIDENCE_TOOLS]
+    if isinstance(start, (int, float)):
+        window += " AND timestamp > ?"
+        params.append(start)
+    if isinstance(end, (int, float)):
+        window += " AND timestamp <= ?"
+        params.append(end)
     row = connection.execute(
-        f"SELECT 1 FROM messages WHERE session_id IN ({sessions}) "
-        f"AND role = 'tool' AND tool_name IN ({tools}) LIMIT 1",
-        (*lineage, *EVIDENCE_TOOLS),
+        f"SELECT 1 FROM messages WHERE session_id IN ({_marks(lineage)}) AND role = 'tool' "
+        f"AND tool_name IN ({_marks(EVIDENCE_TOOLS)}){window}{live} LIMIT 1",
+        params,
     ).fetchone()
-    return row is not None
+    return WINDOW_HAS_COMMANDS if row is not None else WINDOW_EMPTY
 
 
-def _verdicts(
-    connection: sqlite3.Connection, lineage: list[str], evidence: list[dict[str, str]]
-) -> dict[str, str]:
-    verdicts = {evidence_key(entry): EVIDENCE_UNRESOLVED for entry in evidence}
-    resolvable = sorted({entry["ref"] for entry in evidence if entry["kind"] in _KIND_TOOLS})
-    if not resolvable:
-        return verdicts
+def _evidence_verdict(
+    connection: sqlite3.Connection,
+    lineage: list[str],
+    live: str,
+    evidence: dict[str, str],
+    start: object,
+) -> str:
+    kind = evidence.get("kind")
+    if kind not in _KIND_TOOLS:
+        return EVIDENCE_UNRESOLVED
     columns = {row[1] for row in connection.execute("PRAGMA table_info(messages)").fetchall()}
     # A store older than Hermes' effect_disposition column has none to read.
     disposition = "effect_disposition" if "effect_disposition" in columns else "NULL"
-    sessions = ",".join("?" for _ in lineage)
-    refs = ",".join("?" for _ in resolvable)
-    rows = connection.execute(
-        f"SELECT tool_call_id, tool_name, content, {disposition} FROM messages "
-        f"WHERE session_id IN ({sessions}) AND role = 'tool' AND tool_call_id IN ({refs}) "
-        "ORDER BY id",
-        (*lineage, *resolvable),
-    ).fetchall()
     # A compaction re-persists a result under a new row id; the first row by
     # id decides, the rule #1922 states for the same duplication.
-    first: dict[str, tuple[Any, Any, Any]] = {}
-    for call_id, tool_name, content, effect in rows:
-        first.setdefault(str(call_id), (tool_name, content, effect))
-    for entry in evidence:
-        if entry["kind"] in _KIND_TOOLS:
-            verdicts[evidence_key(entry)] = _verdict(entry["kind"], first.get(entry["ref"]))
-    return verdicts
-
-
-def _verdict(kind: str, row: tuple[Any, Any, Any] | None) -> str:
-    """One recorded result's verdict. An unknown id is `unresolved`, never `failed`."""
+    row = connection.execute(
+        f"SELECT tool_name, content, {disposition}, timestamp FROM messages "
+        f"WHERE session_id IN ({_marks(lineage)}) AND role = 'tool' AND tool_call_id = ?{live} "
+        "ORDER BY id LIMIT 1",
+        (*lineage, evidence.get("ref")),
+    ).fetchone()
     if row is None:
         return EVIDENCE_UNRESOLVED
+    tool_name, content, effect, timestamp = row
+    if isinstance(start, (int, float)) and not (
+        isinstance(timestamp, (int, float)) and timestamp > start
+    ):
+        return EVIDENCE_UNRESOLVED
+    return _result_verdict(str(kind), (tool_name, content, effect))
+
+
+def _result_verdict(kind: str, row: tuple[Any, Any, Any]) -> str:
+    """One recorded result's verdict. An unknown id is `unresolved`, never `failed`."""
     tool_name, content, effect = row
     # A kind names which host tool may answer for it, so a `file_write`
     # pointing at a terminal call (or the reverse) is not a reference to

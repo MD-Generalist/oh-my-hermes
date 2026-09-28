@@ -24,28 +24,36 @@ All notable changes will be documented here.
   unit's process had exited 0.
 
 - **A plan item marked done now closes only on a recorded result.** The
-  continuation rule stopped a plan once every item said done, so a run that
-  marked its items done in words ended its own loop with nothing run. When
-  `omh_todo` marks an item done, OMH now records what closed it: the latest
-  `terminal`, `write_file` or `patch` call the session's own Hermes
-  `state.db` shows since the plan was last written, stored on the item as a
-  typed `evidence` reference (`{kind, ref}`, kinds `tool_call`, `file_write`,
-  `pr`, `ci_run`, `team_check`). The stop criterion reads that record, never
-  the item's text: `tool_call` closes on a recorded `exit_code` of 0 and
-  `file_write` on a landed write or a successful patch, per #1922's outcome
-  rules. An item done with no reference, a failed or unknown one, or one
-  whose store cannot be read is `done_unverified`, still open, and the
-  turn-end directive and the per-turn plan line name it with its reason
-  (`no_evidence`, `evidence_failed`, `evidence_unresolved`,
-  `evidence_unreadable`). Marking it done again after a passing command, or
-  giving it a `blocked_reason`, closes it. `pr`, `ci_run` and `team_check`
-  are accepted and resolve nothing yet, since OMH makes no network call; a PR
-  or CI run closes an item through the `gh` call that observed it. A session
-  that recorded no command at all -- a conversational plan, a host with no
-  session store -- keeps the done mark as before, so no existing record, CLI
-  write or chat-only checklist changes behaviour, and the host's nudge budget
-  still bounds how often a turn is continued. The `omh_todo` schema and the
-  per-turn budgets are unchanged.
+  continuation rule stopped a plan once every item said done, so a run could
+  mark an item done over a failed command, or tick several items off one
+  command, and end its own loop. The `omh_todo` tool now binds every done item
+  itself and ignores any binding the writer sends. Each item gets its window
+  (from the plan's previous write, or the write itself on a first
+  declaration), its `done_at`, and at most one `terminal`, `write_file` or
+  `patch` call from that window that no other item holds. The call is read
+  from the session's own Hermes `state.db` (`mode=ro`, rewound rows ignored)
+  and stored as a typed `evidence` reference `{kind, ref}`, with kinds
+  `tool_call`, `file_write`, `pr`, `ci_run` and `team_check`.
+  - **When an item closes.** The stop criterion reads that record, never the
+    item's text. `tool_call` closes on a recorded `exit_code` of 0 inside the
+    window; `file_write` closes on a landed write or a successful patch (#1922's
+    outcome rules). An item with no reference closes when its window recorded
+    no command, so a conversational item is never held open.
+  - **When it stays open.** Any other done item is `done_unverified` and still
+    open. The turn-end directive and the per-turn plan line name it in plain
+    words, and the tool result carries its reason code (`no_evidence`,
+    `evidence_failed`, `evidence_unresolved`, `evidence_unreadable`). An
+    unreadable store is reported but never closes an item and never drives the
+    loop.
+  - **How to close it.** Mark the item done again after a passing command, or
+    give it a `blocked_reason`.
+  - **What is not resolved yet.** `pr`, `ci_run` and `team_check` are accepted
+    but resolve nothing, since OMH makes no network call.
+  - **What does not change.** Items done before this change, CLI writes and
+    hand edits carry no binding and count as done as before. A no-op
+    re-advance is not a write, so it cannot buy another turn-end nudge. The
+    `omh_todo` schema is unchanged, and the new `done_unverified_plan`
+    per-turn scenario sits under the existing limit.
 
 - **Data pipeline work has an owner: `omh-data-pipelines`.** "our airflow etl
   backfill is producing duplicate events", "replay the last three days of

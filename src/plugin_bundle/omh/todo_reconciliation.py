@@ -82,14 +82,16 @@ from __future__ import annotations
 
 from typing import Any
 
-from .dispatch_outcomes import unacknowledged_outcomes
+from .dispatch_outcomes import _parse_timestamp, unacknowledged_outcomes
 from .todo_evidence import (
     EVIDENCE_CLOSED,
     EVIDENCE_FAILED,
     STORE_READ,
     STORE_UNREADABLE,
+    WINDOW_EMPTY,
+    WINDOW_HAS_COMMANDS,
     evidence_key,
-    evidence_reading,
+    item_verdicts,
     valid_evidence,
 )
 # The per-session turn counter the reconciliation rule's budget spends lives
@@ -193,10 +195,13 @@ PLAN_CONTINUATION_BOUNDARY = (
 DONE_UNVERIFIED = "done_unverified"
 
 # Why a done item is still open, each read off a record (`todo_evidence`):
-# no evidence reference on an item in a session that recorded commands; a
-# reference whose recorded result failed; one the store has no result for (an
-# unknown id, or an outcome Hermes recorded as unknown); or a store that could
-# not be read, which is said rather than taken as evidence.
+# commands ran inside the item's window and none is bound to it; the call
+# bound to it failed; the store holds no result for it (an unknown id, a call
+# from before the window, the wrong tool for the kind, an outcome Hermes
+# recorded as unknown, a kind nothing resolves yet); or the store could not be
+# read. The last is said and never taken as evidence, and it does not drive
+# the loop either: a store OMH cannot read is not something the next turn can
+# fix by running a command.
 EVIDENCE_REASON_NONE = "no_evidence"
 EVIDENCE_REASON_FAILED = "evidence_failed"
 EVIDENCE_REASON_UNRESOLVED = "evidence_unresolved"
@@ -208,16 +213,27 @@ EVIDENCE_REASONS = (
     EVIDENCE_REASON_UNREADABLE,
 )
 
-# What the plan line adds while an item is done in words only. It names the
-# two record moves that close the item and nothing else: the command whose
-# recorded result closes it, or a blocked_reason, which is the stop
-# criterion's own escape -- a done item carrying one is closed as skipped.
-# Rendered only while such an item exists, so a plan without one pays nothing.
+# What the plan line adds while a done item is not closed by its record. It
+# names the two record moves that close the item and nothing else: a passing
+# command followed by marking it done again, or an omh_todo blocked_reason,
+# the stop criterion's own escape -- a done item carrying one is closed as
+# skipped. Rendered only while such an item exists, so a plan without one pays
+# nothing.
 TODO_EVIDENCE_RULE = (
-    "A done mark closes an item only with a recorded command result behind "
-    "it: run the check that shows it, then advance it to done again, or give "
-    "it a blocked_reason saying why no command can show it."
+    "A done mark closes an item only with a passing command recorded for it: "
+    "run the check that shows it, then advance it to done again, or give it "
+    "an omh_todo blocked_reason saying why no command can show it."
 )
+
+# How the plan line says each reason. The line is read by the model and may be
+# relayed to a person, so it carries plain words; the reason codes stay in the
+# tool's result payload, where a program reads them.
+_EVIDENCE_REASON_PHRASES = {
+    EVIDENCE_REASON_NONE: "commands ran but none was recorded for it",
+    EVIDENCE_REASON_FAILED: "the command recorded for it failed",
+    EVIDENCE_REASON_UNRESOLVED: "no recorded result matches it",
+    EVIDENCE_REASON_UNREADABLE: "the session record could not be read",
+}
 
 # What the plan line says INSTEAD of the continuation rule while the record
 # says the person steered elsewhere. It replaces the whole ask rather than
@@ -545,13 +561,13 @@ def open_plan_position(
     happening, the directive starts the next one -- so a second copy of this
     condition would let the two disagree about the same plan.
 
-    ``unverified`` is `unverified_done_items`' answer for this plan: done
-    items no recorded command closes. They count as open, including on a plan
-    the projection calls ``all_done`` because every item says done -- which is
-    exactly the plan this exists to keep going. Omitted, every done item
-    closes, the answer this gave before evidence existed.
+    ``unverified`` is `unverified_done_items`' answer for this plan. Its
+    entries that drive (every reason but an unreadable store) count as open,
+    including on a plan the projection calls ``all_done`` because every item
+    says done -- exactly the plan this exists to keep going. Omitted, every
+    done item closes, the answer this gave before evidence existed.
     """
-    pending_evidence = len(unverified or [])
+    pending_evidence = len(_driving(unverified))
     if not plan_is_established(todo) and not (
         todo.get("status") == "all_done" and pending_evidence
     ):
@@ -567,6 +583,10 @@ def open_plan_position(
     return closed, total
 
 
+def _driving(unverified: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
+    return [entry for entry in unverified or [] if entry.get("reason") != EVIDENCE_REASON_UNREADABLE]
+
+
 def next_open_item(
     todo: dict[str, Any], unverified: list[dict[str, Any]] | None = None
 ) -> dict[str, Any]:
@@ -580,7 +600,7 @@ def next_open_item(
     found = _first_item(items, "active") or _first_item(items, "pending")
     if found:
         return found
-    first = (unverified or [{}])[0].get("item")
+    first = (_driving(unverified) or [{}])[0].get("item")
     if isinstance(first, int) and 1 <= first <= len(items) and isinstance(items[first - 1], dict):
         return items[first - 1]
     return {}
@@ -589,82 +609,87 @@ def next_open_item(
 def unverified_done_items(
     todo: dict[str, Any], *, hermes_home: str = "", session_ref: str = ""
 ) -> list[dict[str, Any]]:
-    """The done items no recorded command closes, each with its 1-based index and reason.
+    """The done items their record does not close, each with its 1-based index and reason.
 
     Asked only of a plan the stop criterion could end -- established, or all
-    done -- and only about done items without a ``blocked_reason``: a done
-    item carrying one is closed as skipped, the escape the stop criterion
-    already names. Everything is read from records:
+    done -- and only about done items that OMH bound (a ``done_at``) or that
+    carry a reference, and that have no ``blocked_reason``: a done item
+    carrying one is closed as skipped, the escape the stop criterion already
+    names. An item done with none of the binding fields was marked done
+    before evidence existed, by the CLI, or by a hand edit, and counts as done
+    exactly as it always did -- that is the backward compatibility.
 
-    * an item with an ``evidence`` reference closes when its recorded result
-      is a success (`todo_evidence`), and otherwise stays open as
-      ``evidence_failed`` or ``evidence_unresolved``;
-    * an item without one stays open as ``no_evidence`` only in a session
-      that recorded evidence-capable calls. A session with none -- a
-      conversational plan, a host with no session store, a caller with no
-      session -- keeps the done mark as it always did. That is the backward
-      compatibility, and the bound on nagging a plan no command could close;
-    * a store that exists and cannot be read makes every such item
-      ``evidence_unreadable``: said, never taken as evidence.
+    Each judged item is read from records over its own window, from
+    ``window_start`` to ``done_at``:
+
+    * a reference closes when its recorded result, inside the window, is a
+      success (`todo_evidence`); otherwise ``evidence_failed`` or
+      ``evidence_unresolved``. A reference two items share closes only the
+      first;
+    * no reference and no evidence-capable call inside the window is a
+      conversational item and closes, so an item after a command-backed one
+      is never held open for good; calls inside the window, each holding
+      another item, make it ``no_evidence``;
+    * no store at all closes an unreferenced item and leaves a referenced
+      one ``evidence_unresolved``; a store that cannot be read makes it
+      ``evidence_unreadable``, reported but not driving (`_driving`).
 
     Never raises; a failure to read is the ``unreadable`` reading.
     """
     if not isinstance(todo, dict) or todo.get("status") not in {"established", "all_done"}:
         return []
     items = todo.get("items") if isinstance(todo.get("items"), list) else []
-    candidates = [
-        (index, item)
-        for index, item in enumerate(items, start=1)
-        if isinstance(item, dict)
-        and item.get("state") == "done"
-        and not recorded_blocked_reason(item)
-    ]
+    candidates: list[tuple[int, dict[str, Any], dict[str, str] | None]] = []
+    seen: set[str] = set()
+    duplicates: set[int] = set()
+    for index, item in enumerate(items, start=1):
+        if not isinstance(item, dict) or item.get("state") != "done" or recorded_blocked_reason(item):
+            continue
+        evidence = valid_evidence(item.get("evidence"))
+        if evidence is None and not item.get("done_at"):
+            continue
+        if evidence is not None:
+            key = evidence_key(evidence)
+            if key in seen:
+                duplicates.add(index)
+            seen.add(key)
+        candidates.append((index, item, evidence))
     if not candidates:
         return []
-    refs = [valid_evidence(item.get("evidence")) for _, item in candidates]
+    queries = [
+        {"evidence": evidence, "from": _epoch(item.get("window_start")), "to": _epoch(item.get("done_at"))}
+        for _, item, evidence in candidates
+    ]
     try:
-        reading = evidence_reading(hermes_home or None, session_ref, [ref for ref in refs if ref])
+        reading = item_verdicts(hermes_home or None, session_ref, queries)
     except _READ_FAILURES:
-        reading = {"store": STORE_UNREADABLE, "observable_lane": False, "verdicts": {}}
+        reading = {"store": STORE_UNREADABLE, "verdicts": []}
     store = reading.get("store")
-    verdicts = reading.get("verdicts") if isinstance(reading.get("verdicts"), dict) else {}
+    verdicts = reading.get("verdicts") if isinstance(reading.get("verdicts"), list) else []
     unverified: list[dict[str, Any]] = []
-    for (index, item), ref in zip(candidates, refs, strict=True):
-        if ref:
-            if store == STORE_UNREADABLE:
-                reason = EVIDENCE_REASON_UNREADABLE
-            elif store != STORE_READ:
-                # No store at all: a reference nothing can look up is not one
-                # that closes, whatever wrote it.
-                reason = EVIDENCE_REASON_UNRESOLVED
-            else:
-                verdict = verdicts.get(evidence_key(ref))
-                if verdict == EVIDENCE_CLOSED:
-                    continue
-                reason = (
-                    EVIDENCE_REASON_FAILED if verdict == EVIDENCE_FAILED else EVIDENCE_REASON_UNRESOLVED
-                )
-        elif store == STORE_UNREADABLE:
+    for position, (index, item, evidence) in enumerate(candidates):
+        if store == STORE_UNREADABLE:
             reason = EVIDENCE_REASON_UNREADABLE
-        elif store == STORE_READ and reading.get("observable_lane") is True:
-            reason = EVIDENCE_REASON_NONE
+        elif store != STORE_READ:
+            if evidence is None:
+                continue
+            reason = EVIDENCE_REASON_UNRESOLVED
+        elif index in duplicates:
+            reason = EVIDENCE_REASON_UNRESOLVED
         else:
-            continue
+            verdict = verdicts[position] if position < len(verdicts) else ""
+            if verdict in {EVIDENCE_CLOSED, WINDOW_EMPTY}:
+                continue
+            if verdict == WINDOW_HAS_COMMANDS:
+                reason = EVIDENCE_REASON_NONE
+            elif verdict == EVIDENCE_FAILED:
+                reason = EVIDENCE_REASON_FAILED
+            else:
+                reason = EVIDENCE_REASON_UNRESOLVED
         unverified.append(
             {"item": index, "state": DONE_UNVERIFIED, "text": item_display_text(item), "reason": reason}
         )
     return unverified
-
-
-def _unverified_clause(unverified: list[dict[str, Any]]) -> str:
-    """`` · done_unverified: item N (reason)[ +K more]``, or ``""``."""
-    if not unverified:
-        return ""
-    first = unverified[0]
-    clause = f" · {DONE_UNVERIFIED}: item {first['item']} ({first['reason']})"
-    if len(unverified) > 1:
-        clause += f" +{len(unverified) - 1} more"
-    return clause
 
 
 def _first_item(items: list[Any], state: str) -> dict[str, Any] | None:
@@ -672,6 +697,23 @@ def _first_item(items: list[Any], state: str) -> dict[str, Any] | None:
         (item for item in items if isinstance(item, dict) and item.get("state") == state),
         None,
     )
+
+
+def _epoch(value: object) -> float | None:
+    parsed = _parse_timestamp(value) if isinstance(value, str) and value else None
+    return parsed.timestamp() if parsed else None
+
+
+def _unverified_clause(unverified: list[dict[str, Any]]) -> str:
+    """`` · item N is marked done, but <plain reason>[ (+K more)]``, or ``""``."""
+    if not unverified:
+        return ""
+    first = unverified[0]
+    phrase = _EVIDENCE_REASON_PHRASES.get(first["reason"], "no recorded result matches it")
+    clause = f" · item {first['item']} is marked done, but {phrase}"
+    if len(unverified) > 1:
+        clause += f" (+{len(unverified) - 1} more)"
+    return clause
 
 
 def item_display_text(item: dict[str, Any] | None) -> str:
@@ -826,7 +868,11 @@ def plan_continuation_reading(
         if text:
             head = f"{head} · next: {text}"
         head += _unverified_clause(unverified)
-        rule = f"{TODO_CONTINUATION_RULE} {TODO_EVIDENCE_RULE}" if unverified else TODO_CONTINUATION_RULE
+        rule = (
+            f"{TODO_CONTINUATION_RULE} {TODO_EVIDENCE_RULE}"
+            if _driving(unverified)
+            else TODO_CONTINUATION_RULE
+        )
         lines.append(f"{head}. {rule}")
     # Read in its own guard, not folded into the one above: the two lines are
     # independent obligations, so a failed outcome read must not take the plan
@@ -881,7 +927,11 @@ def _open_plan_line(
     # Rides the drive, so it is carried wherever TODO_CONTINUATION_RULE is and
     # nowhere it is not: a deferred plan or an answer-first turn is not asking
     # for the next item, so it is not asking for this item's command either.
-    drive = f"{TODO_CONTINUATION_RULE} {TODO_EVIDENCE_RULE}" if unverified else TODO_CONTINUATION_RULE
+    drive = (
+        f"{TODO_CONTINUATION_RULE} {TODO_EVIDENCE_RULE}"
+        if _driving(unverified)
+        else TODO_CONTINUATION_RULE
+    )
     # A blocked next item wins over a deferral, so the line it produces is
     # unchanged here: the block is the stronger statement about why the plan is
     # not moving, and reporting a redirection over it would hide the thing the

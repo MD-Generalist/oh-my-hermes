@@ -235,6 +235,11 @@ PLUGIN_TOOL_SCHEMA_CHAR_LIMIT = 60871
 # carries it. Re-derived from the producer.
 # 5647 -> 5662: the work-context skill openings reach the route hint's
 # context card (+15 on the routed request). Re-derived from the producer.
+# 5662 unchanged: the `done_unverified_plan` scenario joins the set so the plan
+# line's evidence clause and `TODO_EVIDENCE_RULE` are measured (1044 on a turn
+# a finished background process opened). It is under `all_surfaces`, which
+# still sets the maximum, and the fallback maximum is unchanged with it.
+# Re-derived from the producer.
 PRE_LLM_CALL_CONTEXT_CHAR_LIMIT = 5662
 # The same scenario set on the fallback: a session the awareness section did
 # not render for (a restart resume, a legacy id-rotating compaction, a refused

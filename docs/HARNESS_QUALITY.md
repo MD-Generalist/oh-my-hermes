@@ -528,56 +528,85 @@ accepted plan reaches the store in three calls (`set`, `checkpoint`,
 
 ## Plan Todo Evidence
 
-A done mark on the `omh_todo` plan is a declaration, and the continuation rule
-used to stop a plan once every item carried one. A run could therefore mark
-its items done in words and end its own loop with nothing run. The stop
-criterion now reads a record for each done item instead of the mark.
+A done mark on the `omh_todo` plan is a declaration. The continuation rule used
+to stop a plan once every item carried one, so a run could mark an item done
+over a failed command, or tick several items off one command, and end its own
+loop. The stop criterion now reads a record for each done item instead of the
+mark.
 
-**What is recorded.** When `omh_todo` marks an item done (`advance`, or an
-item a `set` newly marks done), OMH reads the session's own Hermes `state.db`
-with `mode=ro` and stores the latest `terminal`, `write_file` or `patch` call
-it recorded since the plan was last written, as a typed reference on the
-item: `evidence: {kind, ref}`. `tool_call` names a `terminal` call and
-`file_write` a `write_file` or `patch` call, both by `tool_call_id`. The
-model does not supply the id; models do not reliably see tool call ids, so
-OMH picks it from the records. That is association by time: it proves a
-command ran and how it ended between two plan writes, never that it tested
-the item. `pr`, `ci_run` and `team_check`
-(`<team_id>/<unit_id>/attempt-<n>/check`) are accepted in the record so every
-lane writes one vocabulary, and none resolves yet. OMH makes no network call,
-so a PR or CI run closes an item through the `gh` call that observed it.
+**What OMH binds.** The `omh_todo` tool binds every done item itself. It drops
+any `evidence`, `done_at` or `window_start` the writer sent, because a
+reference a writer can send is a reference it can copy from a result it was
+shown. When the tool marks an item done, it binds three fields:
 
-**How an item closes.** At each turn end (`pre_verify`) and on the per-turn
-plan line, the reference is judged against the result Hermes persisted:
-`tool_call` closes on `exit_code` 0, and `file_write` closes on
-`bytes_written` or `patch` `success: true`, with no `error` field and no
-`effect_disposition` of `none`. These are the #1922 outcome rules. A done item
-that no record closes is `done_unverified`. It counts as open, including on a
-plan whose every item says done, and the directive names it:
-`done_unverified: item N (reason)`.
+- `done_at`: the time of the done write.
+- `window_start`: the item's window. This is the plan's previous write, or the
+  write itself for a plan's first declaration, so nothing the session ran
+  before the plan existed can close its items.
+- `evidence`: at most one call from that window that no other item holds. It
+  is read from the session's own Hermes `state.db`, opened with `mode=ro`,
+  ignoring rows Hermes rewound out of the transcript.
+
+The evidence is a typed `{kind, ref}`. `tool_call` names a `terminal` call and
+`file_write` names a `write_file` or `patch` call, both by `tool_call_id`. One
+command closes at most one item. When a `set` marks three items done after one
+command, the first takes the call and the other two are judged over their
+windows. A reference two items share is refused on write, and on read it
+closes only the first item.
+
+This is association by time: it proves a command ran and how it ended inside
+the item's window, never that the command tested the item.
+
+`pr`, `ci_run` and `team_check` (`<team_id>/<unit_id>/attempt-<n>/check`) are
+accepted in the record so every lane writes one vocabulary, but none of them
+resolves yet. OMH makes no network call, so a PR or CI run closes an item
+through the `gh` call that observed it.
+
+**How an item closes.** Items are judged at each turn end (`pre_verify`), on
+the per-turn plan line, and in the tool's own result. A reference closes when
+all of the following hold:
+
+- its recorded result lies inside the item's window;
+- a `tool_call` result shows `exit_code` 0, or a `file_write` result shows
+  `bytes_written` or `patch` `success: true` (the #1922 outcome rules);
+- the result has no `error` field and no `effect_disposition` of `none`.
+
+An item with no reference closes when no evidence-capable call was recorded
+inside its window. Such an item is conversational: a command-backed item
+before it does not hold it open.
+
+Any other done item is `done_unverified`. It counts as open, including on a
+plan where every item says done. The plan line names it in plain words, for
+example "item 2 is marked done, but the command recorded for it failed". The
+tool result carries the reason code:
 
 | Reason | Meaning |
 | --- | --- |
-| `no_evidence` | The item has no reference, and the session recorded commands. |
-| `evidence_failed` | The recorded result failed: a nonzero exit, an error, or no effect. |
-| `evidence_unresolved` | The store holds no result for the reference: an unknown id, another session's call, the wrong tool for the kind, an unknown outcome, or a kind that does not resolve yet. |
-| `evidence_unreadable` | The store exists and could not be read. This is reported, never taken as evidence. |
+| `no_evidence` | Commands ran inside the item's window, and each one already holds another item. |
+| `evidence_failed` | The call bound to the item failed: a nonzero exit, an error, or no effect. |
+| `evidence_unresolved` | No recorded result matches the reference. It is an unknown id, another session's call, a call from before the window, a rewound row, the wrong tool for the kind, an unknown outcome, or a kind that does not resolve yet. |
+| `evidence_unreadable` | The store exists and could not be read. This is reported, never taken as evidence, and it does not keep the loop going: running a command cannot fix it. |
 
-The item closes when it is marked done again after a passing command. It also
-closes when it is given a `blocked_reason`, which closes it as skipped. The
-stop criterion is still "every item closed, or the next item recorded blocked
-with its reason".
+A `done_unverified` item closes in one of two ways:
 
-**What does not change.** In a session with no recorded `terminal`,
-`write_file` or `patch` call, a done mark counts as it always did. That covers
-a conversational checklist, a host with no session store, and a home-wide CLI
-record. This is the backward-compatibility choice: a plan no command could
-close is not asked for one. The continuation is still bounded by the host's
+- Run a passing command, then mark the item done again.
+- Give it a `blocked_reason`, which closes it as skipped.
+
+The stop criterion is still "every item closed, or the next item recorded
+blocked with its reason".
+
+**What does not change.** A done item that has none of the three binding
+fields counts as done, as it always did. That covers an item marked done
+before this change, a CLI write, and a hand edit. A live plan picked up after
+`omh update` does not reopen. The continuation is still bounded by the host's
 `agent.max_verify_nudges` and by OMH's rule that a later attempt nudges only
-when the plan moved. A finished plan still retires from the per-turn line
-after its linger window, and the HUD still shows every done mark as done.
-Records written before this change load and project unchanged, and the
-`omh_todo` schema did not grow.
+when the plan moved. Re-advancing a done item when no new command ran is not
+a write at all, so it neither restamps the plan nor buys another nudge. A
+finished plan still retires from the per-turn line after its linger window,
+and the HUD still shows every done mark as done. The `omh_todo` schema did
+not grow. The `done_unverified_plan` scenario in
+`src/maintenance/per_turn_context.py` measures the plan line with the
+evidence clause, and it sits under the per-turn limit.
 
 ## Golden Examples
 

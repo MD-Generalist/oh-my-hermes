@@ -13,7 +13,7 @@ from ..host_observation import (
 )
 from ..dispatch_outcomes import _parse_timestamp
 from ..runtime_reader import default_omh_home, read_omh_todo
-from ..todo_evidence import latest_observed_evidence
+from ..todo_evidence import MAX_BOUND_CALLS, evidence_key, observed_calls, valid_evidence
 from ..todo_reconciliation import unverified_done_items
 from ..todo_store import (
     TODO_CLAIM_BOUNDARY,
@@ -23,10 +23,11 @@ from ..todo_store import (
     TodoStoreError,
     TodoValidationError,
     advance_todo_item,
-    attach_done_evidence,
+    bind_done_items,
     build_todo_record,
     clear_todo,
     read_todo_record,
+    todo_timestamp,
     write_todo,
 )
 from ..todo_templates import CODE_STORY_TEMPLATE
@@ -244,12 +245,30 @@ def omh_todo_handler(args: dict[str, Any], **kwargs) -> str:
     if action == "set":
         try:
             items = args.get("items")
-            if _declares_done(items):
+            if isinstance(items, list):
+                # OMH binds done items itself and ignores any binding the
+                # writer sent (`bind_done_items`). A first declaration's
+                # window opens at this write, so nothing the session ran
+                # before the plan existed can close one of its items.
                 prior = read_todo_record(default_omh_home(), session_ref) or {}
-                items = attach_done_evidence(
+                now = todo_timestamp()
+                prior_stamp = prior.get("updated_at")
+                window_start = (
+                    prior_stamp
+                    if isinstance(prior_stamp, str) and _parse_timestamp(prior_stamp)
+                    else now
+                )
+                calls = (
+                    _calls_since(session_ref, window_start, _held_keys(prior.get("items")))
+                    if window_start != now and _declares_done(items)
+                    else []
+                )
+                items = bind_done_items(
                     items,
                     prior_items=prior.get("items"),
-                    observed=_observed_since(session_ref, prior.get("updated_at") if prior else None),
+                    calls=calls,
+                    window_start=window_start,
+                    done_at=now,
                 )
             record = build_todo_record(
                 args.get("title", ""),
@@ -287,7 +306,7 @@ def omh_todo_handler(args: dict[str, Any], **kwargs) -> str:
                 session_ref=session_ref,
                 blocked_reason=args.get("blocked_reason", ""),
                 deferred_reason=args.get("deferred_reason", ""),
-                observed_evidence=lambda stamp: _observed_since(session_ref, stamp),
+                observed_calls=lambda stamp, held: _calls_since(session_ref, stamp, held),
             )
             payload["status"] = "written"
         except TodoContendedError as error:
@@ -325,22 +344,32 @@ def _declares_done(items: object) -> bool:
     )
 
 
-def _observed_since(session_ref: str, stamp: object) -> dict[str, str] | None:
-    """The latest command this session recorded after ``stamp``, as evidence.
+def _calls_since(session_ref: str, stamp: object, held: set[str]) -> list[dict[str, str]]:
+    """The calls this session recorded after ``stamp`` that no item holds, oldest first.
 
-    ``stamp`` is the plan record's previous ``updated_at``; an absent or
-    unparseable one is no window, which reads the latest call of the session.
-    A host that cannot bind its home has no records to name, and that is the
-    same answer as a session that ran nothing.
+    An unparseable ``stamp`` is no window at all and binds nothing. A host
+    that cannot bind its home has no records to name, which is the same
+    answer as a session that ran nothing.
     """
-    parsed = _parse_timestamp(stamp) if stamp else None
+    parsed = _parse_timestamp(stamp) if isinstance(stamp, str) and stamp else None
+    if parsed is None:
+        return []
     try:
         hermes_home = runtime_paths.plugin_home(None, hermes=True)
     except (runtime_paths.RuntimeBindingError, OSError, RuntimeError):
-        return None
-    return latest_observed_evidence(
-        hermes_home, session_ref, since_epoch=parsed.timestamp() if parsed else None
+        return []
+    return observed_calls(
+        hermes_home, session_ref, after_epoch=parsed.timestamp(), exclude=held, limit=MAX_BOUND_CALLS
     )
+
+
+def _held_keys(items: object) -> set[str]:
+    held: set[str] = set()
+    for item in items if isinstance(items, list) else []:
+        evidence = valid_evidence(item.get("evidence")) if isinstance(item, dict) else None
+        if evidence is not None:
+            held.add(evidence_key(evidence))
+    return held
 
 
 def _unverified(todo: object, session_ref: str) -> list[dict[str, Any]]:

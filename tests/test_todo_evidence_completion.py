@@ -1,19 +1,29 @@
 """Contracts for closing a plan item by evidence rather than by a done mark.
 
 The continuation rule stops a plan when every item is done or an item is
-recorded blocked with its reason. A done mark is a declaration, so a run that
-marked its items done in words -- with no command behind them -- ended its own
-loop. These tests pin the record-backed half of the stop criterion:
+recorded blocked with its reason. A done mark is a declaration, so a run could
+mark an item done over a failed command, or tick several items off one
+command, and end its own loop. These tests pin the record-backed half of the
+stop criterion:
 
-* a done item whose evidence reference resolves to a recorded success closes;
-* a done item with no reference, in a session that recorded commands, stays
-  open as ``done_unverified`` and the turn-end directive names it;
+* a done item whose bound call resolves to a recorded success closes;
+* OMH binds evidence itself: a reference the writer sends is ignored, a
+  reference two items share closes one, and a call from before the item's
+  window closes nothing;
+* one recorded call closes at most one item, and a plan's first declaration
+  cannot be closed by anything the session ran before it;
+* a done item whose window holds commands but no call of its own stays open
+  as ``done_unverified`` and the turn-end directive names it in plain words;
+  a done item whose window holds no command at all is conversational and
+  closes;
 * a forged reference -- an unknown id, a nonzero exit, a kind pointing at the
-  wrong tool, a kind nothing resolves yet -- does not close;
-* a store that exists and cannot be read is said, never taken as evidence;
+  wrong tool, a kind nothing resolves yet, a rewound row -- does not close;
+* a store that exists and cannot be read is reported and never taken as
+  evidence, and it does not drive the loop;
 * a blocked reason still stops the loop, on an open item or on a done one;
-* records and sessions from before evidence existed keep their behaviour;
-* the host's nudge budget still bounds the continuation.
+* items done before evidence existed count as done;
+* the host's nudge budget still bounds the continuation, and a no-op
+  re-advance neither restamps the plan nor buys another nudge.
 
 Every fixture is a Hermes ``state.db`` built here with the columns the reader
 queries; nothing reads the item text or a command's output.
@@ -25,7 +35,9 @@ import json
 import os
 import sqlite3
 import tempfile
+import time
 import unittest
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import patch
 
@@ -50,7 +62,7 @@ from omh.plugin_bundle.omh.todo_reconciliation import (
 )
 from omh.plugin_bundle.omh.todo_store import (
     TodoValidationError,
-    attach_done_evidence,
+    bind_done_items,
     build_todo_record,
     todo_path,
     write_todo,
@@ -60,6 +72,13 @@ from omh.plugin_bundle.omh.tools.todo_tool import omh_todo_handler
 SESSION = "20260928_101500_abc123"
 PARENT = "20260928_090000_parent"
 T0 = 1_790_000_000.0
+
+
+def iso(epoch: float) -> str:
+    return datetime.fromtimestamp(epoch, timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+WINDOW = {"window_start": iso(T0 - 60), "done_at": iso(T0 + 60)}
 
 
 def _terminal(exit_code, *, error=None):
@@ -72,7 +91,7 @@ def _terminal(exit_code, *, error=None):
 def build_state_db(
     hermes: Path, rows: list[tuple], *, sessions: tuple[tuple[str, str | None], ...] = ((SESSION, None),)
 ) -> Path:
-    """``rows`` are ``(session_id, tool_name, tool_call_id, content, disposition, timestamp)``."""
+    """``rows`` are ``(session_id, tool_name, tool_call_id, content, disposition, timestamp[, active, compacted])``."""
     hermes.mkdir(parents=True, exist_ok=True)
     path = hermes / "state.db"
     connection = sqlite3.connect(path)
@@ -81,28 +100,27 @@ def build_state_db(
         connection.execute(
             "CREATE TABLE messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, "
             "role TEXT, content TEXT, tool_call_id TEXT, tool_calls TEXT, tool_name TEXT, "
-            "effect_disposition TEXT, timestamp REAL)"
+            "effect_disposition TEXT, timestamp REAL, active INTEGER NOT NULL DEFAULT 1, "
+            "compacted INTEGER NOT NULL DEFAULT 0)"
         )
         connection.executemany("INSERT INTO sessions VALUES (?, ?)", sessions)
-        connection.executemany(
-            "INSERT INTO messages (session_id, role, tool_name, tool_call_id, content, "
-            "effect_disposition, timestamp) VALUES (?, 'tool', ?, ?, ?, ?, ?)",
-            rows,
-        )
         connection.commit()
     finally:
         connection.close()
+    add_rows(hermes, rows)
     return path
 
 
 def add_rows(hermes: Path, rows: list[tuple]) -> None:
     connection = sqlite3.connect(hermes / "state.db")
     try:
-        connection.executemany(
-            "INSERT INTO messages (session_id, role, tool_name, tool_call_id, content, "
-            "effect_disposition, timestamp) VALUES (?, 'tool', ?, ?, ?, ?, ?)",
-            rows,
-        )
+        for row in rows:
+            active, compacted = (row[6], row[7]) if len(row) > 6 else (1, 0)
+            connection.execute(
+                "INSERT INTO messages (session_id, role, tool_name, tool_call_id, content, "
+                "effect_disposition, timestamp, active, compacted) VALUES (?, 'tool', ?, ?, ?, ?, ?, ?, ?)",
+                (*row[:6], active, compacted),
+            )
         connection.commit()
     finally:
         connection.close()
@@ -135,6 +153,9 @@ class _PlanHomeTest(unittest.TestCase):
     def unverified(self) -> list[dict]:
         return unverified_done_items(self.todo(), hermes_home=str(self.hermes), session_ref=SESSION)
 
+    def reasons(self) -> list[tuple[int, str]]:
+        return [(entry["item"], entry["reason"]) for entry in self.unverified()]
+
     def fire(self, attempt: int = 0):
         return verify_hooks.pre_verify(
             session_id=SESSION,
@@ -146,14 +167,17 @@ class _PlanHomeTest(unittest.TestCase):
         )
 
 
+def done(text: str, ref: dict | None = None, **window) -> dict:
+    item = {"text": text, "state": "done", **(window or WINDOW)}
+    if ref is not None:
+        item["evidence"] = ref
+    return item
+
+
 class EvidenceClosesItemsTest(_PlanHomeTest):
     def test_done_with_an_exit_zero_command_closes_the_item(self):
         build_state_db(self.hermes, [(SESSION, "terminal", "toolu_ok", _terminal(0), None, T0)])
-        self.write_plan(
-            [
-                {"text": "land the fix", "state": "done", "evidence": evidence("tool_call", "toolu_ok")},
-            ]
-        )
+        self.write_plan([done("land the fix", evidence("tool_call", "toolu_ok"))])
 
         self.assertEqual(self.unverified(), [])
         self.assertIsNone(open_plan_position(self.todo(), self.unverified()))
@@ -168,10 +192,7 @@ class EvidenceClosesItemsTest(_PlanHomeTest):
             ],
         )
         self.write_plan(
-            [
-                {"text": "write it", "state": "done", "evidence": evidence("file_write", "toolu_w")},
-                {"text": "patch it", "state": "done", "evidence": evidence("file_write", "toolu_p")},
-            ]
+            [done("write it", evidence("file_write", "toolu_w")), done("patch it", evidence("file_write", "toolu_p"))]
         )
 
         self.assertEqual(self.unverified(), [])
@@ -183,22 +204,27 @@ class EvidenceClosesItemsTest(_PlanHomeTest):
             [(PARENT, "terminal", "toolu_before", _terminal(0), None, T0)],
             sessions=((PARENT, None), (SESSION, PARENT)),
         )
-        self.write_plan(
-            [{"text": "land the fix", "state": "done", "evidence": evidence("tool_call", "toolu_before")}]
-        )
+        self.write_plan([done("land the fix", evidence("tool_call", "toolu_before"))])
+
+        self.assertEqual(self.unverified(), [])
+
+    def test_a_row_a_compaction_folded_still_resolves(self):
+        build_state_db(self.hermes, [(SESSION, "terminal", "toolu_folded", _terminal(0), None, T0, 0, 1)])
+        self.write_plan([done("land the fix", evidence("tool_call", "toolu_folded"))])
 
         self.assertEqual(self.unverified(), [])
 
 
-class DoneWithoutEvidenceTest(_PlanHomeTest):
-    def test_done_without_evidence_stays_open_and_the_directive_names_it(self):
-        build_state_db(self.hermes, [(SESSION, "terminal", "toolu_any", _terminal(0), None, T0)])
-        self.write_plan(
+class WindowTest(_PlanHomeTest):
+    def test_commands_in_the_window_and_none_bound_leave_the_item_open_and_named(self):
+        build_state_db(
+            self.hermes,
             [
-                {"text": "land the fix", "state": "done", "evidence": evidence("tool_call", "toolu_any")},
-                {"text": "run the suite", "state": "done"},
-            ]
+                (SESSION, "terminal", "toolu_a", _terminal(0), None, T0),
+                (SESSION, "terminal", "toolu_b", _terminal(0), None, T0 + 1),
+            ],
         )
+        self.write_plan([done("land the fix", evidence("tool_call", "toolu_a")), done("run the suite")])
 
         unverified = self.unverified()
         self.assertEqual(
@@ -210,37 +236,85 @@ class DoneWithoutEvidenceTest(_PlanHomeTest):
         self.assertEqual(result["action"], "continue")
         message = result["message"]
         self.assertIn("[OMH plan todo] 1/2 done · next: run the suite", message)
-        self.assertIn(f"{DONE_UNVERIFIED}: item 2 ({EVIDENCE_REASON_NONE})", message)
+        self.assertIn("item 2 is marked done, but commands ran but none was recorded for it", message)
         self.assertIn(TODO_CONTINUATION_RULE, message)
         self.assertIn(TODO_EVIDENCE_RULE, message)
 
+    def test_the_line_uses_plain_words_not_record_codes(self):
+        build_state_db(self.hermes, [(SESSION, "terminal", "toolu_red", _terminal(2), None, T0)])
+        self.write_plan([done("land the fix", evidence("tool_call", "toolu_red"))])
+
+        message = self.fire()["message"]
+
+        self.assertIn("the command recorded for it failed", message)
+        for code in (DONE_UNVERIFIED, EVIDENCE_REASON_FAILED, EVIDENCE_REASON_NONE):
+            self.assertNotIn(code, message)
+
     def test_the_per_turn_line_names_it_too(self):
-        build_state_db(self.hermes, [(SESSION, "terminal", "toolu_any", _terminal(0), None, T0)])
-        self.write_plan([{"text": "land the fix", "state": "done"}, {"text": "report", "state": "active"}])
+        build_state_db(self.hermes, [(SESSION, "terminal", "toolu_any", _terminal(1), None, T0)])
+        self.write_plan(
+            [done("land the fix", evidence("tool_call", "toolu_any")), {"text": "report", "state": "active"}]
+        )
 
         line = open_todo_reminder(omh_home=str(self.home), hermes_home=str(self.hermes), session_ref=SESSION)
 
         self.assertIn("[OMH plan todo] 0/2 done · active: report", line)
-        self.assertIn(f"{DONE_UNVERIFIED}: item 1 ({EVIDENCE_REASON_NONE})", line)
+        self.assertIn("item 1 is marked done, but the command recorded for it failed", line)
         self.assertIn(TODO_EVIDENCE_RULE, line)
 
-    def test_a_conversational_session_keeps_the_done_mark(self):
-        # A store exists but this session recorded no evidence-capable call:
-        # nothing a command could close, so the done mark is not second-guessed.
-        build_state_db(self.hermes, [("another-session", "terminal", "toolu_x", _terminal(0), None, T0)])
-        self.write_plan([{"text": "explain the design", "state": "done"}])
+    def test_an_item_whose_own_window_holds_no_command_is_conversational_and_closes(self):
+        # Commands ran for the first item; the second item's window is later
+        # and empty, so it is not held open by the session's earlier work.
+        build_state_db(self.hermes, [(SESSION, "terminal", "toolu_a", _terminal(0), None, T0)])
+        self.write_plan(
+            [
+                done("land the fix", evidence("tool_call", "toolu_a")),
+                done("explain the design", window_start=iso(T0 + 100), done_at=iso(T0 + 200)),
+            ]
+        )
 
         self.assertEqual(self.unverified(), [])
         self.assertIsNone(self.fire())
 
-    def test_an_unreadable_store_is_said_and_not_taken_as_evidence(self):
-        (self.hermes / "state.db").write_bytes(b"this is not a sqlite database at all" * 8)
-        self.write_plan([{"text": "land the fix", "state": "done"}])
-
-        self.assertEqual(
-            [entry["reason"] for entry in self.unverified()], [EVIDENCE_REASON_UNREADABLE]
+    def test_a_call_from_before_the_items_window_does_not_close(self):
+        build_state_db(self.hermes, [(SESSION, "terminal", "toolu_old", _terminal(0), None, T0)])
+        self.write_plan(
+            [done("land the fix", evidence("tool_call", "toolu_old"), window_start=iso(T0 + 1), done_at=iso(T0 + 9))]
         )
-        self.assertIn(f"({EVIDENCE_REASON_UNREADABLE})", self.fire()["message"])
+
+        self.assertEqual(self.reasons(), [(1, EVIDENCE_REASON_UNRESOLVED)])
+
+    def test_a_reference_two_items_share_closes_only_the_first(self):
+        build_state_db(self.hermes, [(SESSION, "terminal", "toolu_one", _terminal(0), None, T0)])
+        record = self.write_plan([done("a"), done("b")])
+        # The writer refuses a shared reference, so the shape is reached by a
+        # hand edit; the reader must still close only one item with it.
+        record["items"][0]["evidence"] = evidence("tool_call", "toolu_one")
+        record["items"][1]["evidence"] = evidence("tool_call", "toolu_one")
+        todo_path(self.home, SESSION).write_text(json.dumps(record), encoding="utf-8", newline="\n")
+
+        self.assertEqual(self.reasons(), [(2, EVIDENCE_REASON_UNRESOLVED)])
+
+
+class UnreadableStoreTest(_PlanHomeTest):
+    def test_an_unreadable_store_is_reported_never_closes_and_does_not_drive(self):
+        (self.hermes / "state.db").write_bytes(b"this is not a sqlite database at all" * 8)
+        self.write_plan([done("land the fix")])
+
+        self.assertEqual(self.reasons(), [(1, EVIDENCE_REASON_UNREADABLE)])
+        # Not closed by evidence, and not a reason to keep the turn going.
+        self.assertIsNone(open_plan_position(self.todo(), self.unverified()))
+        self.assertIsNone(self.fire())
+
+    def test_it_is_said_in_a_line_that_renders_for_other_work(self):
+        (self.hermes / "state.db").write_bytes(b"this is not a sqlite database at all" * 8)
+        self.write_plan([done("land the fix"), {"text": "report", "state": "active"}])
+
+        message = self.fire()["message"]
+
+        self.assertIn("[OMH plan todo] 1/2 done · next: report", message)
+        self.assertIn("the session record could not be read", message)
+        self.assertNotIn(TODO_EVIDENCE_RULE, message)
 
 
 class ForgedEvidenceTest(_PlanHomeTest):
@@ -255,11 +329,12 @@ class ForgedEvidenceTest(_PlanHomeTest):
                 (SESSION, "terminal", "toolu_no_effect", _terminal(0), "none", T0 + 3),
                 (SESSION, "terminal", "toolu_yielded", _terminal(None), None, T0 + 4),
                 ("someone-else", "terminal", "toolu_foreign", _terminal(0), None, T0 + 5),
+                (SESSION, "terminal", "toolu_rewound", _terminal(0), None, T0 + 6, 0, 0),
             ],
         )
 
     def reason_for(self, ref: dict) -> str:
-        self.write_plan([{"text": "land the fix", "state": "done", "evidence": ref}])
+        self.write_plan([done("land the fix", ref)])
         unverified = self.unverified()
         self.assertEqual(len(unverified), 1, unverified)
         return unverified[0]["reason"]
@@ -280,6 +355,9 @@ class ForgedEvidenceTest(_PlanHomeTest):
     def test_another_sessions_call_does_not_close(self):
         self.assertEqual(self.reason_for(evidence("tool_call", "toolu_foreign")), EVIDENCE_REASON_UNRESOLVED)
 
+    def test_a_rewound_call_does_not_close(self):
+        self.assertEqual(self.reason_for(evidence("tool_call", "toolu_rewound")), EVIDENCE_REASON_UNRESOLVED)
+
     def test_a_kind_pointing_at_the_wrong_tool_does_not_close(self):
         self.assertEqual(self.reason_for(evidence("file_write", "toolu_ok")), EVIDENCE_REASON_UNRESOLVED)
 
@@ -296,12 +374,12 @@ class ForgedEvidenceTest(_PlanHomeTest):
 class BlockedReasonStopsTheLoopTest(_PlanHomeTest):
     def setUp(self) -> None:
         super().setUp()
-        build_state_db(self.hermes, [(SESSION, "terminal", "toolu_ok", _terminal(0), None, T0)])
+        build_state_db(self.hermes, [(SESSION, "terminal", "toolu_red", _terminal(1), None, T0)])
 
     def test_a_blocked_next_item_stops_the_plan_line_despite_unverified_done_items(self):
         self.write_plan(
             [
-                {"text": "land the fix", "state": "done"},
+                done("land the fix", evidence("tool_call", "toolu_red")),
                 {"text": "merge", "state": "pending", "blocked_reason": "waiting on the owner's review"},
             ]
         )
@@ -311,18 +389,18 @@ class BlockedReasonStopsTheLoopTest(_PlanHomeTest):
 
     def test_a_done_item_carrying_a_reason_is_closed_as_skipped(self):
         self.write_plan(
-            [
-                {"text": "land the fix", "state": "done", "evidence": evidence("tool_call", "toolu_ok")},
-                {"text": "demo video", "state": "done", "blocked_reason": "no recorder on this host"},
-            ]
+            [{**done("land the fix", evidence("tool_call", "toolu_red")), "blocked_reason": "flaky host, see #12"}]
         )
 
         self.assertEqual(self.unverified(), [])
         self.assertIsNone(self.fire())
 
 
-class LegacyCompatibilityTest(_PlanHomeTest):
-    def test_a_record_written_before_evidence_existed_loads_and_projects_unchanged(self):
+class ItemsDoneBeforeEvidenceExistedTest(_PlanHomeTest):
+    def test_a_pre_evidence_record_loads_projects_unchanged_and_its_done_items_still_count(self):
+        # A session that has run commands, and a record written before items
+        # carried any binding: its done items are grandfathered, not re-opened.
+        build_state_db(self.hermes, [(SESSION, "terminal", "toolu_any", _terminal(1), None, time.time())])
         legacy = {
             "schema_version": "omh_todo/v1",
             "title": "plan",
@@ -331,7 +409,7 @@ class LegacyCompatibilityTest(_PlanHomeTest):
             "session_ref": SESSION,
             "items": [
                 {"text": "land the fix", "state": "done"},
-                {"text": "report", "state": "active"},
+                {"text": "run the suite", "state": "done"},
             ],
             "claim_boundary": "legacy",
         }
@@ -341,44 +419,29 @@ class LegacyCompatibilityTest(_PlanHomeTest):
 
         todo = self.todo()
 
-        self.assertEqual(todo["status"], "established")
+        self.assertEqual(todo["status"], "all_done")
         self.assertEqual(
-            todo["items"], [{"text": "land the fix", "state": "done"}, {"text": "report", "state": "active"}]
+            todo["items"],
+            [{"text": "land the fix", "state": "done"}, {"text": "run the suite", "state": "done"}],
         )
-        # No session store: the done mark counts exactly as it always did.
         self.assertEqual(self.unverified(), [])
-        self.assertIn("[OMH plan todo] 1/2 done · next: report", self.fire()["message"])
+        self.assertIsNone(self.fire())
 
-    def test_a_record_without_evidence_is_byte_identical_to_before(self):
+    def test_a_record_without_bindings_is_byte_identical_to_before(self):
         record = build_todo_record("plan", [{"text": "a", "state": "done"}], source="s", session_ref=SESSION)
 
         self.assertEqual(record["items"], [{"text": "a", "state": "done"}])
 
-    def test_a_finished_plan_without_a_store_stays_finished(self):
-        self.write_plan([{"text": "a", "state": "done"}, {"text": "b", "state": "done"}])
-
-        self.assertIsNone(self.fire())
-        self.assertIsNone(open_plan_position(self.todo(), self.unverified()))
-
-
-class NudgeBudgetBoundsTheLoopTest(_PlanHomeTest):
-    def test_a_plan_that_does_not_move_gets_one_nudge_per_turn(self):
-        build_state_db(self.hermes, [(SESSION, "terminal", "toolu_ok", _terminal(0), None, T0)])
-        self.write_plan([{"text": "a", "state": "done"}, {"text": "b", "state": "done"}])
-
-        self.assertEqual(self.fire(attempt=0)["action"], "continue")
-        # Nothing was written since: the host's later attempts are refused.
-        self.assertIsNone(self.fire(attempt=1))
-        self.assertIsNone(self.fire(attempt=2))
-
 
 class StoreContractTest(unittest.TestCase):
-    def test_evidence_is_refused_on_an_open_item(self):
-        with self.assertRaisesRegex(TodoValidationError, "only on a done item"):
-            build_todo_record(
-                "plan", [{"text": "a", "state": "active", "evidence": evidence("tool_call", "toolu_ok")}],
-                source="s",
-            )
+    def test_bindings_are_refused_on_an_open_item(self):
+        for field, value in (
+            ("evidence", evidence("tool_call", "toolu_ok")),
+            ("done_at", iso(T0)),
+            ("window_start", iso(T0)),
+        ):
+            with self.subTest(field=field), self.assertRaisesRegex(TodoValidationError, "only on a done item"):
+                build_todo_record("plan", [{"text": "a", "state": "active", field: value}], source="s")
 
     def test_evidence_must_be_a_known_kind_in_its_shape(self):
         for bad in (
@@ -391,29 +454,41 @@ class StoreContractTest(unittest.TestCase):
             with self.subTest(bad=bad), self.assertRaises(TodoValidationError):
                 build_todo_record("plan", [{"text": "a", "state": "done", "evidence": bad}], source="s")
 
-    def test_set_attaches_the_observed_call_only_to_newly_done_items(self):
-        observed = evidence("tool_call", "toolu_new")
+    def test_one_reference_cannot_be_bound_to_two_items(self):
+        shared = evidence("tool_call", "toolu_one")
+        with self.assertRaisesRegex(TodoValidationError, "already bound"):
+            build_todo_record(
+                "plan",
+                [{"text": "a", "state": "done", "evidence": shared}, {"text": "b", "state": "done", "evidence": shared}],
+                source="s",
+            )
+
+    def test_bind_ignores_what_the_writer_sent_and_gives_each_call_to_one_item(self):
+        calls = [evidence("tool_call", "toolu_1"), evidence("tool_call", "toolu_2")]
         prior = [
-            {"text": "verified", "state": "done", "evidence": evidence("tool_call", "toolu_old")},
-            {"text": "claimed", "state": "done"},
+            {"text": "verified", "state": "done", "evidence": evidence("tool_call", "toolu_old"), **WINDOW},
+            {"text": "grandfathered", "state": "done"},
             {"text": "next", "state": "active"},
         ]
         sent = [
-            {"text": "verified", "state": "done"},
-            {"text": "claimed", "state": "done"},
-            {"text": "next", "state": "done"},
-            {"text": "explicit", "state": "done", "evidence": evidence("file_write", "toolu_w")},
+            {"text": "verified", "state": "done", "evidence": evidence("tool_call", "toolu_forged")},
+            {"text": "grandfathered", "state": "done"},
+            {"text": "next", "state": "done", "evidence": evidence("tool_call", "toolu_old")},
+            {"text": "then", "state": "done"},
+            {"text": "and then", "state": "done"},
+            {"text": "open", "state": "pending", "evidence": evidence("tool_call", "toolu_x"), "done_at": iso(T0)},
         ]
 
-        attached = attach_done_evidence(sent, prior_items=prior, observed=observed)
+        bound = bind_done_items(sent, prior_items=prior, calls=calls, window_start="W", done_at="D")
 
-        self.assertEqual(
-            [item.get("evidence") for item in attached],
-            [evidence("tool_call", "toolu_old"), None, observed, evidence("file_write", "toolu_w")],
-        )
+        self.assertEqual(bound[0], {"text": "verified", "state": "done", "evidence": evidence("tool_call", "toolu_old"), **WINDOW})
+        self.assertEqual(bound[1], {"text": "grandfathered", "state": "done"})
+        self.assertEqual([item.get("evidence") for item in bound[2:5]], [calls[0], calls[1], None])
+        self.assertEqual({item["done_at"] for item in bound[2:5]}, {"D"})
+        self.assertEqual(bound[5], {"text": "open", "state": "pending"})
 
 
-class ToolAttachesEvidenceTest(_PlanHomeTest):
+class ToolBindsEvidenceTest(_PlanHomeTest):
     def setUp(self) -> None:
         super().setUp()
         env = patch.dict(os.environ, {"OMH_HOME": str(self.home), "HERMES_HOME": str(self.hermes)})
@@ -424,52 +499,132 @@ class ToolAttachesEvidenceTest(_PlanHomeTest):
     def call(self, args: dict) -> dict:
         return json.loads(omh_todo_handler(args, session_id=SESSION))
 
-    def stored_items(self) -> list[dict]:
-        return json.loads(todo_path(self.home, SESSION).read_text(encoding="utf-8"))["items"]
+    def stored(self) -> dict:
+        return json.loads(todo_path(self.home, SESSION).read_text(encoding="utf-8"))
 
-    def test_advance_records_the_command_that_ran_since_the_last_plan_write(self):
+    def run_command(self, call_id: str, exit_code: int = 0) -> None:
+        """Record a command after the plan's last write, then let the clock move past it."""
+        stamp = datetime.fromisoformat(self.stored()["updated_at"].replace("Z", "+00:00")).timestamp()
+        add_rows(self.hermes, [(SESSION, "terminal", call_id, _terminal(exit_code), None, stamp + 0.001)])
+        time.sleep(0.02)
+
+    def test_advance_binds_the_command_that_ran_since_the_last_plan_write(self):
         self.call({"action": "set", "items": [{"text": "fix", "state": "active"}, {"text": "ship"}]})
-        add_rows(self.hermes, [(SESSION, "terminal", "toolu_suite", _terminal(0), None, 4_000_000_000.0)])
+        self.run_command("toolu_suite")
 
         result = self.call({"action": "advance", "item": 1, "item_text": "fix", "state": "done"})
 
         self.assertEqual(result["status"], "written")
-        self.assertEqual(self.stored_items()[0]["evidence"], evidence("tool_call", "toolu_suite"))
+        self.assertEqual(self.stored()["items"][0]["evidence"], evidence("tool_call", "toolu_suite"))
         self.assertNotIn("done_unverified", result)
 
-    def test_a_done_mark_with_no_command_since_the_last_write_is_reported_unverified(self):
-        self.call({"action": "set", "items": [{"text": "fix", "state": "active"}, {"text": "ship"}]})
+    def test_a_copied_reference_is_ignored_and_cannot_close_other_items(self):
+        # The reviewer's probe: item 1 closes on a real command, whose id the
+        # result then shows; the writer copies it onto two more done items.
+        self.call({"action": "set", "items": [{"text": "a", "state": "active"}, {"text": "b"}, {"text": "c"}]})
+        self.run_command("toolu_one")
+        first = self.call({"action": "advance", "item": 1, "item_text": "a", "state": "done"})
+        shown = first["todo"]["items"][0]["evidence"]
+        self.assertEqual(shown, evidence("tool_call", "toolu_one"))
+        self.run_command("toolu_red", exit_code=1)
 
-        result = self.call({"action": "advance", "item": 1, "item_text": "fix", "state": "done"})
-
-        self.assertNotIn("evidence", self.stored_items()[0])
-        self.assertEqual(
-            result["done_unverified"],
-            [{"item": 1, "state": DONE_UNVERIFIED, "reason": EVIDENCE_REASON_NONE}],
+        result = self.call(
+            {
+                "action": "set",
+                "items": [
+                    {"text": "a", "state": "done"},
+                    {"text": "b", "state": "done", "evidence": shown},
+                    {"text": "c", "state": "done", "evidence": shown},
+                ],
+            }
         )
 
-    def test_a_failed_command_is_recorded_and_a_passing_rerun_closes_a_finished_plan(self):
+        self.assertEqual(result["status"], "written")
+        items = self.stored()["items"]
+        self.assertEqual(items[0]["evidence"], shown)
+        self.assertEqual(items[1]["evidence"], evidence("tool_call", "toolu_red"))
+        self.assertNotIn("evidence", items[2])
+        self.assertEqual(
+            [(entry["item"], entry["reason"]) for entry in result["done_unverified"]],
+            [(2, EVIDENCE_REASON_FAILED), (3, EVIDENCE_REASON_NONE)],
+        )
+        self.assertNotEqual(self.todo()["status"], "absent")
+        self.assertIsNotNone(open_plan_position(self.todo(), self.unverified()))
+
+    def test_one_command_closes_at_most_one_item_in_a_set(self):
+        self.call({"action": "set", "items": [{"text": "a"}, {"text": "b"}, {"text": "c"}]})
+        self.run_command("toolu_only")
+
+        result = self.call(
+            {"action": "set", "items": [{"text": "a", "state": "done"}, {"text": "b", "state": "done"}, {"text": "c", "state": "done"}]}
+        )
+
+        self.assertEqual(
+            [item.get("evidence") for item in self.stored()["items"]],
+            [evidence("tool_call", "toolu_only"), None, None],
+        )
+        self.assertEqual(
+            [(entry["item"], entry["reason"]) for entry in result["done_unverified"]],
+            [(2, EVIDENCE_REASON_NONE), (3, EVIDENCE_REASON_NONE)],
+        )
+
+    def test_a_first_declaration_cannot_be_closed_by_what_ran_before_it(self):
+        # `toolu_setup` ran before any plan existed; a plan declared with its
+        # items already done opens its window at this write.
+        result = self.call({"action": "set", "items": [{"text": "a", "state": "done"}, {"text": "b", "state": "done"}]})
+
+        items = self.stored()["items"]
+        self.assertEqual([item.get("evidence") for item in items], [None, None])
+        self.assertEqual(items[0]["window_start"], items[0]["done_at"])
+        self.assertNotIn("done_unverified", result)
+
+    def test_a_failed_command_is_bound_and_a_passing_rerun_closes_a_finished_plan(self):
         self.call({"action": "set", "items": [{"text": "fix", "state": "active"}]})
-        add_rows(self.hermes, [(SESSION, "terminal", "toolu_red", _terminal(1), None, 4_000_000_000.0)])
+        self.run_command("toolu_red", exit_code=1)
         first = self.call({"action": "advance", "item": 1, "item_text": "fix", "state": "done"})
         self.assertEqual(first["done_unverified"][0]["reason"], EVIDENCE_REASON_FAILED)
 
-        add_rows(self.hermes, [(SESSION, "terminal", "toolu_green", _terminal(0), None, 4_000_000_001.0)])
-        # Every item says done, and the plan still takes the done write that closes it.
+        self.run_command("toolu_green")
         second = self.call({"action": "advance", "item": 1, "item_text": "fix", "state": "done"})
 
         self.assertEqual(second["status"], "written")
-        self.assertEqual(self.stored_items()[0]["evidence"], evidence("tool_call", "toolu_green"))
+        self.assertEqual(self.stored()["items"][0]["evidence"], evidence("tool_call", "toolu_green"))
         self.assertNotIn("done_unverified", second)
 
-    def test_moving_an_item_out_of_done_drops_its_evidence(self):
+    def test_a_no_op_re_advance_does_not_restamp_the_plan(self):
+        self.call({"action": "set", "items": [{"text": "fix", "state": "active"}]})
+        self.run_command("toolu_red", exit_code=1)
+        self.call({"action": "advance", "item": 1, "item_text": "fix", "state": "done"})
+        before = todo_path(self.home, SESSION).read_bytes()
+        time.sleep(0.02)
+
+        self.call({"action": "advance", "item": 1, "item_text": "fix", "state": "done"})
+
+        self.assertEqual(todo_path(self.home, SESSION).read_bytes(), before)
+
+    def test_five_no_op_re_advances_buy_one_nudge_not_five(self):
+        # Probe P4: the host offers several turn-end attempts; between them the
+        # model re-advances the same item with no new command.
+        self.call({"action": "set", "items": [{"text": "fix", "state": "active"}]})
+        self.run_command("toolu_red", exit_code=1)
+        self.call({"action": "advance", "item": 1, "item_text": "fix", "state": "done"})
+
+        nudges = 0
+        for attempt in range(5):
+            if self.fire(attempt=attempt):
+                nudges += 1
+            self.call({"action": "advance", "item": 1, "item_text": "fix", "state": "done"})
+
+        self.assertEqual(nudges, 1)
+
+    def test_moving_an_item_out_of_done_drops_its_bindings(self):
         self.call({"action": "set", "items": [{"text": "fix", "state": "active"}, {"text": "ship"}]})
-        add_rows(self.hermes, [(SESSION, "terminal", "toolu_suite", _terminal(0), None, 4_000_000_000.0)])
+        self.run_command("toolu_suite")
         self.call({"action": "advance", "item": 1, "item_text": "fix", "state": "done"})
 
         self.call({"action": "advance", "item": 1, "item_text": "fix", "state": "active"})
 
-        self.assertNotIn("evidence", self.stored_items()[0])
+        self.assertEqual(self.stored()["items"][0], {"text": "fix", "state": "active"})
 
     def test_a_finished_plan_still_refuses_a_move_out_of_done(self):
         self.call({"action": "set", "items": [{"text": "fix", "state": "done"}]})
@@ -479,6 +634,17 @@ class ToolAttachesEvidenceTest(_PlanHomeTest):
         self.assertEqual(result["status"], "invalid_todo")
         self.assertIn("this plan is finished", result["error"])
 
+    def test_the_tool_reports_an_unreadable_store_once_at_the_write(self):
+        self.call({"action": "set", "items": [{"text": "fix", "state": "active"}]})
+        self.run_command("toolu_suite")
+        (self.hermes / "state.db").unlink()
+        (self.hermes / "state.db").write_bytes(b"not a database" * 16)
+
+        result = self.call({"action": "advance", "item": 1, "item_text": "fix", "state": "done"})
+
+        self.assertEqual(result["done_unverified"][0]["reason"], EVIDENCE_REASON_UNREADABLE)
+        self.assertIsNone(self.fire())
+
 
 class ReaderNeverRaisesTest(unittest.TestCase):
     def test_a_store_without_the_expected_tables_is_unreadable(self):
@@ -486,13 +652,15 @@ class ReaderNeverRaisesTest(unittest.TestCase):
             hermes = Path(tmp)
             sqlite3.connect(hermes / "state.db").close()
 
-            reading = todo_evidence.evidence_reading(hermes, SESSION, [evidence("tool_call", "toolu_ok")])
+            reading = todo_evidence.item_verdicts(
+                hermes, SESSION, [{"evidence": evidence("tool_call", "toolu_ok"), "from": None, "to": None}]
+            )
 
         self.assertEqual(reading["store"], todo_evidence.STORE_UNREADABLE)
 
     def test_no_store_is_absent(self):
         with tempfile.TemporaryDirectory() as tmp:
-            reading = todo_evidence.evidence_reading(tmp, SESSION, [])
+            reading = todo_evidence.item_verdicts(tmp, SESSION, [])
 
         self.assertEqual(reading["store"], todo_evidence.STORE_ABSENT)
 

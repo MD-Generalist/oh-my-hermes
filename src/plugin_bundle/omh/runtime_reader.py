@@ -2187,6 +2187,10 @@ def _todo_summary(
             evidence = valid_evidence(raw.get("evidence")) if state == "done" else None
             if evidence:
                 entry["evidence"] = evidence
+            for stamp_key in ("done_at", "window_start"):
+                stamp_value = raw.get(stamp_key) if state == "done" else None
+                if isinstance(stamp_value, str) and stamp_value:
+                    entry[stamp_key] = strip_control_characters(stamp_value)[:40]
             items.append(entry)
         if len(items) >= MAX_TODO_ITEMS:
             break

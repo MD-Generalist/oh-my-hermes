@@ -500,6 +500,7 @@ class PreLlmCallScenarioTests(unittest.TestCase):
                     "role_marker",
                     "active_workflow",
                     "running_work_board",
+                    "done_unverified_plan",
                     "all_surfaces",
                     "all_surfaces_without_section",
                 ]
