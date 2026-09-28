@@ -16,10 +16,9 @@ from pathlib import Path
 import sqlite3
 from typing import Any
 
-from .hermes_state import NO_SOURCE_LABEL, open_state_db_readonly, session_source_clause
+from .hermes_state import open_state_db_readonly, resolve_session_id
 
 
-HERMES_LATEST_SESSION = "latest"
 _PRIOR_CONTEXT_PREFIX = "[PRIOR CONTEXT"
 
 
@@ -48,7 +47,7 @@ def hermes_session_replies(
         raise ReplySourceError("--last must be at least 1")
     path, connection = open_state_db_readonly(hermes_home, error=ReplySourceError)
     try:
-        resolved = _resolve_session(connection, session_id, source)
+        resolved = resolve_session_id(connection, session_id, source, error=ReplySourceError)
         rows = connection.execute(
             "SELECT id, role, content FROM messages WHERE session_id = ? AND role IN ('user', 'assistant') ORDER BY id",
             (resolved,),
@@ -73,29 +72,3 @@ def hermes_session_replies(
             continue
         replies.append({"message_id": int(message_id), "user_text": user_text, "reply": text})
     return {"session_id": resolved, "replies": replies[-last:]}
-
-
-def _resolve_session(connection: sqlite3.Connection, session_id: str, source: str | None) -> str:
-    wanted = str(session_id or "").strip()
-    if not wanted:
-        raise ReplySourceError("a session id (or `latest`) is required")
-    if wanted != HERMES_LATEST_SESSION:
-        if source is not None:
-            row = connection.execute("SELECT source FROM sessions WHERE id = ?", (wanted,)).fetchone()
-            if row is None:
-                raise ReplySourceError(f"no Hermes session {wanted} to check --source {source} against")
-            actual = row[0] or NO_SOURCE_LABEL
-            if actual != source:
-                raise ReplySourceError(f"session {wanted} has source {actual}, not {source}")
-        return wanted
-    order = "ORDER BY COALESCE(last_activity_at, started_at) DESC, id DESC LIMIT 1"
-    if source is None:
-        row = connection.execute(f"SELECT id FROM sessions {order}").fetchone()
-        if row is None:
-            raise ReplySourceError("the Hermes state database has no sessions")
-        return str(row[0])
-    clause, params = session_source_clause(source)
-    row = connection.execute(f"SELECT id FROM sessions WHERE {clause} {order}", params).fetchone()
-    if row is None:
-        raise ReplySourceError(f"no Hermes session with source {source}")
-    return str(row[0])

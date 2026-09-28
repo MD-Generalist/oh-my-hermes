@@ -4,6 +4,20 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **Which files a Hermes session touched is now answerable:
+  `omh quality-evidence file-activity --hermes-session <id|latest>`.** A
+  tool-call count could not say which files a run read, wrote, or patched.
+  The new command reads one session's `read_file`, `write_file`, and `patch`
+  calls from Hermes' `state.db` (read-only) at query time and lists each
+  workspace file with its operation, the outcome Hermes recorded
+  (`succeeded`, `failed`, or `unknown`, from the result's own fields, never
+  its wording), and first/last time. Every file of a V4A patch is listed.
+  Paths are workspace-relative; a path outside the workspace is counted by
+  reason and never shown. The list is bounded by `--max-files`, and
+  truncation is reported. Plain text by default, `session_file_activity/v1`
+  with `--json`. OMH keeps no new store and records nothing during the
+  session (#1813).
+
 - **The repo's agent instruction file has an owner: `omh-agent-instructions`.**
   "set up AGENTS.md", "update our CLAUDE.md" and "write an AGENTS.md for this
   repo" used to ask a question led by `rules-distill` or `memory-sync`. They
