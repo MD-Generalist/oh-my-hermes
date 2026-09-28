@@ -84,6 +84,8 @@ NEXT_ACTION_LABELS: dict[str, str] = {
     "show_pushed_state": "showing what is already pushed",
     "prepare_db_change_plan": "preparing a database change plan",
     "show_migration_readiness": "showing the migration readiness verdict",
+    "prepare_security_event_response": "preparing a security event response",
+    "show_event_closure": "showing the event closure verdict",
     "prepare_accessibility_audit": "preparing an accessibility audit",
     "prepare_build_failure_triage": "preparing build failure triage",
     "prepare_browser_operator_card": "preparing a browser operator card",

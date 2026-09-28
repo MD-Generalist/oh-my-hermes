@@ -4,6 +4,30 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **Security events on shipped code have an owner:
+  `omh-security-event-response`.** "triage this CVE in our dependency tree",
+  "we committed a secret, what now" and "is this dependency's license OK for
+  us" used to ask a question led by `feedback-triage`,
+  `provider-profile-posture` or `idea-to-deploy`. They now dispatch to a skill
+  that responds to the event:
+  - the event kind and its exposure window come first;
+  - severity is called from the reachable path, not the version number;
+  - for a leaked secret, the rotation and the old credential's observed
+    rejection come before any history rewrite;
+  - `event_closure_verdict/v1` reads closed only when the rotation or the
+    fixed version is observed, and names each step still prepared.
+
+  The per-event containment order, the severity adjustment and the license
+  obligation table load on demand from
+  `references/event-containment-order.md`. A dependabot security advisory is
+  an event even when it arrives as an opened PR, so it reaches this skill
+  instead of the `github-event-ops` card; a dependabot version bump with no
+  advisory is not an event and stays out. `security-safety-review` keeps a
+  planned rotation with no exposure, and each skill names the other. OMH never
+  scans, contacts a registry, or rotates a credential. "security advisory",
+  "leaked secret" and "license ok" keep this route only beside a word of code,
+  so a travel advisory and a driver's licence stay out (#1694).
+
 - **Relational database work has an owner: `omh-relational-db`.** An online
   migration on a 200M-row table, a seq-scanning query that needs an index,
   N+1 queries from an endpoint, and when to shard all used to ask a question

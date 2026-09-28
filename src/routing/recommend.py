@@ -360,6 +360,48 @@ _RELATIONAL_DB_EXPLICIT_PHRASES = tuple(
     )
 )
 
+# `security-event-response` holds back every token its phrases are built from,
+# which left "we committed a secret, what now" and "is this dependency's license
+# OK for us" at the bare phrase credit. Listed are the phrases that name an
+# event on shipped code. "cve", "reachability analysis" and "license ok" are
+# not: "what is a CVE" is a concept question, and "license ok" is a driver's
+# licence as often as a dependency's. The phrases that are also ordinary English
+# ("security advisory", "leaked secret") are safe to boost because
+# `EVERYDAY_SENSE_PHRASES` has already dropped this skill when no word of code
+# stands beside them.
+_SECURITY_EVENT_RESPONSE_EXPLICIT_PHRASES = tuple(
+    normalized_phrase(phrase)
+    for phrase in (
+        "security-event-response",
+        "security event response",
+        "triage this cve",
+        "cve in our dependency",
+        "cve in a dependency",
+        "security advisory",
+        "dependabot alert",
+        "dependabot security",
+        "vulnerable dependency",
+        "vulnerability in our dependency",
+        "npm audit",
+        "committed a secret",
+        "committed an api key",
+        "leaked secret",
+        "leaked a secret",
+        "leaked credential",
+        "leaked api key",
+        "leaked an api key",
+        "leaked aws key",
+        "leaked an aws key",
+        "secret in git history",
+        "secret in the history",
+        "dependency license",
+        "dependency's license",
+        "license compatibility",
+        "gpl dependency",
+        "agpl dependency",
+    )
+)
+
 # `git-workflow` holds back every token its phrases are built from, which left
 # "resolve this merge conflict" and "clean up this branch's history before
 # review" at the bare +6 credit against `code-review`'s 12 on "review". Listed
@@ -899,6 +941,20 @@ _SKILL_POLICIES = {
             "Prepare native_fault_statement/v1, hypothesis_set/v1 with at least three hypotheses on distinct axes, "
             "distinguishing_observation_plan/v1, and debugger_session_plan/v1 naming the DAP adapter, breakpoints, "
             "watchpoints, threads, frames, and values the executor reads at each stop."
+        ),
+    ),
+    "security-event-response": RecommendationPolicy(
+        next_action="prepare_security_event_response",
+        evidence_boundary=(
+            "A security event response is not a scan, an advisory read, a rotation, a revocation, or a shipped fix until "
+            "observed; OMH never scans, contacts a registry, or rotates a credential, and a leaked secret stays open until "
+            "its rotation is observed."
+        ),
+        wrapper_guidance=(
+            "Prepare security_event_record/v1 with the event kind and exposure window; reachability_analysis/v1 citing the "
+            "call sites that reach the vulnerable path or their observed absence; containment_plan/v1 with rotation and the "
+            "old credential's observed rejection before any history rewrite; and event_closure_verdict/v1 naming every "
+            "closing step still prepared."
         ),
     ),
     "relational-db": RecommendationPolicy(
@@ -2582,6 +2638,44 @@ _WHOLE_PHRASE_ONLY_TRIGGER_TOKENS = {
     # database word beside them (`EVERYDAY_SENSE_PHRASES`). Five tokens stay
     # creditable because nothing else means them: `relational-db` (the skill
     # name), `seq-scans`, `ddl`, `postgres`, and `mysql`.
+    # `security-event-response` is built from "security", "event", "secret",
+    # "license", "advisory", "leaked", "committed", "key", "history" and
+    # "dependency" -- a travel security advisory, a driver's licence, a secret
+    # recipe and a leaked movie ending all reached it as bare tokens. Only the
+    # complete phrases score, and the ones that are also ordinary English need
+    # a word of code beside them (`EVERYDAY_SENSE_PHRASES`). Four tokens stay
+    # creditable because nothing else means them: `security-event-response`
+    # (the skill name), `cve`, `gpl` and `agpl`.
+    "security-event-response": frozenset(
+        {
+            "advisory",
+            "alert",
+            "analysis",
+            "api",
+            "audit",
+            "aws",
+            "committed",
+            "compatibility",
+            "compatible",
+            "credential",
+            "dependabot",
+            "dependency",
+            "event",
+            "git",
+            "history",
+            "key",
+            "leaked",
+            "license",
+            "our",
+            "reachability",
+            "response",
+            "secret",
+            "security",
+            "triage",
+            "vulnerability",
+            "vulnerable",
+        }
+    ),
     "relational-db": frozenset(
         {
             "alter",
@@ -3557,6 +3651,9 @@ def _score_definition(
     if definition.name == "todo-checklist" and _todo_checklist_explicit_match(normalized_query):
         score += 30
         matched.add("direct:todo_checklist")
+    if definition.name == "security-event-response" and _security_event_response_explicit_match(normalized_query):
+        score += 30
+        matched.add("direct:security_event_response")
     if definition.name == "relational-db" and _relational_db_explicit_match(normalized_query):
         score += 30
         matched.add("direct:relational_db")
@@ -4343,6 +4440,12 @@ def _todo_checklist_explicit_match(normalized_query: str) -> bool:
 
 def _relational_db_explicit_match(normalized_query: str) -> bool:
     return any(_explicit_phrase_match(normalized_query, phrase) for phrase in _RELATIONAL_DB_EXPLICIT_PHRASES)
+
+
+def _security_event_response_explicit_match(normalized_query: str) -> bool:
+    return any(
+        _explicit_phrase_match(normalized_query, phrase) for phrase in _SECURITY_EVENT_RESPONSE_EXPLICIT_PHRASES
+    )
 
 
 def _git_workflow_explicit_match(normalized_query: str) -> bool:

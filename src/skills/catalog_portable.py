@@ -115,6 +115,8 @@ _PORTABILITY: dict[str, str] = {
     'omh-git-workflow': PORTABILITY_PORTABLE,
     # required_inputs: engine, version, table sizes, observed plans; expected_outputs: plans and a readiness verdict; OMH never connects to a database, so no Hermes runtime is needed.
     'omh-relational-db': PORTABILITY_PORTABLE,
+    # required_inputs: the event kind, the advisory or credential facts, observed evidence; expected_outputs: an event record, a containment plan, and a closure verdict; OMH never scans or rotates, so no Hermes runtime is needed.
+    'omh-security-event-response': PORTABILITY_PORTABLE,
     # required_inputs: target app, page, route, component, or design system; expected_outputs: accessibility_audit_plan/v1; final_checklist requires evidence/approval, not a native runtime.
     'omh-accessibility-audit': PORTABILITY_PORTABLE,
     # expected_outputs are evidence gates; artifact_expectations import host receipts through omh web-qa observation.
@@ -936,6 +938,7 @@ PORTABLE_REFERENCE_PATHS = frozenset({
     'commit-pr-authoring/references/commit-and-pr-conventions.md',
     'git-workflow/references/git-repair-method.md',
     'relational-db/references/engine-lock-tables.md',
+    'security-event-response/references/event-containment-order.md',
     'application-threat-model/references/threat-model-method.md',
     'live-incident-response/references/incident-command-method.md',
     'external-connector-readiness/references/memory-provider-trial.md',

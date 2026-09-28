@@ -156,7 +156,9 @@ ROLE_CONTEXT_CHAR_LIMIT = 2600
 # name and the visible description window. Re-derived from the producer.
 # 11674 -> 11760: one index line for the new `relational-db` skill (#1692); the
 # name and the visible description window. Re-derived from the producer.
-SKILL_INDEX_CHAR_LIMIT = 11760
+# 11760 -> 11856: one index line for the new `security-event-response` skill (#1694); the
+# name and the visible description window. Re-derived from the producer.
+SKILL_INDEX_CHAR_LIMIT = 11856
 # The longest single skill line in that index. Every description is already cut
 # to 60 characters, so what moves this is a longer skill name.
 SKILL_INDEX_LINE_CHAR_LIMIT = 100
@@ -514,7 +516,10 @@ PRE_LLM_CALL_CONTEXT_FALLBACK_CHAR_LIMIT = 6917
 # it adds no sibling boundary line. Re-derived from the producer.
 # 452456 -> 456445: one capability row for the new `relational-db` skill
 # (#1692); it adds no sibling boundary line. Re-derived from the producer.
-FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 456445
+# 456445 -> 460446: one capability row for the new `security-event-response` skill
+# (#1694) plus its siblings' reciprocal boundary lines. Re-derived from the
+# producer.
+FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 460446
 FULL_CAPABILITY_SKILL_ITEM_CHAR_LIMIT = 9000
 # 100000 -> 102070: the same three domain workflows each add one standalone
 # capability row, again measured on the merged tree; warranted growth for three
@@ -576,7 +581,10 @@ FULL_CAPABILITY_SKILL_ITEM_CHAR_LIMIT = 9000
 # 125709 -> 126644: one standalone capability row for the new `relational-db`
 # skill (#1692) plus its siblings' reciprocal boundary lines; warranted growth.
 # Re-derived from the producer.
-STANDALONE_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 126644
+# 126644 -> 127609: one standalone capability row for the new `security-event-response`
+# skill (#1694) plus its siblings' reciprocal boundary lines; warranted
+# growth. Re-derived from the producer.
+STANDALONE_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 127609
 STANDALONE_CAPABILITY_SKILL_ITEM_CHAR_LIMIT = 2200
 # ULW fold context ceiling (issue #954, PR D). The limit is the pre-D measured
 # value of the full profile's `skill_body` chars on `main` @ acb9a060, in the

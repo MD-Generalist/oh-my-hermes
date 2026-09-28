@@ -59,6 +59,9 @@ _FEATURE_SURFACE_SKILLS = (
             "sort out events arriving from our repo",
             "a webhook from github arrived",
         ),
+        extra_do_not_use_when=(
+            "The event is a security advisory, a CVE in a dependency, or a leaked credential; use `security-event-response`, which orders containment and closes only on an observed rotation or fix.",
+        ),
     ),
     _feature_surface_skill(
         "agent-board",

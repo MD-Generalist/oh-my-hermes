@@ -5818,6 +5818,7 @@ _DEFINITIONS = [
             "The user asks for merge verification commands; use `verification-gate`.",
             "The user asks for a normal code review focused on bugs; use `code-review`.",
             "The subject is an application or service rather than the agent's own runtime -- its assets, trust boundaries, attack scenarios, and the controls that defend them; use `application-threat-model`.",
+            "Something already happened to shipped code -- a CVE published against a dependency, a credential pushed to a repository, a license question about a package; use `security-event-response`, which orders containment and closes only on an observed rotation or fix.",
         ),
         good_example=SkillExample(
             prompt="security-safety-review 이 자동화가 프롬프트 인젝션, 시크릿, 파괴적 명령 위험이 있는지 봐줘.",
@@ -9389,6 +9390,145 @@ _DEFINITIONS.append(
             "the deploy hung waiting on a database lock",
             "the endpoint runs one query per item",
             "is postgres going to be enough next year",
+        ),
+    )
+)
+
+_DEFINITIONS.append(
+    SkillDefinition(
+        "security-event-response",
+        "Security event on the code already shipped -- a CVE in a dependency, a secret committed to the repo, a license question, an advisory: triage reachability and severity, contain in order, and never close a leaked secret before its rotation is observed.",
+        (
+            "security-event-response",
+            "security event response",
+            "cve",
+            "triage this cve",
+            "cve in our dependency",
+            "cve in a dependency",
+            "security advisory",
+            "dependabot alert",
+            "dependabot security",
+            "vulnerable dependency",
+            "vulnerability in our dependency",
+            "reachability analysis",
+            "npm audit",
+            "committed a secret",
+            "committed an api key",
+            "leaked secret",
+            "leaked a secret",
+            "leaked credential",
+            "leaked api key",
+            "leaked an api key",
+            "leaked aws key",
+            "leaked an aws key",
+            "secret in git history",
+            "secret in the history",
+            "dependency license",
+            "dependency's license",
+            "license ok",
+            "license compatibility",
+            "license compatible",
+            "gpl dependency",
+            "agpl dependency",
+        ),
+        (
+            "Use when a security event has already happened to code that exists: a CVE or advisory in a dependency, a secret "
+            "or credential committed or pushed, a dependency whose license may not fit the product, or an advisory that "
+            "forces a major version. The output is reachability, a severity call, containment steps in order, and what must "
+            "be observed before the event closes; OMH never scans, never contacts a registry, and rotates nothing."
+        ),
+        category="review",
+        phase="security-event-response",
+        hermes_role="hybrid-review",
+        delegation_boundary="retained-catalog-intent",
+        handoff_policy=(
+            "Keep the event record, the reachability call, the ordered containment plan, and the closure verdict in Hermes. "
+            "Scanner output, advisory text, registry metadata, rotations, revocations, and history rewrites are recorded only "
+            "from executor, operator, or wrapper observed output; OMH never scans, contacts a registry, or rotates a credential."
+        ),
+        required_inputs=(
+            "the event kind: CVE or advisory, leaked secret, license question, or an advisory that forces a major version",
+            "for a CVE: the advisory id, the affected package and version range, and the installed version from the lockfile",
+            "for a leaked secret: the credential type and scope, where it was pushed, whether the repository is public, and when",
+            "for a license: the package, its declared license, and how the product is distributed",
+            "observed evidence for any containment or closure claim",
+        ),
+        expected_outputs=(
+            "security_event_record/v1",
+            "reachability_analysis/v1 when a vulnerable dependency is involved",
+            "containment_plan/v1",
+            "license_fit_verdict/v1 when a license is asked",
+            "event_closure_verdict/v1",
+        ),
+        artifact_expectations=(
+            "security_event_record/v1 names the event kind, the source, the affected package or credential class, and the exposure window, separately from the suspected impact",
+            "reachability_analysis/v1 names the vulnerable function or path, the repository call sites that reach it or the observed absence of any, and a severity call from the advisory score adjusted by that reachability",
+            "containment_plan/v1 orders every step; for a leaked secret the rotation and the observed rejection of the old credential come before any history rewrite, because a rewrite does not un-publish a secret already cloned",
+            "license_fit_verdict/v1 gives the SPDX id, the obligation it triggers for this distribution model, and fits, conflicts, or needs counsel",
+            "event_closure_verdict/v1 reads closed only when the rotation or the fixed version is recorded observed; a prepared step keeps the event open and is named",
+        ),
+        safety_rules=(
+            "A leaked-secret event cannot close while its rotation is prepared rather than observed; `event_closure_verdict/v1` names the missing observation instead.",
+            "Order rotation before history rewriting: revoke and replace the credential, observe the old one rejected, then rewrite history if at all.",
+            "Never print the secret value, and never paste it into the plan, the handoff, or a search.",
+            "OMH never runs a scanner, contacts a registry, or rotates a credential; reachability and license facts come from observed output or are marked unverified.",
+            "Do not call a dependency safe from a version number alone: cite the reachable path or its observed absence.",
+        ),
+        quality_tier="event-closure-gated",
+        quality_bar=(
+            "Classify the event first; each kind has its own containment order.",
+            "Load `references/event-containment-order.md` for the per-event containment order, the severity adjustment, and the license obligation table instead of recalling them.",
+            "Adjust severity by reachability: a critical advisory on a function nothing calls is not the same event as one on the request path.",
+            "Keep prepared, observed, and closed as separate states for every containment step.",
+            "Hand a fix that needs a planned version jump to its own upgrade plan, and keep this event open until that fix is observed.",
+        ),
+        why_this_exists=(
+            "`security-event-response` exists because an event had no owner: `security-safety-review` and "
+            "`application-threat-model` review a design before it ships, and a CVE, a committed secret, or a license question "
+            "was answered by onboarding, review, or an achievements lane with no containment order at all."
+        ),
+        opening_steps=(
+            "Classify the event and state its exposure window before proposing any step.",
+            "For a leaked secret, order the rotation and its observed rejection before any history rewrite.",
+        ),
+        do_not_use_when=(
+            "Nothing has happened yet and the ask is a review of prompts, tools, or permissions before execution; use `security-safety-review`, which also owns a planned rotation with no exposure.",
+            "The subject is a design's assets, trust boundaries, and attack scenarios; use `application-threat-model`.",
+            "A dependency moves to a new version as routine maintenance with no advisory or leak attached, such as a dependabot bump; use `github-event-ops`.",
+            "The question is a contract, a privacy obligation, or legal advice beyond a dependency's declared terms; use `legal-compliance-review`.",
+            "Production is down or degraded right now and the ask is command of the incident; use `live-incident-response`.",
+        ),
+        good_example=SkillExample(
+            prompt="we committed a secret, what now",
+            expected=(
+                "Record the credential type, scope, and exposure window, then prepare containment_plan/v1: revoke and replace, "
+                "observe the old credential rejected, audit its use in the window, and only then rewrite history; the closure "
+                "verdict stays open until the rotation is observed."
+            ),
+            why="A rewritten history does not revoke a secret that was already cloned or scraped.",
+        ),
+        bad_example=SkillExample(
+            prompt="just force-push the history without the key and we are done",
+            expected="Refuse to close: rotate first, observe the old key rejected, then rewrite, and name what is still unobserved.",
+            why="Rewriting history first leaves a live credential in every clone and cache made before the push.",
+        ),
+        final_checklist=(
+            "The event kind, source, and exposure window are stated.",
+            "Every severity call cites the reachable path or its observed absence.",
+            "A leaked secret's rotation precedes any history rewrite in the plan.",
+            "The closure verdict is closed only when the rotation or fixed version is observed.",
+            "No secret value appears anywhere, and OMH scanned, contacted, or rotated nothing.",
+        ),
+        recovery_notes=(
+            "If the exposure window is unknown, treat the secret as exposed from its first push and say so.",
+            "If no reachability evidence is available, keep the advisory's own severity and mark the adjustment unverified.",
+        ),
+        situations=(
+            "an api token ended up in a public repo",
+            "the scanner flagged a critical in a package we use",
+            "can we ship a product that uses a gpl library",
+            "someone pushed the .env file to github",
+            "is the log4j issue reachable in our service",
         ),
     )
 )

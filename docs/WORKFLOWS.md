@@ -4106,6 +4106,7 @@ These surfaces are generated command references, not installed Hermes workflow s
   - The user asks for merge verification commands; use `verification-gate`.
   - The user asks for a normal code review focused on bugs; use `code-review`.
   - The subject is an application or service rather than the agent's own runtime -- its assets, trust boundaries, attack scenarios, and the controls that defend them; use `application-threat-model`.
+  - Something already happened to shipped code -- a CVE published against a dependency, a credential pushed to a repository, a license question about a package; use `security-event-response`, which orders containment and closes only on an observed rotation or fix.
 - Strong routing signals: `security-safety-review`, `security safety review`, `ai coding safety`, `agent safety review`, `prompt injection review`, `tool permission review`, `secret exposure review`, `destructive action review`, `supply chain safety`, `sandbox safety`, `plugin risk audit`, `Hermes plugin audit`, `local plugin guard`, `key rotation`, `secret rotation`, `credential rotation`, `certificate rotation`, `rotate the api key`, `rotate this api key`, `rotate the credentials`, `revoke the old key`, `보안 안전 검토`, `에이전트 안전`, `프롬프트 인젝션`, `시크릿 노출`, `파괴적 명령`
 - Good example:
   - Prompt: security-safety-review 이 자동화가 프롬프트 인젝션, 시크릿, 파괴적 명령 위험이 있는지 봐줘.
@@ -6805,6 +6806,82 @@ These surfaces are generated command references, not installed Hermes workflow s
   - OMH never connects to a database, and does not claim a plan, a row count, a lock wait, or an applied migration it did not observe.
   - Never put connection strings, credentials, or customer rows into the plan or the handoff.
 
+### security-event-response
+
+[omh] Security event on the code already shipped -- a CVE in a dependency, a secret committed to the repo, a license question, an advisory: triage reachability and severity, contain in order, and never close a leaked secret before its rotation is observed.
+
+- Category: `review`
+- Phase: `security-event-response`
+- Hermes role: `reviewer`
+- Quality tier: `event-closure-gated`
+- Reasoning demand: `standard`
+- Exposure: `direct_skill`
+- Install visibility: `true`
+- Docs visibility: `primary_workflow_skill`
+- Compatibility alias: `false`
+- Lifecycle stage: `canonical`
+- Preferred usage: Use as an installed Hermes workflow skill when this explicit workflow is the clearest user-facing handle.
+- Handoff policy: Keep the event record, the reachability call, the ordered containment plan, and the closure verdict in Hermes. Scanner output, advisory text, registry metadata, rotations, revocations, and history rewrites are recorded only from executor, operator, or wrapper observed output; OMH never scans, contacts a registry, or rotates a credential.
+- Why this exists: `security-event-response` exists because an event had no owner: `security-safety-review` and `application-threat-model` review a design before it ships, and a CVE, a committed secret, or a license question was answered by onboarding, review, or an achievements lane with no containment order at all.
+- First steps:
+  - Classify the event and state its exposure window before proposing any step.
+  - For a leaked secret, order the rotation and its observed rejection before any history rewrite.
+- Use when: Use when a security event has already happened to code that exists: a CVE or advisory in a dependency, a secret or credential committed or pushed, a dependency whose license may not fit the product, or an advisory that forces a major version. The output is reachability, a severity call, containment steps in order, and what must be observed before the event closes; OMH never scans, never contacts a registry, and rotates nothing.
+- Do not use when:
+  - Nothing has happened yet and the ask is a review of prompts, tools, or permissions before execution; use `security-safety-review`, which also owns a planned rotation with no exposure.
+  - The subject is a design's assets, trust boundaries, and attack scenarios; use `application-threat-model`.
+  - A dependency moves to a new version as routine maintenance with no advisory or leak attached, such as a dependabot bump; use `github-event-ops`.
+  - The question is a contract, a privacy obligation, or legal advice beyond a dependency's declared terms; use `legal-compliance-review`.
+  - Production is down or degraded right now and the ask is command of the incident; use `live-incident-response`.
+- Strong routing signals: `security-event-response`, `security event response`, `cve`, `triage this cve`, `cve in our dependency`, `cve in a dependency`, `security advisory`, `dependabot alert`, `dependabot security`, `vulnerable dependency`, `vulnerability in our dependency`, `reachability analysis`, `npm audit`, `committed a secret`, `committed an api key`, `leaked secret`, `leaked a secret`, `leaked credential`, `leaked api key`, `leaked an api key`, `leaked aws key`, `leaked an aws key`, `secret in git history`, `secret in the history`, `dependency license`, `dependency's license`, `license ok`, `license compatibility`, `license compatible`, `gpl dependency`, `agpl dependency`
+- Good example:
+  - Prompt: we committed a secret, what now
+  - Expected behavior: Record the credential type, scope, and exposure window, then prepare containment_plan/v1: revoke and replace, observe the old credential rejected, audit its use in the window, and only then rewrite history; the closure verdict stays open until the rotation is observed.
+  - Why: A rewritten history does not revoke a secret that was already cloned or scraped.
+- Bad example:
+  - Prompt: just force-push the history without the key and we are done
+  - Expected behavior: Refuse to close: rotate first, observe the old key rejected, then rewrite, and name what is still unobserved.
+  - Why: Rewriting history first leaves a live credential in every clone and cache made before the push.
+- Quality bar:
+  - Classify the event first; each kind has its own containment order.
+  - Load `references/event-containment-order.md` for the per-event containment order, the severity adjustment, and the license obligation table instead of recalling them.
+  - Adjust severity by reachability: a critical advisory on a function nothing calls is not the same event as one on the request path.
+  - Keep prepared, observed, and closed as separate states for every containment step.
+  - Hand a fix that needs a planned version jump to its own upgrade plan, and keep this event open until that fix is observed.
+- Completion checklist:
+  - The event kind, source, and exposure window are stated.
+  - Every severity call cites the reachable path or its observed absence.
+  - A leaked secret's rotation precedes any history rewrite in the plan.
+  - The closure verdict is closed only when the rotation or fixed version is observed.
+  - No secret value appears anywhere, and OMH scanned, contacted, or rotated nothing.
+- Recovery notes:
+  - If the exposure window is unknown, treat the secret as exposed from its first push and say so.
+  - If no reachability evidence is available, keep the advisory's own severity and mark the adjustment unverified.
+- Required inputs:
+  - the event kind: CVE or advisory, leaked secret, license question, or an advisory that forces a major version
+  - for a CVE: the advisory id, the affected package and version range, and the installed version from the lockfile
+  - for a leaked secret: the credential type and scope, where it was pushed, whether the repository is public, and when
+  - for a license: the package, its declared license, and how the product is distributed
+  - observed evidence for any containment or closure claim
+- Expected outputs:
+  - security_event_record/v1
+  - reachability_analysis/v1 when a vulnerable dependency is involved
+  - containment_plan/v1
+  - license_fit_verdict/v1 when a license is asked
+  - event_closure_verdict/v1
+- Artifact expectations:
+  - security_event_record/v1 names the event kind, the source, the affected package or credential class, and the exposure window, separately from the suspected impact
+  - reachability_analysis/v1 names the vulnerable function or path, the repository call sites that reach it or the observed absence of any, and a severity call from the advisory score adjusted by that reachability
+  - containment_plan/v1 orders every step; for a leaked secret the rotation and the observed rejection of the old credential come before any history rewrite, because a rewrite does not un-publish a secret already cloned
+  - license_fit_verdict/v1 gives the SPDX id, the obligation it triggers for this distribution model, and fits, conflicts, or needs counsel
+  - event_closure_verdict/v1 reads closed only when the rotation or the fixed version is recorded observed; a prepared step keeps the event open and is named
+- Safety rules:
+  - A leaked-secret event cannot close while its rotation is prepared rather than observed; `event_closure_verdict/v1` names the missing observation instead.
+  - Order rotation before history rewriting: revoke and replace the credential, observe the old one rejected, then rewrite history if at all.
+  - Never print the secret value, and never paste it into the plan, the handoff, or a search.
+  - OMH never runs a scanner, contacts a registry, or rotates a credential; reachability and license facts come from observed output or are marked unverified.
+  - Do not call a dependency safe from a version number alone: cite the reachable path or its observed absence.
+
 ### decision-prototype
 
 [omh] Uncertain technical choice for a spike: bounded decision prototype workflow: resolve one uncertain interaction, API, performance, or integration choice with a disposable, isolated experiment whose observed result feeds planning.
@@ -7734,6 +7811,7 @@ These surfaces are generated command references, not installed Hermes workflow s
   - The request is already handled by a narrower explicit skill with stronger evidence.
   - The user asks OMH to secretly run external platforms, connectors, schedulers, file exports, or runtime agents.
   - The only safe answer is to ask for missing authority, credentials, target, or observed evidence first.
+  - The event is a security advisory, a CVE in a dependency, or a leaked credential; use `security-event-response`, which orders containment and closes only on an observed rotation or fix.
 - Strong routing signals: `github-event-ops`, `github event ops`, `github ops`, `github triage`, `github pr`, `github review`, `github action`, `github actions`, `pr opened`, `pull request opened`, `pull request review`, `pr review`, `ci failed`, `check failed`, `checks failed`, `failing checks`, `issue opened`, `issue triage`, `pull request webhook`, `github webhook`, `github issue`, `github issue to pr`, `auto review pr`, `label issue`, `label pr`, `ci analysis`, `fix handoff`, `review handoff`, `깃허브`, `깃허브 pr`, `깃허브 이슈`, `github issue 들어온`, `이슈 라벨`, `pr 리뷰`, `리뷰 라벨`, `픽스 핸드오프`, `ci 실패`
 - Good example:
   - Prompt: github-event-ops PR opened with failing CI; triage whether this needs review or fix handoff.

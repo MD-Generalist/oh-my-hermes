@@ -276,6 +276,8 @@ VISIBLE_ACTIONS = (
     "show_pushed_state",
     "prepare_db_change_plan",
     "show_migration_readiness",
+    "prepare_security_event_response",
+    "show_event_closure",
     "show_frontend_handoff",
     "record_browser_capture",
     "record_accessibility_check",
@@ -1111,6 +1113,8 @@ _ACK_PRIMARY_ACTIONS_BY_NEXT_ACTION = {
     "show_pushed_state": ("show_pushed_state", "Show what is pushed"),
     "prepare_db_change_plan": ("prepare_db_change_plan", "Plan the database change"),
     "show_migration_readiness": ("show_migration_readiness", "Show migration readiness"),
+    "prepare_security_event_response": ("prepare_security_event_response", "Respond to the security event"),
+    "show_event_closure": ("show_event_closure", "Show event closure"),
     "prepare_accessibility_audit": ("prepare_accessibility_audit", "Audit accessibility"),
     "prepare_visual_qa": ("prepare_visual_qa", "Prepare visual QA"),
     "prepare_deliverable_package": ("prepare_deliverable_package", "Prepare deliverable"),
@@ -2219,6 +2223,40 @@ _WORKFLOW_OPERATIONS_CHAT_CARDS: dict[str, dict[str, object]] = {
             "migration applied",
             "lock wait",
             "row count",
+        ],
+    },
+    "security-event-response": {
+        "kind": "security_event_response",
+        "headline": "I can take this security event from triage to an observed close.",
+        "body": (
+            "I will classify the event and its exposure window, call severity from the reachable path rather than the version "
+            "number, and order containment. For a leaked secret the rotation and the old credential's observed rejection come "
+            "before any history rewrite, and the event stays open until the rotation is observed. OMH never scans, contacts a "
+            "registry, or rotates anything."
+        ),
+        "phase": "security_event_response_prepared",
+        "next_action": "prepare_security_event_response",
+        "artifact_schema": "containment_plan/v1",
+        "claim_boundary_suffix": "It is not a scan, an advisory read, a rotation, a revocation, or a shipped fix until the output is observed.",
+        "actions": [
+            {"id": "prepare_security_event_response", "label": "Respond to the security event", "style": "primary"},
+            {"id": "show_event_closure", "label": "Show event closure", "style": "secondary"},
+            {"id": "prepare_security_safety_review", "label": "Review safety", "style": "secondary"},
+            {"id": "show_status", "label": "Show status", "style": "secondary"},
+        ],
+        "recommended_flow": [
+            "classify_the_event_and_exposure_window",
+            "call_severity_from_reachability",
+            "order_containment_rotation_before_rewrite",
+            "record_each_step_observed",
+            "issue_the_closure_verdict",
+        ],
+        "evidence_not_observed": [
+            "advisory read",
+            "reachability",
+            "credential rotated",
+            "old credential rejected",
+            "fixed version shipped",
         ],
     },
     "git-workflow": {

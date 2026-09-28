@@ -1342,6 +1342,7 @@ _WORKFLOW_CONTEXT_CARD_BY_WORKFLOW = {
     "commit-pr-authoring": "coding_handoff",
     "git-workflow": "coding_handoff",
     "relational-db": "coding_handoff",
+    "security-event-response": "coding_handoff",
     # ULW fold (issue #954, PR D): the four contracts folding into
     # `ulw-work` share its coding-handoff lane so their capability family is
     # lane-derived (`delegate_coding_and_ship`) like their fold target.
@@ -1414,6 +1415,14 @@ _AWARENESS_MESSAGE_MARKERS = (
     "explain analyze",
     "n+1 quer",
     "create index concurrently",
+    # Security events: "secret", "license" and "advisory" alone are everyday
+    # English, so only event phrases arm awareness.
+    "security-event-response",
+    "committed a secret",
+    "leaked secret",
+    "leaked credential",
+    "security advisory",
+    "dependabot alert",
     "codebase onboarding",
     "performance bottleneck",
     "\uba54\ubaa8\ub9ac \ub204\uc218",
@@ -2616,6 +2625,49 @@ _ROUTE_HINT_RULES = (
         ),
         "tokens": (),
         "adjacent_workflows": ("backend", "ultraperf", "data-analysis", "deploy-and-monitor"),
+    },
+    {
+        "id": "security_event_response",
+        "workflow": "security-event-response",
+        "lane": "coding_handoff",
+        "next_action": "prepare_security_event_response",
+        "reason": "The user has a security event on code that already exists: a CVE or advisory in a dependency, a committed or leaked secret, or a dependency license question; triage reachability and severity, contain in order, and close only on observed rotation or fix.",
+        "fallback_action": "ask_for_the_event_kind_and_exposure_window",
+        "not_evidence_yet": (
+            "advisory read",
+            "credential rotated",
+            "old credential rejected",
+            "fixed version shipped",
+        ),
+        # Only event phrases. "license ok", "security advisory" and "leaked
+        # secret" are absent: this table is a substring match with no anchor,
+        # and a travel security advisory or a film's leaked secret is not code.
+        "phrases": (
+            "security-event-response",
+            "triage this cve",
+            "cve in our dependency",
+            "committed a secret",
+            "committed an api key",
+            "leaked credential",
+            "leaked api key",
+            "leaked an api key",
+            "leaked aws key",
+            "secret in git history",
+            "dependabot alert",
+            "dependabot security",
+            "npm audit",
+            "vulnerable dependency",
+            "dependency license",
+            "dependency's license",
+            "license compatibility",
+        ),
+        "tokens": (),
+        "adjacent_workflows": (
+            "security-safety-review",
+            "application-threat-model",
+            "legal-compliance-review",
+            "live-incident-response",
+        ),
     },
     {
         "id": "git_workflow",
@@ -6507,6 +6559,7 @@ def awareness_primer_payload() -> dict[str, object]:
                 "commit-pr-authoring",
                 "git-workflow",
                 "relational-db",
+                "security-event-response",
                 "ai-slop-cleaner",
                 "frontend-refactor",
                 "tech-debt-audit",
@@ -6877,6 +6930,7 @@ _DIRECT_WORKFLOW_NEXT_ACTIONS = {
     "commit-pr-authoring": "prepare_commit_pr_text",
     "git-workflow": "prepare_git_repair_plan",
     "relational-db": "prepare_db_change_plan",
+    "security-event-response": "prepare_security_event_response",
     "accessibility-audit": "prepare_accessibility_audit",
     "visual-qa": "prepare_visual_qa",
     "workspace-file-operator": "prepare_workspace_file_operator_card",
