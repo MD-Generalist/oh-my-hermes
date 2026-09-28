@@ -38,6 +38,8 @@ from pathlib import Path
 from typing import Any, Iterator, Mapping
 
 from .awareness_delivery import _awareness_delivery_lock
+from .route_answer_consistency import INVALID_ANSWER_VERDICT, invalid_answer_reasons
+from .route_question_mode import route_question_mode_fields
 from .todo_store import strip_control_characters
 
 ROUTE_ANSWER_SCHEMA_VERSION = "route_question_answer/v1"
@@ -69,6 +71,12 @@ CONFIDENCE_OBSERVED_FROM_RESPONSE = "observed_from_response"
 DISPATCH_ACTION = "dispatch"
 CLARIFY_ACTION = "clarify"
 NONE_ACTION = "none"
+
+# Whether the answer, read as a whole, is one opinion. `invalid_answer` is
+# `route_answer_consistency`'s verdict: the record is still written, so the
+# rate is countable, and it reads as "no opinion" everywhere it is scored.
+ANSWER_VERDICT_ACCEPTED = "accepted"
+ANSWER_VERDICT_INVALID = INVALID_ANSWER_VERDICT
 
 NO_WORKFLOW_OPTION = "none"
 ROUTE_CHOICE_KEY = "route_choice"
@@ -184,6 +192,8 @@ def build_route_answer_record(
     digest_verified: bool = False,
     recorded_at: str = "",
     ask_id: object = "",
+    mode_reading: object = None,
+    question_options: object = None,
 ) -> dict[str, Any]:
     """Validate one answer and return the record to write.
 
@@ -198,6 +208,16 @@ def build_route_answer_record(
     the only field here that may legitimately be empty -- a caller that
     supplied neither the message nor its hash has not identified a request,
     and an empty string says so instead of a hash of nothing.
+
+    `mode_reading` is `route_question_mode.read_route_question_mode`'s result
+    for the home this record is written to. Every record carries the mode and
+    where it was read from; a caller that read nothing gets `unknown` /
+    `not_read`, never a default.
+
+    `question_options` are the Choice options of the question the digest
+    names, when the caller could re-derive it. They are what lets coverage be
+    judged; without them `answer_verdict` rests on mass and argmax alone and
+    the record says so with `coverage_checked: false`.
     """
     digest = _validated_digest(question_digest)
     answerer = str(answered_by or "").strip()
@@ -209,6 +229,12 @@ def build_route_answer_record(
     fit_values = _validated_fits(fits)
     probabilities = _validated_probabilities(choice_probabilities)
     message_hash = _validated_message_sha256(message_sha256)
+    options = (
+        [str(option) for option in question_options]
+        if isinstance(question_options, (list, tuple, set, frozenset))
+        else None
+    )
+    invalid = invalid_answer_reasons(choice, probabilities, options=options)
     record: dict[str, Any] = {
         "schema_version": ROUTE_ANSWER_SCHEMA_VERSION,
         # The bundle's reading of this answer at the moment it was recorded.
@@ -230,6 +256,12 @@ def build_route_answer_record(
             fits=fit_values,
             message_sha256=message_hash,
         ),
+        "answer_verdict": ANSWER_VERDICT_INVALID if invalid else ANSWER_VERDICT_ACCEPTED,
+        # Whether `accepted` covers coverage too. False when the answer carries
+        # a distribution but the question's options were not at hand (no
+        # `message` to re-derive them from): mass and argmax were checked,
+        # coverage was not, and a reader must not treat the verdict as whole.
+        "coverage_checked": options is not None or not probabilities,
         "answered_by": answerer,
         "claim_boundary": CLAIM_BOUNDARY,
         "confidence_source": confidence_source_for(answerer),
@@ -239,7 +271,10 @@ def build_route_answer_record(
         "recorded_at": recorded_at or _utc_now(),
         "route_choice": choice,
         "session_ref": _validated_session_ref(session_ref),
+        **route_question_mode_fields(mode_reading),
     }
+    if invalid:
+        record["invalid_answer_reasons"] = list(invalid)
     validated_note = _validated_note(note)
     if validated_note:
         record["note"] = validated_note
@@ -565,6 +600,8 @@ def _utc_now() -> str:
 
 
 __all__ = [
+    "ANSWER_VERDICT_ACCEPTED",
+    "ANSWER_VERDICT_INVALID",
     "ANSWERED_BY_JEV_PLUGIN",
     "ANSWERED_BY_MAIN_MODEL",
     "ANSWERED_BY_OMH_JEV_ASK",

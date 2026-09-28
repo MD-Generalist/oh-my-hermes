@@ -613,6 +613,81 @@ both with different values is refused, since the two name different requests.
 Send neither and the record identifies no request, recorded as an empty string
 rather than a hash of nothing.
 
+### Mode, decline, invalid answers, and the shadow report
+
+The route question runs in one of two modes, read from the operator's own OMH
+config at `<omh_home>/routing/route-question.json`, never from the model:
+
+```json
+{"mode": "off"}
+```
+
+- `shadow` (the default, and the behaviour before the mode existed): the
+  question is attached to every undecidable route and answers are recorded
+  without changing it. The payload is byte for byte what it was.
+- `off`: no surface hands the question out.
+
+Every answer record and every `omh chat route --record` routing record carries
+`mode` and `mode_source`: `omh_config` when the file set it, `default` when there
+is no file. A file that exists and cannot be read, parsed, or understood gives
+`mode: unknown` with a `mode_error`, never the default, and the surface then
+behaves as `shadow`. `{"mode": "on"}` -- a mode in which an answer would decide
+the route -- is not available and reads as `unknown` with `on_not_available`.
+
+Two records carry the route and its question summary (`built`, `asked`,
+`decline_reason`, `mode`, `mode_source`) next to the request's
+`message_sha256`, and never the message:
+
+- `omh chat route --record` writes a `routing.json` for every recorded turn,
+  decided or not.
+- A recorded wrapper session (`omh_interact`, which records a session by
+  default, or `omh chat session start`) appends one `route_question_observed`
+  event to that session's `events.jsonl` on a turn that built a question. A
+  decided turn writes nothing there.
+
+`omh chat interact` without a session and `omh_interact` with
+`record_session: false` record no route.
+
+The decline verdict is one of four values:
+
+- `acknowledgement`: a thank-you or an okay.
+- `one_word_reply`: the whole message is one listed approval word, such as
+  `lgtm`. A one-word request such as `refactor` still has candidates and is
+  kept.
+- `no_candidate`: the Choice offers only `none`.
+- `single_candidate`: the Choice offers one workflow.
+
+In `shadow` a declinable question is still asked; the reason is recorded so
+the share of turns with nothing to decide is readable before anything acts on
+it.
+
+An answer whose Choice probabilities omit an option the question offered, do
+not sum to one within 0.01, or do not peak at the chosen option is recorded
+with `answer_verdict: invalid_answer` and the tool returns
+`status: invalid_answer`. It counts as no opinion: the route is unchanged and
+the turn continues. The corpus scorer applies the same rule to offline rows.
+Coverage needs the question's options, which OMH re-derives only from
+`message`. Without it the record says `coverage_checked: false`, and
+`accepted` then covers mass and argmax only.
+
+`omh chat route-questions report` reads the answers and both route records
+above, and nothing else. It joins each answer to the newest route with the
+same `message_sha256`, whichever record wrote it; the join ignores the route's
+source and whether the answer came before or after it. It reports three rates:
+
+- The decline rate counts every route that built a question, so a request
+  routed twice counts twice.
+- The invalid-answer rate.
+- The agreement with the deterministic route. It excludes invalid answers,
+  answers whose coverage was not checked, and answers with no recorded route,
+  each named as an exclusion.
+
+Each rate names its numerator, denominator, and exclusions.
+`--model <alias>` prices a declared turn shape (192,000 input and 5,600 output
+tokens) at that model's list price. The shape is another project's
+self-reported median and is not an OMH measurement; the report says so
+wherever it prints the cost.
+
 ## Missed OMH Route Capture
 
 If Hermes or the user says a response did not use the expected OMH workflow, the

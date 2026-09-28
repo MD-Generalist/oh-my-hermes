@@ -6,6 +6,7 @@ from typing import Mapping, Sequence, TypedDict
 
 from ..ingress import CHAT_SOURCES
 from ..routing.action_copy import next_action_label
+from ..routing.chat import route_question_decline_reason
 from ..wrapper.contract import build_chat_interaction_payload
 
 
@@ -20,6 +21,16 @@ class RoutingPrecisionCase:
     expected_next_action: str
     expected_lookup_kind: str
     forbidden_candidate: str = ""
+    # What the route question decline predicate says about this case: a
+    # reason from `ROUTE_QUESTION_DECLINE_REASONS`, `ROUTE_QUESTION_ASKED`
+    # when the route builds a question with something to decide, or "" to
+    # leave it unchecked. Set on the cases that pin the predicate in both
+    # directions; see `route_question_decline_reason`.
+    expected_route_question: str = ""
+
+
+# The `expected_route_question` value for a built question the predicate keeps.
+ROUTE_QUESTION_ASKED = "asked"
 
 
 @dataclass(frozen=True)
@@ -39,6 +50,8 @@ class RoutingInterventionCase:
     # slid from `medium` to `low` would otherwise still pass.
     expected_confidence: str = ""
     active_design_direction_iteration: dict[str, str] | None = None
+    # See `RoutingPrecisionCase.expected_route_question`.
+    expected_route_question: str = ""
 
 
 # Negative-control corpus. These are ordinary chat turns where OMH should stay
@@ -3313,6 +3326,43 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
         "answer_clarification",
         "",
         "internal-audit",
+    ),
+    # The route question's decline predicate (#1817). Each of these builds a
+    # question today; the first three are turns with nothing to decide, and the
+    # last is an ordinary non-request whose four-candidate question the
+    # predicate must keep -- an answerer saying `none` there is the answer the
+    # shadow surface exists to measure.
+    RoutingPrecisionCase(
+        "route-question-declines-one-word-reply",
+        "A one-word approval has nothing for the route question to decide",
+        "lgtm",
+        "answer_clarification",
+        "",
+        expected_route_question="one_word_reply",
+    ),
+    RoutingPrecisionCase(
+        "route-question-declines-acknowledgement",
+        "A thank-you has nothing for the route question to decide",
+        "thanks, got it",
+        "answer_directly",
+        "direct_answer",
+        expected_route_question="acknowledgement",
+    ),
+    RoutingPrecisionCase(
+        "route-question-declines-no-candidate",
+        "A question whose Choice offers only none has nothing to decide",
+        "Apologize for being late.",
+        "answer_clarification",
+        "",
+        expected_route_question="no_candidate",
+    ),
+    RoutingPrecisionCase(
+        "route-question-keeps-multi-candidate-control",
+        "A coding reminder with several candidates still has a question to ask",
+        "remember to close the file handle in the finally block",
+        "answer_clarification",
+        "",
+        expected_route_question=ROUTE_QUESTION_ASKED,
     ),
 )
 
@@ -9414,6 +9464,47 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "prepare_tech_debt_audit",
         "tech_debt_audit",
     ),
+    # The route question's decline predicate (#1817), on turns the router is
+    # supposed to act on. A clarify naming its only candidate has nothing left
+    # for a Choice to decide; a clarify over four candidates does.
+    RoutingInterventionCase(
+        "route-question-declines-single-candidate-clarify",
+        "A clarify with one candidate leaves the route question nothing to decide",
+        "please run doctor",
+        "clarify",
+        "oh-my-hermes",
+        "answer_clarification",
+        "clarification",
+        "doctor",
+        expected_route_question="single_candidate",
+    ),
+    # One word is not the same as nothing to decide: a one-word workflow
+    # request routes to several candidates and keeps its question. Only a
+    # one-word approval (`lgtm` above) is declined.
+    RoutingInterventionCase(
+        "route-question-keeps-one-word-request",
+        "A one-word refactor request still has candidates to choose between",
+        "refactor",
+        "clarify",
+        "oh-my-hermes",
+        "answer_clarification",
+        "clarification",
+        # No candidate pinned: the claim is that the question is kept, not
+        # which workflow leads it.
+        "",
+        expected_route_question=ROUTE_QUESTION_ASKED,
+    ),
+    RoutingInterventionCase(
+        "route-question-keeps-multi-candidate-clarify",
+        "A review request over four candidates keeps its route question",
+        "review my patch for the export feature",
+        "clarify",
+        "oh-my-hermes",
+        "answer_clarification",
+        "clarification",
+        "code-review",
+        expected_route_question=ROUTE_QUESTION_ASKED,
+    ),
 )
 
 
@@ -9776,6 +9867,7 @@ def _evaluate_precision_case(
             issues.append("missing no-execution claim boundary")
     elif not boundary.startswith("No OMH workflow"):
         issues.append("missing no-workflow claim boundary")
+    _check_route_question(case.expected_route_question, route, case.message, observed, issues)
 
     return {
         "id": case.id,
@@ -9853,6 +9945,7 @@ def _evaluate_intervention_case(
         issues.append("raw message echoed in machine payload")
     if not str(observed["claim_boundary"] or ""):
         issues.append("missing claim boundary")
+    _check_route_question(case.expected_route_question, route, case.message, observed, issues)
 
     return {
         "id": case.id,
@@ -9870,6 +9963,30 @@ def _evaluate_intervention_case(
         "observed": observed,
         "issues": issues,
     }
+
+
+def _check_route_question(
+    expected: str,
+    route: Mapping[str, object],
+    message: str,
+    observed: dict[str, object],
+    issues: list[str],
+) -> None:
+    """Pin the route question's decline predicate on a case that asks for it.
+
+    Read through `route_question_decline_reason`, the one producer, over the
+    route this case's own payload carries. Cases that set nothing are not
+    read, so their rows stay the shape they were.
+    """
+    if not expected:
+        return
+    if not isinstance(route.get("route_question"), Mapping):
+        actual = "no_question"
+    else:
+        actual = route_question_decline_reason(route, message) or ROUTE_QUESTION_ASKED
+    observed["route_question"] = actual
+    if actual != expected:
+        issues.append(f"expected route question {expected}, observed {actual}")
 
 
 def _is_handoff_action(action_id: str) -> bool:

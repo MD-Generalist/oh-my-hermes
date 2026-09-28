@@ -70,6 +70,9 @@ from ..coding.owner_retarget import build_owner_retarget
 
 
 WRAPPER_SESSION_RESULT_SCHEMA_VERSION = "wrapper_session_result/v1"
+# The session event a turn that built a route question appends; the route
+# question shadow report reads it as the live-lane route record.
+ROUTE_QUESTION_OBSERVED_EVENT = "route_question_observed"
 # The statuses that mean "this session already has a prepared handoff", and so
 # the only ones an explicit retarget can move: there is nothing to re-project
 # before one exists.
@@ -160,6 +163,7 @@ def create_or_resume_wrapper_session(
     # The platform envelope is built and validated inside the payload builder,
     # before this function touches the session store: an unsafe context fails
     # closed ahead of any session directory creation.
+    route_question_observations: list[dict[str, object]] = []
     interaction = build_chat_interaction_payload(
         event_or_message,
         source=source,
@@ -177,6 +181,7 @@ def create_or_resume_wrapper_session(
         _host_project_binding_factory=build_session_project_binding_factory(
             _host_project_binding_factory,
         ),
+        _route_question_sink=route_question_observations,
     )
     thread_key = str(interaction["thread_key"])
     # The presence of a validated platform envelope on the interaction -- not
@@ -215,6 +220,20 @@ def create_or_resume_wrapper_session(
             },
         )
         resumed = False
+    # One line in the session's own event log per turn that built a route
+    # question -- the log this function already appends to on every call --
+    # so the shadow report can join a live turn to the answer recorded on it.
+    # Metadata only: the request hash, the deterministic reading, and the
+    # question summary (`route_question_observation`).
+    for observation in route_question_observations:
+        append_wrapper_session_event(
+            session_dir,
+            {
+                "event": ROUTE_QUESTION_OBSERVED_EVENT,
+                "message": "route question built",
+                "data": observation,
+            },
+        )
     return {
         "schema_version": WRAPPER_SESSION_RESULT_SCHEMA_VERSION,
         "resumed": resumed,

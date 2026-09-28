@@ -40,6 +40,7 @@ from typing import Any, Iterable, Mapping, Sequence
 
 from ..coding.context_safety import compact_visible_text
 from ..ingress import CHAT_SOURCES
+from ..plugin_bundle.omh.route_answer_consistency import INVALID_ANSWER_VERDICT, invalid_answer_reasons
 from ..routing.route_question import (
     FITS_CLARIFY_THRESHOLD,
     FITS_DISPATCH_THRESHOLD,
@@ -138,7 +139,10 @@ _SCORE_CLAIM_BOUNDARY = (
     "while staying passes there. An arm answering recorded live routes is "
     "scored only on the cases a live route asks about; the rest are named "
     "`not_live_joinable` and excluded from its denominators, never counted as "
-    "questions it failed to answer. A `digest_mismatch` is an answer about "
+    "questions it failed to answer. An `invalid_answer` -- a Choice distribution "
+    "that omits an offered option, does not sum to one, or does not peak at the "
+    "chosen option -- is no opinion: it is counted and named, and it leaves every "
+    "accuracy denominator. A `digest_mismatch` is an answer about "
     "this request asked over a shortlist cut differently by the surface that "
     "asked it; it is scored and reported, not dropped. An arm's score "
     "describes these corpora at this revision and nothing beyond them."
@@ -234,6 +238,16 @@ def _candidates_from_route(
             continue
         rows.append({"skill": skill, "description": clean_skill_description(descriptions.get(skill, ""))})
     return rows
+
+
+def deterministic_route_reading(route: Mapping[str, Any]) -> tuple[str, str]:
+    """The router's own answer to the two questions, from a route or a routing record.
+
+    Public for the shadow report, which reads it off a recorded
+    `routing.json`; both carry the same `action`, `selected_skill`, and
+    `candidate_skill` fields, so one reading serves both.
+    """
+    return _deterministic_reading(route)
 
 
 def _deterministic_reading(route: Mapping[str, Any]) -> tuple[str, str]:
@@ -641,7 +655,18 @@ def read_answer_records_from_directory(path: Path) -> list[AnswerRecord]:
     across all of them: a directory is as untrusted as the files in it, and a
     per-file cap alone bounds nothing about reading a million files.
     """
-    records: list[AnswerRecord] = []
+    return [record for record, _ in read_route_answer_documents(path)]
+
+
+def read_route_answer_documents(path: Path) -> list[tuple[AnswerRecord, Mapping[str, Any]]]:
+    """Each recorded answer, parsed, beside the record document it came from.
+
+    The document is what carries the fields a row has no place for -- the
+    mode, when it was recorded, the verdict the recorder reached -- and a
+    reader that needs them reads them from here rather than opening the files
+    a second time. An unreadable file pairs its failed record with `{}`.
+    """
+    records: list[tuple[AnswerRecord, Mapping[str, Any]]] = []
     budget = MAX_ANSWER_SOURCE_BYTES
     for entry in sorted(Path(path).glob("*.json")):
         ref = report_safe_text(entry.name)
@@ -653,13 +678,16 @@ def read_answer_records_from_directory(path: Path) -> list[AnswerRecord]:
             )
         except RoutingQuestionCorpusError as exc:
             records.append(
-                AnswerRecord(
-                    ref=ref,
-                    arm=UNKNOWN_ARM,
-                    case_id="",
-                    question_digest="",
-                    answers={},
-                    error=report_safe_text(exc),
+                (
+                    AnswerRecord(
+                        ref=ref,
+                        arm=UNKNOWN_ARM,
+                        case_id="",
+                        question_digest="",
+                        answers={},
+                        error=report_safe_text(exc),
+                    ),
+                    {},
                 )
             )
             continue
@@ -668,17 +696,22 @@ def read_answer_records_from_directory(path: Path) -> list[AnswerRecord]:
             document = json.loads(text)
         except json.JSONDecodeError as exc:
             records.append(
-                AnswerRecord(
-                    ref=ref,
-                    arm=UNKNOWN_ARM,
-                    case_id="",
-                    question_digest="",
-                    answers={},
-                    error=f"record is not readable JSON: {report_safe_text(exc.msg)}",
+                (
+                    AnswerRecord(
+                        ref=ref,
+                        arm=UNKNOWN_ARM,
+                        case_id="",
+                        question_digest="",
+                        answers={},
+                        error=f"record is not readable JSON: {report_safe_text(exc.msg)}",
+                    ),
+                    {},
                 )
             )
             continue
-        records.append(_record_from_document(document, ref=ref))
+        records.append(
+            (_record_from_document(document, ref=ref), document if isinstance(document, Mapping) else {})
+        )
     return records
 
 
@@ -757,6 +790,7 @@ class _ArmTally:
     correct_workflow: int = 0
     band_mismatch: int = 0
     digest_mismatch: int = 0
+    invalid_answer: int = 0
     agree: int = 0
     no_dispatch_denominator: int = 0
     intervention_denominator: int = 0
@@ -804,7 +838,9 @@ def _tally_item(
 
 
 def _arm_payload(tally: _ArmTally, *, case_count: int, live_only: bool = False) -> dict[str, object]:
-    excluded = ("unanswered_cases", "malformed_answer_rows")
+    # An `invalid_answer` is "no opinion": it leaves every accuracy
+    # denominator, and is named there, the same way a malformed row does.
+    excluded = ("unanswered_cases", "malformed_answer_rows", INVALID_ANSWER_VERDICT)
     if live_only:
         # A live arm answers only the questions a live route asks, which is the
         # undecidable cases. Counting the decided ones against it would report
@@ -827,7 +863,15 @@ def _arm_payload(tally: _ArmTally, *, case_count: int, live_only: bool = False) 
         "wrong_workflow": tally.wrong_workflow,
         "band_mismatch": tally.band_mismatch,
         "digest_mismatch": tally.digest_mismatch,
+        "invalid_answer": tally.invalid_answer,
         "agree": tally.agree,
+        "invalid_answer_rate": reported_rate(
+            numerator=tally.invalid_answer,
+            denominator=tally.answered + tally.invalid_answer,
+            numerator_of=(INVALID_ANSWER_VERDICT,),
+            denominator_of="joined answer rows, invalid ones included",
+            excluded=("malformed_answer_rows", "unmatched_answer_rows", "ambiguous_answer_rows"),
+        ).to_payload(),
         "overroute_rate": reported_rate(
             numerator=tally.overroute,
             denominator=tally.no_dispatch_denominator,
@@ -908,6 +952,7 @@ def score_routing_question_answers(
     unmatched: list[dict[str, str]] = []
     ambiguous: list[dict[str, object]] = []
     matched: list[dict[str, object]] = []
+    invalid_answers: list[dict[str, object]] = []
     for record in answer_records:
         tally = tallies.setdefault(record.arm or UNKNOWN_ARM, _ArmTally())
         if record.from_live_record:
@@ -987,6 +1032,21 @@ def score_routing_question_answers(
         seen[key] = record.ref
         question = item.get("question")
         item_digest = str(question.get("question_digest") or "") if isinstance(question, Mapping) else ""
+        # After the duplicate check, so the first answer for a case stands
+        # even when it is the invalid one. Judged against the joined item's own
+        # options: that is the question this answer is scored as answering.
+        contradictions = answer_contradictions(record.answers, question)
+        if contradictions:
+            tally.invalid_answer += 1
+            invalid_answers.append(
+                {
+                    "ref": record.ref,
+                    "arm": record.arm,
+                    "case_id": str(item.get("case_id") or ""),
+                    "reasons": list(contradictions),
+                }
+            )
+            continue
         # A digest mismatch is a different shortlist cut of the same request,
         # not a different request. It is scored, because the answer is about
         # this case; it is reported, because an arm answering a two-candidate
@@ -1058,8 +1118,36 @@ def score_routing_question_answers(
         "malformed": malformed,
         "unmatched": unmatched,
         "ambiguous": ambiguous,
+        "invalid_answers": invalid_answers,
         "claim_boundary": _SCORE_CLAIM_BOUNDARY,
     }
+
+
+def question_choice_options(question: object) -> list[str] | None:
+    """The Choice options a route question offers, or None when it names none."""
+    questions = question.get("questions") if isinstance(question, Mapping) else None
+    choice = questions.get(ROUTE_CHOICE_KEY) if isinstance(questions, Mapping) else None
+    options = choice.get("options") if isinstance(choice, Mapping) else None
+    return [str(option) for option in options] if isinstance(options, Mapping) else None
+
+
+def answer_contradictions(answers: Mapping[str, Any], question: object) -> tuple[str, ...]:
+    """`route_answer_consistency`'s verdict on one answer set, against its question.
+
+    The one rule the live record and this scorer share: a record written by
+    `omh_route_answer` and a row in an offline answer file are judged by the
+    same function, so an answer cannot be valid in one and invalid in the
+    other except where the recorder could not see the question's options.
+    """
+    choice_answer = answers.get(ROUTE_CHOICE_KEY)
+    if not isinstance(choice_answer, Mapping):
+        return ()
+    probabilities = choice_answer.get("probabilities")
+    return invalid_answer_reasons(
+        choice_answer.get("choice"),
+        probabilities if isinstance(probabilities, Mapping) else None,
+        options=question_choice_options(question),
+    )
 
 
 def _threshold(
@@ -1120,7 +1208,8 @@ def format_routing_question_score(score: Mapping[str, Any]) -> str:
             f"malformed {arm.get('malformed')}, overroute {arm.get('overroute')}, "
             f"missed {arm.get('missed')}, wrong workflow {arm.get('wrong_workflow')}, "
             f"band mismatch {arm.get('band_mismatch')}, "
-            f"digest mismatch {arm.get('digest_mismatch')}, agree {arm.get('agree')}"
+            f"digest mismatch {arm.get('digest_mismatch')}, "
+            f"invalid answer {arm.get('invalid_answer', 0)}, agree {arm.get('agree')}"
         )
     malformed = score.get("malformed")
     if isinstance(malformed, list) and malformed:
@@ -1128,6 +1217,14 @@ def format_routing_question_score(score: Mapping[str, Any]) -> str:
         for entry in malformed[:10]:
             if isinstance(entry, Mapping):
                 lines.append(f"- {entry.get('ref')}: {entry.get('reason')}")
+    invalid = score.get("invalid_answers")
+    if isinstance(invalid, list) and invalid:
+        lines.append(f"Invalid answers (no opinion): {len(invalid)}")
+        for entry in invalid[:10]:
+            if isinstance(entry, Mapping):
+                reasons = entry.get("reasons")
+                named = ", ".join(str(reason) for reason in reasons) if isinstance(reasons, list) else ""
+                lines.append(f"- {entry.get('ref')}: {named}")
     unmatched = score.get("unmatched")
     if isinstance(unmatched, list) and unmatched:
         lines.append(f"Unmatched answer records: {len(unmatched)}")
@@ -1209,7 +1306,11 @@ __all__ = [
     "ROUTING_QUESTION_SCORE_SCHEMA_VERSION",
     "AnswerRecord",
     "RoutingQuestionCorpusError",
+    "answer_contradictions",
     "answer_records_from_rows",
+    "deterministic_route_reading",
+    "question_choice_options",
+    "read_route_answer_documents",
     "build_routing_question_corpus",
     "corpus_shape_errors",
     "format_routing_question_corpus",

@@ -13,7 +13,9 @@ from ..host_observation import (
     observe_plugin_tool_call,
 )
 from ..jev_ask_store import answered_ask
+from ..route_question_mode import read_route_question_mode
 from ..route_answer_store import (
+    ANSWER_VERDICT_INVALID,
     ANSWERED_BY_OMH_JEV_ASK,
     ANSWERED_BY_VALUES,
     CLAIM_BOUNDARY,
@@ -195,6 +197,7 @@ def omh_route_answer_handler(args: dict[str, Any], **kwargs) -> str:
         refusal = _omh_jev_ask_claim_refusal(args, session_ref, question)
         if refusal:
             return _result(payload, observation, status="invalid_request", error=refusal)
+    omh_home = default_omh_home()
     try:
         record = build_route_answer_record(
             question_digest=args.get("question_digest"),
@@ -207,11 +210,15 @@ def omh_route_answer_handler(args: dict[str, Any], **kwargs) -> str:
             message_sha256=message_sha256,
             digest_verified=verified,
             ask_id=args.get("ask_id", ""),
+            # Read from the OMH config of the home the record lands in, never
+            # from an argument: the model does not get to say which mode it is in.
+            mode_reading=read_route_question_mode(omh_home),
+            question_options=sorted(_choice_options(question)) if question is not None else None,
         )
     except RouteAnswerValidationError as error:
         return _result(payload, observation, status="invalid_request", error=str(error))
     try:
-        write_route_answer(default_omh_home(), record)
+        write_route_answer(omh_home, record)
     except RouteAnswerContendedError as error:
         # Before the generic branch: `invalid_request` tells a caller its
         # payload was wrong, and a caller that believes that rewrites an
@@ -220,6 +227,20 @@ def omh_route_answer_handler(args: dict[str, Any], **kwargs) -> str:
     except RouteAnswerStoreError as error:
         return _result(payload, observation, status="store_unavailable", error=str(error))
     payload["record"] = record
+    if record.get("answer_verdict") == ANSWER_VERDICT_INVALID:
+        # Written, so the rate is countable, and refused as an opinion. The
+        # wording tells the caller what a refusal means for the turn: nothing.
+        return _result(
+            payload,
+            observation,
+            status=ANSWER_VERDICT_INVALID,
+            error=(
+                "the answer contradicts itself ("
+                + ", ".join(record.get("invalid_answer_reasons") or [])
+                + ") and was recorded as no opinion; the route is unchanged, so continue the turn"
+            ),
+            digest_verification=verification,
+        )
     return _result(payload, observation, status="recorded", digest_verification=verification)
 
 

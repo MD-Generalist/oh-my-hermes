@@ -27,7 +27,14 @@ from ..quality.routing_question_corpus import (
     score_routing_question_answers,
 )
 from ..routing.action_copy import next_action_label
+from ..plugin_bundle.omh.route_answer_store import route_answer_dir
+from ..plugin_bundle.omh.route_question_mode import read_route_question_mode
+from ..quality.route_question_shadow_report import (
+    build_route_question_shadow_report,
+    format_route_question_shadow_report,
+)
 from ..routing.route_plan import public_workflow_identifier
+from ..routing.route_question import apply_route_question_mode
 from ..routing.chat import CONFIDENCE_LEVELS, public_route_payload, route_chat_event, routing_record_payload
 from ..runtime.artifacts import create_run, summarize_delegated_coding_status, write_routing_decision
 from ..system.local_store import atomic_write_json
@@ -85,7 +92,16 @@ def cmd_chat_route(args: argparse.Namespace) -> int:
         message = "GitHub tracker event" if "tracker_content" in decision else extract_message_text(event_or_message)
     except (OSError, json.JSONDecodeError, ValueError) as exc:
         raise OmhError(str(exc)) from exc
-    payload = {"route": public_route_payload(decision, include_message=args.include_message)}
+    # The mode comes from the OMH config of this home, never from the route
+    # or the caller. It shapes what the surface hands out; the record below
+    # keeps the router's own decision and says what the mode did to it.
+    route_question_mode = read_route_question_mode(_paths(args).omh_home)
+    payload = {
+        "route": apply_route_question_mode(
+            public_route_payload(decision, include_message=args.include_message),
+            route_question_mode["mode"],
+        )
+    }
     if args.record:
         paths = _paths(args)
         selected_skill = str(decision["selected_skill"])
@@ -112,6 +128,7 @@ def cmd_chat_route(args: argparse.Namespace) -> int:
                 source_event_id=args.source_event_id or "",
                 channel_ref=args.channel_ref or "",
                 user_ref=args.user_ref or "",
+                route_question_mode=route_question_mode,
             ),
         )
         payload["runtime"] = {"run": run, "routing": routing}
@@ -212,6 +229,34 @@ def cmd_chat_route_questions_score(args: argparse.Namespace) -> int:
         _print_json(payload)
     else:
         print(format_routing_question_score(payload))
+    return 0
+
+
+def cmd_chat_route_questions_report(args: argparse.Namespace) -> int:
+    """Join recorded route answers to recorded routes over a window and report it.
+
+    Defaults read this OMH home: answers from `runtime/route-questions/`,
+    routes from `runtime/runs/` (`omh chat route --record`) and from the
+    wrapper-session event logs (live turns that built a question). The exit status is 0 whenever a report was
+    produced, an empty window included -- its rates say `percent: null`
+    rather than failing the command.
+    """
+    paths = _paths(args)
+    answers = Path(args.answers).expanduser() if args.answers else route_answer_dir(paths.omh_home)
+    runs = Path(args.runs).expanduser() if args.runs else paths.runtime_runs_dir
+    sessions = Path(args.sessions).expanduser() if args.sessions else paths.runtime_wrapper_sessions_dir
+    try:
+        payload = build_route_question_shadow_report(
+            answers, runs, sessions_dir=sessions, since=args.since, model=args.model or ""
+        )
+        if args.output:
+            atomic_write_json(Path(args.output).expanduser(), payload)
+    except (OSError, RoutingQuestionCorpusError, ValueError) as exc:
+        raise OmhError(str(exc)) from exc
+    if _wants_json(args):
+        _print_json(payload)
+    else:
+        print(format_route_question_shadow_report(payload))
     return 0
 
 
@@ -1373,6 +1418,46 @@ def _add_chat_commands(sub) -> None:
         help="Print the full score report to stdout instead of a summary.",
     )
     route_questions_score.set_defaults(func=cmd_chat_route_questions_score)
+
+    route_questions_report = route_questions_sub.add_parser(
+        "report",
+        help=(
+            "Join recorded route answers to the routes `omh chat route --record` recorded, by message hash, "
+            "and report decline, invalid-answer, and agreement rates plus a per-turn cost estimate."
+        ),
+    )
+    route_questions_report.add_argument(
+        "--answers",
+        default=None,
+        help="Directory of route_question_answer/v1 records; defaults to this OMH home's runtime/route-questions.",
+    )
+    route_questions_report.add_argument(
+        "--runs",
+        default=None,
+        help="Directory of recorded runs holding routing.json; defaults to this OMH home's runtime/runs.",
+    )
+    route_questions_report.add_argument(
+        "--sessions",
+        default=None,
+        help="Directory of wrapper sessions whose events.jsonl carry live route questions; defaults to this OMH home's.",
+    )
+    route_questions_report.add_argument(
+        "--since",
+        default=None,
+        help="ISO-8601 UTC lower bound for both sides; omitted, the router source's mtime; empty for every record.",
+    )
+    route_questions_report.add_argument(
+        "--model",
+        default="",
+        help="Price the declared turn shape at this model's list price; omitted, the cost is reported unpriced.",
+    )
+    route_questions_report.add_argument("--output", default=None, help="Write the full report JSON to this path.")
+    route_questions_report.add_argument(
+        "--json",
+        action="store_true",
+        help="Print the full report to stdout instead of a summary.",
+    )
+    route_questions_report.set_defaults(func=cmd_chat_route_questions_report)
 
     session = chat_sub.add_parser("session")
     session_sub = session.add_subparsers(dest="session_command", required=True)
