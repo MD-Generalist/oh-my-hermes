@@ -360,11 +360,56 @@ _declines: "Counter[str]" = Counter()
 # message. It deliberately does not say the remote work is still running --
 # a foreground poll may already have seen it finish -- and it does not say the
 # model claimed to be waiting, because nothing here reads what the model said.
-HONEST_STOP_TEXT: Final = (
-    "[OMH] This turn started remote work and armed nothing to wake the session "
-    "when it finishes, so the session has stopped here: it resumes only when "
-    "someone sends it a message."
-)
+#
+# The sentence is in the reply's own language (owner decision, 2026-09-28) and
+# carries no OMH vocabulary: no `[OMH]` head, no "armed". The language comes
+# from the response text alone -- see `reply_language` -- and never from the OS
+# locale. The copy is vendored here because this bundle cannot import `omh.*`.
+HONEST_STOP_TEXTS: Final[dict[str, str]] = {
+    "en": (
+        "This session has stopped: the remote work it started will not wake it "
+        "when it finishes, so send a message to pick it back up."
+    ),
+    "ko": (
+        "원격 작업이 끝나도 이 세션은 자동으로 다시 시작되지 않습니다. "
+        "이어서 하려면 메시지를 보내 주세요."
+    ),
+    "ja": (
+        "リモートの作業が終わっても、このセッションは自動では再開しません。"
+        "続けるには、メッセージを送ってください。"
+    ),
+    "zh": "远程工作完成后，此会话不会自动恢复。如需继续，请发送一条消息。",
+}
+HONEST_STOP_TEXT: Final = HONEST_STOP_TEXTS["en"]
+
+# How many characters of one script, outside code, make a reply that
+# language. Below it, a quoted word ("the user wrote 설정") leaves an English
+# reply English; any sentence in the script clears it.
+REPLY_SCRIPT_MIN_CHARS: Final = 4
+
+_FENCED_CODE = re.compile(r"(?ms)^[ \t]*(```|~~~).*?(?:^[ \t]*\1|\Z)")
+_INLINE_CODE = re.compile(r"`[^`\n]*`")
+_HANGUL_CHARS = re.compile(r"[ᄀ-ᇿ㄰-㆏가-힣]")
+_KANA_CHARS = re.compile(r"[぀-ゟ゠-ヿㇰ-ㇿｦ-ﾟ]")
+_HAN_CHARS = re.compile(r"[㐀-䶿一-鿿豈-﫿]")
+
+
+def reply_language(text: object) -> str:
+    """The language of *text* by script presence: ``ko``, ``ja``, ``zh`` or ``en``.
+
+    Precedence, not majority: enough Hangul makes it Korean, else enough kana
+    Japanese, else enough Han Chinese. A Japanese reply is often mostly kanji,
+    so a majority rule would call it Chinese; and a Korean reply full of code
+    names is mostly Latin, so a share rule would call it English. Fenced and
+    inline code are removed first, because a Korean string in a code block
+    says nothing about the language the reply is written in. Anything else,
+    including a script with no copy here, is English.
+    """
+    prose = _INLINE_CODE.sub("", _FENCED_CODE.sub("", str(text or "")))
+    for language, chars in (("ko", _HANGUL_CHARS), ("ja", _KANA_CHARS), ("zh", _HAN_CHARS)):
+        if len(chars.findall(prose)) >= REPLY_SCRIPT_MIN_CHARS:
+            return language
+    return "en"
 
 
 def remote_wait_declines() -> dict[str, int]:
@@ -608,7 +653,7 @@ def _honest_stop(
     if armed:
         _declines["end_of_turn_waiter_armed"] += 1
         return None
-    return f"{response_text}\n\n{HONEST_STOP_TEXT}"
+    return f"{response_text}\n\n{HONEST_STOP_TEXTS[reply_language(response_text)]}"
 
 
 def _observe_background_spawn(session: str, result: object) -> bool | None:

@@ -207,7 +207,15 @@ SKILL_INDEX_LINE_CHAR_LIMIT = 100
 # nothing per turn: the alternative, carrying earlier work in `pre_llm_call`
 # or the primer, would be paid on every turn whether or not anyone asked.
 # Re-derived from the producer.
-PLUGIN_TOOL_SCHEMA_CHAR_LIMIT = 60871
+# 60871 -> 61183: one sentence (78 chars) in each of the four tools whose
+# results now carry a `say` field -- `omh_delegate_route`, `omh_todo`,
+# `omh_loop`, `omh_agent_board` -- telling the model to relay it once, in the
+# user's language and its own words. The sentence rides the schema of the tool
+# that returns the field, so it is read exactly where the field appears; the
+# alternatives were a primer line (19 chars of headroom left) or a
+# `pre_llm_call` line, both paid on every turn and both the channel the reply
+# rules keep out of. Re-derived from the producer.
+PLUGIN_TOOL_SCHEMA_CHAR_LIMIT = 61183
 # The largest fenced `pre_llm_call` context over the named scenario set in
 # `src/maintenance/per_turn_context.py` (the `all_surfaces` scenario). Hermes
 # replays each turn's injection from `api_content` on every later turn, so this

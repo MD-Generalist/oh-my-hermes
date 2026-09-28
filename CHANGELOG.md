@@ -22,6 +22,37 @@ All notable changes will be documented here.
   Separately, a dispatch whose declared checks were observed failing now
   exits 1 even without a repair budget; it used to exit 0 because the
   unit's process had exited 0.
+- **OMH's own words stay out of the reply, and its decisions are said
+  plainly.** The end-of-turn sentence for a turn that started remote work
+  and armed nothing no longer opens with `[OMH]` or says "armed": it now
+  reads "This session has stopped: the remote work it started will not wake
+  it when it finishes, so send a message to pick it back up.", in the
+  reply's own language. The language is read from the reply text by script
+  presence, Hangul before kana before Han, with code blocks and inline code
+  removed and at least four characters of the script required, and the OS
+  locale is never consulted; Korean, Japanese and Chinese copy ships in the
+  plugin bundle and anything else gets English. Four tools now add a `say`
+  field to a successful result, one plain English sentence about the
+  decision they just recorded, and their descriptions ask the model to relay
+  it once in the user's language and its own words: `omh_delegate_route`
+  names the model a part will run on (its display name, and what the
+  category is for when that reads as a kind of work, never the category id),
+  and has its own sentence when no chosen model is left; `omh_todo` states
+  the plan and when it counts as complete on `set`, names a step and its
+  recorded reason when an `advance` blocks it, and says in plain words why a
+  step marked done still counts as open, never the reason code; `omh_loop`
+  states the goal and its criteria on `start` and what the loop waits on for
+  an `external_wait`; `omh_agent_board` says which teammate a prepared role
+  lane sets up. Reads, errors, refusals and contended writes carry no
+  `say`, and every other result field is unchanged. The reply lint
+  (`omh quality-evidence reply-lint`) now also catches every `[OMH ...]`
+  head OMH writes, 98 OMH schema ids (every `omh_` id in the bundle plus
+  every id a plugin tool schema names), and `route_question`, `closure
+  receipt` and `fanout dispatch`, while markdown links, `/v1` URLs and
+  one-word version ids stay clean; the common rail's vocabulary line now
+  lists the same words and a test keeps the two in step. Fan-out narration
+  for `delegate_task` is not included: the host dispatches that tool outside
+  the only hook that can annotate a result.
 
 - **A plan item marked done now closes only on a recorded result.** The
   continuation rule stopped a plan once every item said done, so a run could

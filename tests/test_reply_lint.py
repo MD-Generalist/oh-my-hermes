@@ -10,12 +10,14 @@ and the read-only Hermes session source.
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 import sqlite3
 from tempfile import TemporaryDirectory
 import unittest
 
 from _cli_harness import run_cli
+from omh.quality import reply_lint
 from omh.quality.reply_lint import (
     FINDING_KINDS,
     REPLY_LINT_SCHEMA_VERSION,
@@ -199,6 +201,217 @@ class AwarenessLineTests(unittest.TestCase):
 
     def test_the_word_boundary_mid_sentence_is_not_a_quoted_line(self) -> None:
         self.assertEqual(build_reply_lint("The boundary: nothing here was merged.")["findings"], [])
+
+
+_SRC = Path(__file__).resolve().parents[1] / "src"
+_LINT_SOURCE = _SRC / "quality" / "reply_lint.py"
+# `[OMH ...]` is a placeholder in the bundle's own comments, not a head it writes.
+_TAG_PLACEHOLDERS = frozenset({"[OMH ...]"})
+
+
+def _source_texts(root: Path) -> list[str]:
+    return [
+        path.read_text(encoding="utf-8")
+        for path in sorted(root.rglob("*.py"))
+        if path != _LINT_SOURCE and "__pycache__" not in path.parts
+    ]
+
+
+def _derived_tags() -> set[str]:
+    tags: set[str] = set()
+    for text in _source_texts(_SRC):
+        tags.update(re.findall(r"\[OMH(?: [^\]\n\"'{\\]*)?\]", text))
+    return tags - _TAG_PLACEHOLDERS
+
+
+def _derived_tag_prefixes() -> set[str]:
+    prefixes: set[str] = set()
+    for text in _source_texts(_SRC):
+        prefixes.update(re.findall(r"\[OMH [A-Za-z]+:(?= ?\{)", text))
+    return prefixes
+
+
+_SCHEMA_ID = re.compile(r"(?<![A-Za-z0-9_/.-])([a-z][a-z0-9]*(?:_[a-z0-9]+)+/v[0-9]+)(?![0-9])")
+
+
+def _derived_schema_ids() -> set[str]:
+    """The lint's declared scope rule, re-derived: `omh_` ids the bundle spells,
+    plus every id a shipped plugin tool schema names."""
+    from omh.plugin_bundle.omh.tools import builtin_tool_schemas
+
+    bundle: set[str] = set()
+    for text in _source_texts(_SRC / "plugin_bundle"):
+        bundle.update(_SCHEMA_ID.findall(text))
+    in_schemas = set(_SCHEMA_ID.findall(json.dumps(builtin_tool_schemas())))
+    return {schema_id for schema_id in bundle if schema_id.startswith("omh_")} | in_schemas
+
+
+class OmhHeadTests(unittest.TestCase):
+    """Every `[OMH ...]` head OMH writes is caught, and nothing that merely looks like one."""
+
+    def test_the_tag_list_is_every_head_the_source_writes(self) -> None:
+        derived = _derived_tags()
+        listed = set(reply_lint._AWARENESS_TAGS)
+        self.assertEqual(
+            sorted(derived - listed), [], "add these heads to _AWARENESS_TAGS in src/quality/reply_lint.py"
+        )
+        self.assertEqual(sorted(listed - derived), [], "no source writes these heads any more; remove them")
+        self.assertEqual(set(reply_lint._AWARENESS_TAG_PREFIXES), _derived_tag_prefixes())
+
+    def test_each_head_quoted_into_a_reply_is_flagged(self) -> None:
+        for tag in reply_lint._AWARENESS_TAGS:
+            with self.subTest(tag=tag):
+                payload = build_reply_lint(f"Done.\n\n{tag} something for the model.")
+                self.assertEqual(_kinds(payload), [("awareness_line_quoted", tag)])
+        payload = build_reply_lint("[OMH Role: reviewer] Review the diff.")
+        self.assertEqual(_kinds(payload), [("awareness_line_quoted", "[OMH Role:]")])
+
+    def test_the_old_honest_stop_sentence_is_flagged(self) -> None:
+        old = (
+            "[OMH] This turn started remote work and armed nothing to wake the session "
+            "when it finishes, so the session has stopped here: it resumes only when "
+            "someone sends it a message."
+        )
+        self.assertEqual(_kinds(build_reply_lint(f"Pushed.\n\n{old}")), [("awareness_line_quoted", "[OMH]")])
+
+    def test_things_that_look_like_a_head_are_not_one(self) -> None:
+        for text in (
+            "See the [OMH README](https://github.com/rlaope/oh-my-hermes#readme) for install steps.",
+            "Fixed in [OMH 2.0.2].",
+            "The [OMH Awareness](https://example.com/awareness) page explains it.",
+            "[OMH](https://github.com/rlaope/oh-my-hermes) is installed.",
+        ):
+            with self.subTest(text=text):
+                self.assertEqual(build_reply_lint(text)["findings"], [])
+
+    def test_a_head_the_user_asked_about_is_still_counted(self) -> None:
+        # Hermes stores OMH's injected context inside the user turn, so a
+        # carve-out on the user text would excuse every head the model saw.
+        payload = build_reply_lint(
+            "[OMH plan todo] is the plan line.", user_text="what does [OMH plan todo] mean?"
+        )
+        self.assertEqual(_kinds(payload), [("awareness_line_quoted", "[OMH plan todo]")])
+
+
+class SchemaIdTests(unittest.TestCase):
+    """OMH schema ids are exact literals under a declared scope rule, never a shape."""
+
+    def test_the_id_list_is_the_scope_rule_re_derived(self) -> None:
+        derived = _derived_schema_ids()
+        listed = set(reply_lint._SCHEMA_ID_TERMS)
+        self.assertEqual(sorted(derived - listed), [], "add these ids to _SCHEMA_ID_TERMS in src/quality/reply_lint.py")
+        self.assertEqual(sorted(listed - derived), [], "these ids left the scope rule; remove them")
+        self.assertEqual(len(listed), len(reply_lint._SCHEMA_ID_TERMS), "duplicate id")
+
+    def test_each_id_in_a_reply_is_flagged(self) -> None:
+        for schema_id in reply_lint._SCHEMA_ID_TERMS:
+            with self.subTest(schema_id=schema_id):
+                payload = build_reply_lint(f"The result came back as {schema_id} with no error.")
+                self.assertEqual(_kinds(payload), [("record_term_leak", schema_id)])
+
+    def test_the_ids_measured_in_live_replies_are_in_scope(self) -> None:
+        for schema_id in ("omh_todo_result/v1", "omh_run_summary/v1", "route_question/v1"):
+            self.assertIn(schema_id, reply_lint._SCHEMA_ID_TERMS)
+
+    def test_an_id_is_exact(self) -> None:
+        self.assertEqual(build_reply_lint("omh_todo/v12 and xomh_todo/v1")["findings"], [])
+        self.assertEqual(
+            _kinds(build_reply_lint("stored as omh_todo_result/v1.")),
+            [("record_term_leak", "omh_todo_result/v1")],
+        )
+
+    def test_ordinary_version_references_are_clean(self) -> None:
+        for text in (
+            "Call https://api.openai.com/v1/chat/completions with the key.",
+            "GET /api/v2/users returns the list.",
+            "apiVersion: apps/v1",
+            "The governance/v2 policy applies here.",
+            "Upgrade to version v2 first.",
+        ):
+            with self.subTest(text=text):
+                self.assertEqual(build_reply_lint(text)["findings"], [])
+
+    def test_a_user_who_names_an_id_gets_it_explained(self) -> None:
+        payload = build_reply_lint(
+            "omh_todo_result/v1 is the shape of a todo result.", user_text="what is omh_todo_result/v1?"
+        )
+        self.assertTrue(payload["ok"], payload["findings"])
+        self.assertEqual(payload["carved_out_terms"], ["omh_todo_result/v1"])
+
+
+class AuditTermTests(unittest.TestCase):
+    """The 2026-09-28 audit's terms: qualified compounds in, everyday words out."""
+
+    def test_the_qualified_terms_are_flagged(self) -> None:
+        for term in ("route_question", "closure receipt", "fanout dispatch"):
+            with self.subTest(term=term):
+                self.assertEqual(
+                    _kinds(build_reply_lint(f"Next I will check the {term} for this change.")),
+                    [("record_term_leak", term)],
+                )
+
+    def test_the_everyday_words_inside_them_are_clean(self) -> None:
+        for text in (
+            "I read the contract before signing it.",
+            "Keep the store receipt for the refund.",
+            "Merge into the traffic lane after the exit.",
+            "The fan-out of this function is three callers.",
+            "Update the goal ledger in the finance sheet.",
+            "The route question is whether to go north.",
+        ):
+            with self.subTest(text=text):
+                self.assertEqual(build_reply_lint(text)["findings"], [])
+
+
+def _rail_text() -> str:
+    from omh.skills.packaging import builtin_skill_reference_templates
+
+    for template in builtin_skill_reference_templates():
+        if template.relative_path.endswith("skill-common-rail.md"):
+            return template.content
+    raise AssertionError("no skill-common-rail.md reference template")
+
+
+def _rail_vocabulary() -> list[str]:
+    line = next(
+        line for line in _rail_text().splitlines() if "record vocabulary is for records" in line
+    )
+    listed = line.partition("the sentence the user reads:")[2].partition(". In the reply")[0]
+    return re.findall(r"`([^`]+)`", listed)
+
+
+def _whole_word(needle: str, haystack: str) -> bool:
+    return re.search(r"(?<![A-Za-z0-9_])" + re.escape(needle.lower()) + r"(?![A-Za-z0-9_])", haystack.lower()) is not None
+
+
+class RailVocabularySyncTests(unittest.TestCase):
+    """The rail tells the model which words stay in records; the lint checks the same words."""
+
+    def test_every_rail_word_is_something_the_lint_checks(self) -> None:
+        english = reply_lint._ENGLISH_RECORD_TERMS
+        for word in _rail_vocabulary():
+            with self.subTest(word=word):
+                if word in reply_lint._SCHEMA_ID_TERMS:
+                    continue
+                self.assertTrue(
+                    any(_whole_word(word, term) for term in english),
+                    f"the rail lists `{word}` but no _ENGLISH_RECORD_TERMS entry contains it",
+                )
+
+    def test_every_lint_term_is_named_in_the_rail(self) -> None:
+        rail = [word for word in _rail_vocabulary() if word not in reply_lint._SCHEMA_ID_TERMS]
+        for term in reply_lint._ENGLISH_RECORD_TERMS:
+            with self.subTest(term=term):
+                self.assertTrue(
+                    any(_whole_word(word, term) for word in rail),
+                    f"the lint checks `{term}` but the rail's vocabulary line names no word in it",
+                )
+
+    def test_the_rail_names_a_schema_id_the_lint_checks_and_the_say_relay(self) -> None:
+        self.assertTrue(any(word in reply_lint._SCHEMA_ID_TERMS for word in _rail_vocabulary()))
+        rail = _rail_text()
+        self.assertIn("`say` field", rail)
+        self.assertIn("in their language and your own words", rail)
 
 
 class PayloadTests(unittest.TestCase):
