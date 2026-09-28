@@ -14,6 +14,7 @@ from omh.wrapper.contract import build_chat_interaction_payload
 SKILL = "security-event-response"
 REVIEW = "security-safety-review"
 EVENTS = "github-event-ops"
+UPGRADE = "refactor-plan"
 REFERENCE_PATH = "references/event-containment-order.md"
 
 
@@ -53,11 +54,16 @@ class SecurityEventResponseCatalogTests(unittest.TestCase):
 
     def test_the_boundary_is_stated_from_both_sides(self) -> None:
         mine = _definition(SKILL)
-        for sibling in (REVIEW, EVENTS):
+        for sibling in (REVIEW, UPGRADE):
             with self.subTest(sibling=sibling):
                 self.assertEqual(len([text for text in mine.do_not_use_when if f"`{sibling}`" in text]), 1)
                 back = [text for text in _definition(sibling).do_not_use_when if f"`{SKILL}`" in text]
                 self.assertEqual(len(back), 1)
+        # The PR card hands an advisory here; a bump with no advisory is the
+        # upgrade lane's (#1712), so this skill names `refactor-plan` for it
+        # rather than handing it back to the PR card.
+        self.assertEqual(len([text for text in _definition(EVENTS).do_not_use_when if f"`{SKILL}`" in text]), 1)
+        self.assertEqual([text for text in mine.do_not_use_when if f"`{EVENTS}`" in text], [])
 
     def test_the_per_event_order_lives_in_the_reference(self) -> None:
         reference = next(
