@@ -579,13 +579,14 @@ PRE_LLM_CALL_CONTEXT_FALLBACK_CHAR_LIMIT = 6917
 # 482613 -> 486301: one capability row for the new `internal-audit` skill
 # (#1569) plus its siblings' reciprocal boundary lines. Re-derived from the
 # producer.
-# 486301 -> 486405: `ultrawork`'s dependency-topology quality-bar clause gains
-# one pointer at `references/team-lane.md` for in-session lanes that count as
-# done only on a check OMH runs itself (`omh_team`). The team loop, the
+# 486301 -> 486332: `ultrawork`'s dependency-topology quality-bar clause gains
+# one pointer at `references/team-lane.md` for checked in-session lanes
+# (`omh_team`), paid for partly by shortening the kanban-lane pointer beside
+# it, because `ultrawork` sits at the per-skill body ceiling. The team loop, the
 # approval binding and the stop rule are in that reference, counted outside
 # this budget; the capability row carries only the pointer. Re-derived from
 # the producer.
-FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 486405
+FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 486332
 FULL_CAPABILITY_SKILL_ITEM_CHAR_LIMIT = 9000
 # 100000 -> 102070: the same three domain workflows each add one standalone
 # capability row, again measured on the merged tree; warranted growth for three
