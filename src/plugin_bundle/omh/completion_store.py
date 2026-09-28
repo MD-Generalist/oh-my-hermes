@@ -21,8 +21,8 @@ from ._governance_safety import contains_credential_like_material
 from .awareness_delivery import _awareness_delivery_lock, _write_delivery_record
 from .project_identity import project_identity_root
 from .todo_store import (
-    TODO_SCHEMA_VERSION, TODO_STALE_SECONDS, MAX_TODO_RECORD_BYTES, TodoStoreError,
-    _reject_symlink_ancestry, todo_path, validate_todo_items,
+    TODO_DONE_BINDING_KEYS, TODO_SCHEMA_VERSION, TODO_STALE_SECONDS, MAX_TODO_RECORD_BYTES,
+    TodoStoreError, _reject_symlink_ancestry, todo_path, validate_todo_items,
 )
 
 SCHEMA = 'native_completion/v1'
@@ -240,7 +240,14 @@ def _checkpoint(home, session, args, binding):
         raise CompletionValidationError('A fresh todo timestamp is required')
     if todo.get('plan_stage') not in (None, '', 'accepted') or todo.get('deferred_reason'):
         raise CompletionValidationError('The plan is awaiting acceptance or deferred; do not resume it implicitly')
-    items = _strict_items(todo.get('items'))
+    # The done-item bindings OMH stamps (`todo_evidence`) say what closed an
+    # item, which is evidence about the run, not part of the accepted scope, so
+    # a checkpoint freezes the declaration without them.
+    raw_items = todo.get('items')
+    if isinstance(raw_items, list):
+        raw_items = [{k: v for k, v in item.items() if k not in TODO_DONE_BINDING_KEYS}
+                     if isinstance(item, dict) else item for item in raw_items]
+    items = _strict_items(raw_items)
     # Copy only the todo contract, never unknown keys or a raw conversation.
     items = [{k: _text(v, empty=True) if isinstance(v, str) else v
               for k, v in item.items()} for item in items]
