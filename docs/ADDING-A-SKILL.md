@@ -12,6 +12,10 @@ the file and structure to edit.
 - Set `capability_family` **only** when the skill's user-facing family differs
   from its awareness-lane default, which is rare — a handful of skills set it.
   Leave it empty otherwise; the lane default governs.
+- Set `path_globs` only when a file path names the skill's territory whatever
+  words carry it (`iac-change` declares `*.tf`, `charts/**`, `k8s/**`). A
+  matching path scores only beside one of the skill's own trigger words, so a
+  path named in passing adds nothing; add a negative control for that sense.
 - If the skill needs a recommendation policy, add its `_SKILL_POLICIES` entry
   in `src/routing/recommend.py`.
 - Author `triggers` in English only. Every other language reaches the skill

@@ -33,6 +33,7 @@ from .trigger_language_packs import (
     merged_trigger_phrases,
     shipped_trigger_language_packs,
 )
+from .path_signal import PATH_GLOB_SCORE, matching_path_glob
 from .policy import (
     appearance_edit_request,
     everyday_sense_phrase_unanchored,
@@ -3965,6 +3966,16 @@ def _score_definition(
     ):
         score += 28
         matched.add("direct:fixed_or_pass_verification")
+    # A named file counts only beside the skill's own words, held-back ones
+    # included: "review the change to infra/main.tf before we apply it" names
+    # the file and the work, while "I saved my grocery list as main.tf" names
+    # only the file. Paths are stripped from `normalized_query` before scoring,
+    # so they are read from the original request (#1716).
+    if definition.path_globs and explicit_skill != definition.name:
+        glob = matching_path_glob(normalized_phrase(original_query), definition.path_globs)
+        if glob and query_tokens & _tokens(" ".join(definition.triggers)):
+            score += PATH_GLOB_SCORE
+            matched.add(f"path:{glob}")
 
     if score <= 0:
         return None

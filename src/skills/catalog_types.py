@@ -891,6 +891,12 @@ class SkillDefinition:
     # No scorer, trigger table, or renderer reads it.
     # `tests/test_skill_situations.py` holds its shape.
     situations: tuple[str, ...] = ()
+    # Render-invisible routing metadata: file globs that confirm this skill
+    # when the request names a matching path (#1716). Read only by
+    # `routing/path_signal.py` through `_score_definition`, and only beside one
+    # of the skill's own trigger words, so a path mentioned in passing adds
+    # nothing. Empty means the skill routes exactly as it would without it.
+    path_globs: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "description", omh_description(self.description))

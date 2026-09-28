@@ -4,6 +4,17 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **Routing reads the file a request names, not only its words.** A skill
+  may declare `path_globs`; when the request names a matching path and uses
+  one of the skill's own trigger words, the skill gains a path score.
+  "review the change to infra/network/main.tf before we apply it" and "apply
+  the change in charts/payments/values.yaml to staging first" now dispatch to
+  `iac-change` without the word "terraform" or "helm" carrying them. A path
+  named in passing ("I saved my grocery list as main.tf, what should I cook
+  tonight") adds nothing. Only `iac-change` declares globs (`*.tf`,
+  `*.tfvars`, `*.tofu`, `charts/**`, `k8s/**`, `kustomization.yaml`,
+  `pulumi.*.yaml`), so every other skill routes exactly as before (#1716).
+
 - **Infrastructure-as-code changes have an owner: `omh-iac-change`.**
   "terraform plan shows drift in the kubernetes cluster, stage the apply"
   used to ask a question led by `plan`; a Helm chart values change, a Pulumi

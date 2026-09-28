@@ -9800,6 +9800,7 @@ _DEFINITIONS.append(
             "roll this cluster change out one environment at a time",
             "undo the chart change if the pods do not come up",
         ),
+        path_globs=("*.tf", "*.tfvars", "*.tofu", "charts/**", "k8s/**", "kustomization.yaml", "pulumi.*.yaml"),
     )
 )
 
