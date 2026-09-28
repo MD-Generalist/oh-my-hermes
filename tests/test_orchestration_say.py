@@ -15,11 +15,13 @@ What each case pins:
 from __future__ import annotations
 
 from collections import Counter
+from datetime import datetime
 import json
 import os
 from pathlib import Path
 import re
 import tempfile
+import time
 import unittest
 from unittest import mock
 
@@ -52,7 +54,8 @@ from omh.plugin_bundle.omh.tools.todo_tool import omh_todo_handler  # noqa: E402
 from omh.quality.reply_lint import build_reply_lint  # noqa: E402
 from omh.workflows.agent_board import LANE_ROLES, HostIdentity  # noqa: E402
 from _module_patch import patch_modules  # noqa: E402
-from test_todo_evidence_completion import SESSION as TODO_SESSION, build_state_db  # noqa: E402
+from test_todo_evidence_completion import SESSION as TODO_SESSION, add_rows, build_state_db  # noqa: E402
+from omh.plugin_bundle.omh.todo_store import todo_path  # noqa: E402
 
 RELAY_SENTENCE = "Relay any `say` field to the user once, in their language and your own words."
 SAY_TOOLS = ("omh_delegate_route", "omh_todo", "omh_loop", "omh_agent_board")
@@ -346,13 +349,20 @@ class TodoHandlerTests(unittest.TestCase):
         self.assertNotIn("say", self.call({"action": "clear"}))
 
     def test_a_done_mark_nothing_closes_is_said_plainly(self) -> None:
+        # One command in the window closes at most one item (#1928), so the
+        # second done mark is left with nothing recorded behind it.
         build_state_db(self.hermes, [(TODO_SESSION, "terminal", "toolu_setup", '{"output": "", "exit_code": 0}', None, 1.0)])
-        self.call({"action": "set", "items": [{"text": "fix", "state": "active"}, {"text": "ship"}]})
-        result = self.call({"action": "advance", "item": 1, "item_text": "fix", "state": "done"})
-        self.assertEqual(result["done_unverified"][0]["reason"], "no_evidence")
+        self.call({"action": "set", "items": [{"text": "fix"}, {"text": "ship"}]})
+        stored = json.loads(todo_path(self.home, TODO_SESSION).read_text(encoding="utf-8"))
+        stamp = datetime.fromisoformat(stored["updated_at"].replace("Z", "+00:00")).timestamp()
+        add_rows(self.hermes, [(TODO_SESSION, "terminal", "toolu_only", '{"output": "", "exit_code": 0}', None, stamp + 0.001)])
+        time.sleep(0.02)
+        result = self.call({"action": "set", "items": [{"text": "fix", "state": "done"}, {"text": "ship", "state": "done"}]})
+        self.assertEqual([(e["item"], e["reason"]) for e in result["done_unverified"]], [(2, "no_evidence")])
         self.assertEqual(
             result["say"],
-            f"Step 1 (fix) is marked done, but {UNVERIFIED_REASON_PHRASES['no_evidence']}, so it still counts as open.",
+            f"Plan: 2 steps. {PLAN_DONE_CRITERION} Step 2 (ship) is marked done, but "
+            f"{UNVERIFIED_REASON_PHRASES['no_evidence']}, so it still counts as open.",
         )
 
     def test_the_sentence_is_the_only_field_it_adds(self) -> None:
