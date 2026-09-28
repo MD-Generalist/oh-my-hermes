@@ -419,6 +419,9 @@ Rules, all applied at freeze time:
   failure appends nothing, leaves the unit short of `integration_ready`, and is
   reported in `verification_failures` with the exit code and a bounded output
   tail. A command that cannot start is a failed check, never a failed dispatch.
+  A unit that ends with `unit_state_reason: verification_failed` makes the
+  batch exit 1, the same code as a failed unit, even though its process exited
+  0 and it carries no `failure_kind`.
   Under `--dry-run` the flag only names the commands in
   `planned_verification_commands`. This runs inside the same sanctioned
   dispatch bridge as the unit spawns themselves: still operator-invoked, still
@@ -446,9 +449,9 @@ Rules, all applied at freeze time:
   (`task_linked_postcondition/v1`, with `status` `tests_selected`,
   `no_reachable_tests`, or `not_resolved`). A change no test imports adds no
   command and leaves the declared checks to decide; a diff or codegraph the
-  dispatcher cannot read fails closed with nothing run. Dispatch has no
-  repair loop of its own: a failed postcondition is reported, and the next
-  attempt is the operator's (or the parent agent's) decision.
+  dispatcher cannot read fails closed with nothing run. A failed
+  postcondition is reported; whether the dispatcher itself makes the next
+  attempt is the unit's declared repair budget (below).
 - **Reproduction hold (opt-in by declaration).** A split is debugging-shaped
   when, and only when, it declares a unit with `kind: "reproduction"`; the
   request text is never read to decide it. That unit also declares
@@ -479,6 +482,62 @@ Rules, all applied at freeze time:
   reproduction unit reads the latest one instead of re-running it. A split
   with no reproduction unit carries none of these keys and admits exactly as
   before.
+- **Repair loop (opt-in per unit).** A unit may declare
+  `max_repair_attempts` (an integer from 0 to 3; 0 or absent means off, and
+  the frozen unit then carries no key, so the contract is byte-identical to one
+  frozen before the field existed). A budget above 0 needs a check the
+  dispatcher can run — `verification_commands`, `verification_checks`, or
+  `task_linked_test_runner` — or the freeze is refused. Under
+  `--run-verification`, when the dispatcher itself ran the unit's checks and
+  saw one exit nonzero (a declared command or the task-linked postcondition),
+  it re-dispatches the same executor in the **same worktree and branch** —
+  no reset, prior commits kept — with the unchanged unit prompt plus a
+  bounded `[Repair attempt]` section: the attempt number, the budget, and each
+  failing check's command, exit code, and failure kind. No output text rides
+  it; the executor re-runs the commands itself. The loop stops on exactly two
+  criteria read from record fields: every check observed passing (the unit
+  reaches `verified` and the ordinary ladder decides `integration_ready`), or
+  the budget spent, which records the unit `blocked` with `blocked_reason:
+  repair_budget_exhausted` and the last failing check as `{command,
+  exit_code, observed_at}`; `unit_state` stays `failed` with `unit_state_reason:
+  repair_budget_exhausted`, and the batch exits 1. A repair whose worktree
+  has vanished stops the same way with `repair_worktree_missing` (nothing is
+  rebuilt from base, nothing spawns). Anything else is not a trigger and stops
+  the loop as `not_repairable`, leaving the unit's existing state to speak: a
+  check that timed out or could not start, an unresolved task-linked
+  postcondition, a process failure, an invalid result, an executor's own claim
+  that its checks passed (only `observed_by: dispatcher` rows count), and a
+  reproduction unit's expected nonzero exit (it rides its receipt, never a
+  check row). Plan rows recorded `skipped` — blocked behind a failed
+  dependency or deferred behind the fan-in — never ran and neither trigger nor
+  block a repair. Failing checks pair to their captured exits on the full
+  command; only the journal and brief copies are cut to 512 chars, so a long
+  task-linked command still triggers. Each repair spawn journals
+  `repair_attempt_started` before it starts and each observed verdict
+  `repair_attempt_observed` (`observed` passed, `failed` still failing,
+  `blocked` stopped, with `repair_stop_reason`), both carrying
+  `repair_attempt` and the failing checks. A refusal before the spawn and a
+  spawn the dispatcher's interrupt killed record no verdict, so the attempt
+  that started stays counted and the loop stays pending. The count is read
+  back from the journal, so a later dispatch continues it and never resets it:
+  a unit an earlier dispatch left pending (checks failing, budget left — for
+  example an interrupted batch) is dispatched again as its next repair rather
+  than skipped as `already_completed`, and one already blocked spawns nothing
+  and still reports `blocked`. The whole loop of one unit runs under an OS
+  lock on that unit, taken without waiting, so a second concurrent dispatch
+  skips it as `repair_in_flight` instead of numbering the same attempt or
+  running a second executor in the worktree; a dispatcher that dies releases
+  the lock. The exit code reflects only the units this dispatch selected: a
+  selected unit that ends blocked (including one skipped because an earlier
+  dispatch blocked it) exits 1, while an unselected unit's blocked history is
+  still carried on its record for `show` and `brief` and does not set the
+  code. The unit record carries `repair`
+  (`fanout_unit_repair/v1`: `attempts_used`, `max_repair_attempts`,
+  `attempts` as `{attempt, started_at, check}`, `status`, `stop_reason`);
+  `omh coding fanout show` projects the same block from the journal and
+  `omh coding fanout brief` renders `repair <used>/<max> <status>
+  (<stop_reason>)`. Dispatch never merges, and a repaired unit is no more
+  verified than one that passed first time.
 - **Verification plans, tiers, and receipts (opt-in).** Beside bare
   `verification_commands`, a unit may declare `verification_checks` — the
   additive, structured sibling (declare one or the other, never both; the

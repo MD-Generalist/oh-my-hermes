@@ -48,6 +48,7 @@ from .executor_capability_snapshots import (
 )
 from .fanout_review_budget import normalized_review_role
 from .postconditions import normalized_task_linked_test_runner, task_linked_criterion
+from .fanout_repair import normalized_max_repair_attempts
 from .model_routing import MODEL_CATEGORIES, canonical_model_category, model_route_for_unit
 from .media_handoff_capabilities import build_executor_modality_decision, normalize_input_representation
 
@@ -489,6 +490,9 @@ def _normalized_unit(unit: Mapping[str, object], index: int) -> dict[str, object
         # The command prefix the dispatcher runs on the tests that directly
         # import what the unit changed; '' when undeclared.
         "task_linked_test_runner": normalized_task_linked_test_runner(unit.get("task_linked_test_runner"), index),
+        # How many times the dispatcher may re-dispatch this unit in its own
+        # worktree after observing a declared check fail; 0 when undeclared.
+        "max_repair_attempts": normalized_max_repair_attempts(unit, index),
     }
 
 
@@ -935,4 +939,8 @@ def _contract_unit(
     # executor prompt can state the range and the ceiling for that unit.
     if unit.get("input_budget"):
         contract_unit["input_budget"] = deepcopy(dict(unit["input_budget"]))
+    # A repair budget rides only when above zero, so a contract that declares
+    # none freezes byte-identically to one frozen before the field existed.
+    if unit.get("max_repair_attempts"):
+        contract_unit["max_repair_attempts"] = int(unit["max_repair_attempts"])  # type: ignore[call-overload]
     return contract_unit

@@ -1,0 +1,308 @@
+{
+ "board_projection": {
+  "schema_version": "agent_board_card/v1",
+  "status_by_unit": {
+   "b": "prepared",
+   "core": "prepared"
+  },
+  "unit_ids": [
+   "core",
+   "b"
+  ]
+ },
+ "claim_boundary": "A fanout contract freezes a proposed parallel work split into prepared per-unit handoffs and a merge plan. It is not dispatch, execution, implementation, verification, review, CI, merge-readiness, or merge evidence; unit status advances only on observed per-unit run records.",
+ "fanout_id": "fanout-77e040ec2643",
+ "goal": {
+  "input_chars": 9,
+  "raw_prompt_stored": false,
+  "sha256": "77e040ec2643621118afb9fdbe40c5606b9635b3856edc41448d1946cbaa5881",
+  "summary": "Fanout request (9 chars, sha256:77e040ec2643)",
+  "summary_kind": "digest_reference"
+ },
+ "merge_plan": {
+  "conflict_risk_notes": [],
+  "final_integration_gate": [
+   "PYTHONPATH=tests uv run python -m unittest discover -s tests",
+   "uv run python -m omh.cli docs workflows --check",
+   "uv run python -m omh.cli docs roles --check",
+   "uv run python -m omh.cli docs capability-families --check",
+   "git diff --check"
+  ],
+  "merge_order": [
+   "core",
+   "b"
+  ]
+ },
+ "observed_evidence_required": [
+  "per-unit run records for dispatch, worker result, verification, review, CI, merge-readiness, and merge"
+ ],
+ "schema_version": "fanout_contract/v2",
+ "source": "generic",
+ "source_metadata": {},
+ "status": "prepared_not_observed",
+ "units": [
+  {
+   "boundary": {
+    "do_not_touch": [
+     "b/"
+    ],
+    "file_scope": [
+     "pkg/"
+    ]
+   },
+   "branch_suggestion": "agent/core",
+   "depends_on": [],
+   "handoff": {
+    "claim_boundary": "This per-unit handoff is prepared guidance only; record observed evidence on a run named by run_ref before any dispatch, verification, review, CI, or merge claim.",
+    "dispatch_policy": "prepare_only",
+    "executor_capability_snapshot": {
+     "capabilities": {
+      "background_work": {
+       "status": "unknown"
+      },
+      "browser_or_computer_use": {
+       "status": "unknown"
+      },
+      "code_mode_batching": {
+       "status": "unknown"
+      },
+      "edit_format_hashline": {
+       "status": "unknown"
+      },
+      "edit_format_patch": {
+       "status": "unknown"
+      },
+      "edit_format_str_replace": {
+       "status": "unknown"
+      },
+      "input_modality_audio": {
+       "status": "unknown"
+      },
+      "input_modality_document": {
+       "status": "unknown"
+      },
+      "input_modality_image": {
+       "status": "unknown"
+      },
+      "input_modality_text": {
+       "status": "unknown"
+      },
+      "input_modality_video": {
+       "status": "unknown"
+      },
+      "long_running_continuation": {
+       "status": "unknown"
+      },
+      "parallel_agents": {
+       "status": "unknown"
+      },
+      "persistent_eval": {
+       "status": "unknown"
+      },
+      "resumable_goal": {
+       "status": "unknown"
+      },
+      "scheduled_or_recurring_work": {
+       "status": "unknown"
+      },
+      "tool_reentry": {
+       "status": "unknown"
+      },
+      "visual_qa": {
+       "status": "unknown"
+      },
+      "worktree_isolation": {
+       "status": "prepared"
+      }
+     },
+     "executor": "codex",
+     "recorded_at": "1970-01-01T00:00:00Z",
+     "schema_version": "executor_capability_snapshot/v3"
+    },
+    "executor_capability_snapshot_policy": "frozen_required",
+    "executor_modality_decision": {
+     "alternative_representations": [],
+     "claim_boundary": "This route-scoped capability decision is metadata-only prepared context. It is not proof of attachment receipt, provider acceptance, dispatch, execution, verification, review, CI, or merge.",
+     "evidence_observed_at": "",
+     "evidence_ref": "",
+     "fallback_reason": "",
+     "freshness": "not_required",
+     "remaining_user_action": "",
+     "required_representations": [],
+     "route": {
+      "executor": "codex",
+      "provider": "",
+      "wire_model": ""
+     },
+     "schema_version": "executor_modality_decision/v1",
+     "transformation": {
+      "evidence_ref": "",
+      "kind": "",
+      "status": "not_required"
+     },
+     "verdict": "dispatch"
+    },
+    "executor_target": "codex",
+    "input_representation": [
+     {
+      "modality": "text",
+      "representation": "text_only"
+     }
+    ],
+    "schema_version": "fanout_unit_handoff/v1",
+    "status": "prepared_not_observed"
+   },
+   "integration_checks": [
+    "unit tests covering the unit's file_scope pass",
+    "no edits outside boundary.file_scope"
+   ],
+   "owner": "codex",
+   "run_ref": "fanout-77e040ec2643-core",
+   "status": "prepared",
+   "title": "Core",
+   "unit_id": "core",
+   "verification_commands": [
+    "python -c pass"
+   ]
+  },
+  {
+   "boundary": {
+    "do_not_touch": [
+     "pkg/"
+    ],
+    "file_scope": [
+     "b/"
+    ]
+   },
+   "branch_suggestion": "agent/b",
+   "depends_on": [
+    "core"
+   ],
+   "handoff": {
+    "claim_boundary": "This per-unit handoff is prepared guidance only; record observed evidence on a run named by run_ref before any dispatch, verification, review, CI, or merge claim.",
+    "dispatch_policy": "prepare_only",
+    "executor_capability_snapshot": {
+     "capabilities": {
+      "background_work": {
+       "status": "unknown"
+      },
+      "browser_or_computer_use": {
+       "status": "unknown"
+      },
+      "code_mode_batching": {
+       "status": "unknown"
+      },
+      "edit_format_hashline": {
+       "status": "unknown"
+      },
+      "edit_format_patch": {
+       "status": "unknown"
+      },
+      "edit_format_str_replace": {
+       "status": "unknown"
+      },
+      "input_modality_audio": {
+       "status": "unknown"
+      },
+      "input_modality_document": {
+       "status": "unknown"
+      },
+      "input_modality_image": {
+       "status": "unknown"
+      },
+      "input_modality_text": {
+       "status": "unknown"
+      },
+      "input_modality_video": {
+       "status": "unknown"
+      },
+      "long_running_continuation": {
+       "status": "unknown"
+      },
+      "parallel_agents": {
+       "status": "unknown"
+      },
+      "persistent_eval": {
+       "status": "unknown"
+      },
+      "resumable_goal": {
+       "status": "unknown"
+      },
+      "scheduled_or_recurring_work": {
+       "status": "unknown"
+      },
+      "tool_reentry": {
+       "status": "unknown"
+      },
+      "visual_qa": {
+       "status": "unknown"
+      },
+      "worktree_isolation": {
+       "status": "prepared"
+      }
+     },
+     "executor": "claude-code",
+     "recorded_at": "1970-01-01T00:00:00Z",
+     "schema_version": "executor_capability_snapshot/v3"
+    },
+    "executor_capability_snapshot_policy": "frozen_required",
+    "executor_modality_decision": {
+     "alternative_representations": [],
+     "claim_boundary": "This route-scoped capability decision is metadata-only prepared context. It is not proof of attachment receipt, provider acceptance, dispatch, execution, verification, review, CI, or merge.",
+     "evidence_observed_at": "",
+     "evidence_ref": "",
+     "fallback_reason": "",
+     "freshness": "not_required",
+     "remaining_user_action": "",
+     "required_representations": [],
+     "route": {
+      "executor": "claude-code",
+      "provider": "",
+      "wire_model": ""
+     },
+     "schema_version": "executor_modality_decision/v1",
+     "transformation": {
+      "evidence_ref": "",
+      "kind": "",
+      "status": "not_required"
+     },
+     "verdict": "dispatch"
+    },
+    "executor_target": "claude-code",
+    "input_representation": [
+     {
+      "modality": "text",
+      "representation": "text_only"
+     }
+    ],
+    "schema_version": "fanout_unit_handoff/v1",
+    "status": "prepared_not_observed"
+   },
+   "integration_checks": [
+    "`python -m unittest <test files>` passes for every test module that directly imports a file you changed (and every test module you changed); list them with `omh codegraph tests --changed <paths>` and take the entries at distance 0 or 1. OMH runs this check itself on your changes and records its exit status.",
+    "no edits outside boundary.file_scope"
+   ],
+   "owner": "claude-code",
+   "run_ref": "fanout-77e040ec2643-b",
+   "status": "prepared",
+   "task_linked_test_runner": "python -m unittest",
+   "title": "B",
+   "unit_id": "b",
+   "verification_checks": [
+    {
+     "claim_scope": "unit_verification",
+     "command": "python -c pass",
+     "depends_on": [],
+     "id": "x",
+     "resource_class": "local_cpu",
+     "safety": "stateful",
+     "tier": "unit",
+     "timeout": 600
+    }
+   ],
+   "verification_commands": [
+    "python -c pass"
+   ]
+  }
+ ]
+}
