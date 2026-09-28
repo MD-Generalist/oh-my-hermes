@@ -208,6 +208,7 @@
    "security-event-response",
    "release-cut",
    "agent-instructions",
+   "iac-change",
    "ai-slop-cleaner",
    "frontend-refactor",
    "tech-debt-audit",

@@ -1344,6 +1344,7 @@ _WORKFLOW_CONTEXT_CARD_BY_WORKFLOW = {
     "relational-db": "coding_handoff",
     "security-event-response": "coding_handoff",
     "agent-instructions": "coding_handoff",
+    "iac-change": "coding_handoff",
     "release-cut": "coding_handoff",
     # ULW fold (issue #954, PR D): the four contracts folding into
     # `ulw-work` share its coding-handoff lane so their capability family is
@@ -1430,6 +1431,16 @@ _AWARENESS_MESSAGE_MARKERS = (
     "agents.md",
     "claude.md",
     ".cursorrules",
+    # Infrastructure as code: the tool names mean nothing else; "helm",
+    # "drift", "plan" and a bare "terraform" (a verb) are everyday English.
+    "iac-change",
+    "terraform plan",
+    "terraform apply",
+    "opentofu",
+    "pulumi",
+    "kubectl",
+    "helm chart",
+    "infrastructure as code",
     # Releases: "release", "cut", "tag" and "canary" alone are everyday
     # English, so only release phrases arm awareness.
     "release-cut",
@@ -2715,6 +2726,44 @@ _ROUTE_HINT_RULES = (
             "codebase-onboarding",
             "context",
             "product-docs",
+        ),
+    },
+    {
+        "id": "iac_change",
+        "workflow": "iac-change",
+        "lane": "coding_handoff",
+        "next_action": "prepare_iac_change_plan",
+        "reason": "The user is changing declared infrastructure (Terraform, OpenTofu, Pulumi, a Kubernetes manifest, a Helm chart); read drift, blast radius and cost delta from the saved plan, and stage the apply with a health gate and a rollback per stage.",
+        "fallback_action": "ask_for_the_saved_plan_or_diff_and_the_environments",
+        "not_evidence_yet": (
+            "plan run",
+            "apply performed",
+            "health gate passed",
+            "rollback performed",
+        ),
+        # Only phrases that name the tool's own operation. "drift", "cost
+        # delta", "staged apply" and a bare "helm" are absent: this table has
+        # no anchor, and a boat drifts and a ship has a helm. "helm upgrade" is
+        # absent too: "pods stuck in CrashLoopBackOff after helm upgrade" is a
+        # failure to debug, not a change to plan.
+        "phrases": (
+            "iac-change",
+            "infrastructure as code",
+            "terraform plan",
+            "terraform apply",
+            "terraform drift",
+            "terraform state",
+            "tofu plan",
+            "pulumi preview",
+            "kubectl apply",
+            "kubectl diff",
+        ),
+        "tokens": (),
+        "adjacent_workflows": (
+            "deploy-and-monitor",
+            "release-cut",
+            "inference-serving",
+            "live-incident-response",
         ),
     },
     {
@@ -6653,6 +6702,7 @@ def awareness_primer_payload() -> dict[str, object]:
                 "security-event-response",
                 "release-cut",
                 "agent-instructions",
+                "iac-change",
                 "ai-slop-cleaner",
                 "frontend-refactor",
                 "tech-debt-audit",
@@ -7025,6 +7075,7 @@ _DIRECT_WORKFLOW_NEXT_ACTIONS = {
     "relational-db": "prepare_db_change_plan",
     "security-event-response": "prepare_security_event_response",
     "agent-instructions": "prepare_instruction_file_update",
+    "iac-change": "prepare_iac_change_plan",
     "release-cut": "prepare_release_plan",
     "accessibility-audit": "prepare_accessibility_audit",
     "visual-qa": "prepare_visual_qa",

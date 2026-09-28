@@ -1533,6 +1533,23 @@
 }
 },
 {
+"anchors":"cloud cloudformation cluster come config databas environment happen iac infra infracost kubectl kustomiz longer match month opentofu pod pulumi resourc roll undo",
+"hangul":"",
+"hangul_anchors":"",
+"label":"omh-iac-change",
+"name":"iac-change",
+"situation":"Infrastructure-as-code change -- Terraform, OpenTofu, Pulumi, a Kubernetes manifest, a Helm chart",
+"terms":{
+"1":"appli behind between declar kustomization noth output reality valu",
+"2":"blast cloud cluster come config databas detection diff environment gate happen health infra infracost k8s kubectl kustomiz longer match modul month pod preview radius read resourc roll rollback saved set time tofu undo upgrad",
+"3":"cloudformation code stat",
+"4":"delta drift helm infrastructur kubernet manifest opentofu plan pulumi stag terraform",
+"5":"iac",
+"6":"apply chart cost",
+"9":"chang"
+}
+},
+{
 "anchors":"bad five number percent restor semver send week yesterday",
 "hangul":"",
 "hangul_anchors":"",

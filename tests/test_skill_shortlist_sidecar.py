@@ -262,8 +262,12 @@ class AdmissionTests(unittest.TestCase):
         self.assertNotIn("ulw-maestro", [label for label, _ in bundle.skill_candidates(message)])
 
     def test_admission_reads_only_the_head_of_the_ranking(self) -> None:
-        # Only the fourth-ranked skill would admit this message.
-        message = "The provider changed how their model handles tools; adapt our routing to it."
+        # Only the fourth-ranked skill would admit this message. The ranking
+        # is IDF-weighted, so a new skill moves it: once `iac-change` (#1566)
+        # joined the skills that say "change", `external-connector-readiness`
+        # overtook `model-setup` by 0.035 in the old wording and ranked third.
+        # "setup" keeps the admitting skill fourth.
+        message = "The provider changed how their model handles tools; adapt our routing setup to it."
         self.assertEqual(bundle.skill_candidates(message), ())
         with mock.patch.object(bundle, "ADMISSION_HEAD", bundle.ADMISSION_HEAD + 2):
             self.assertTrue(bundle.skill_candidates(message))

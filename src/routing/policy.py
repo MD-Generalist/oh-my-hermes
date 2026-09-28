@@ -2142,6 +2142,21 @@ EVERYDAY_SENSE_PHRASES: dict[str, tuple[tuple[str, ...], frozenset[str]]] = {
             }
         ),
     ),
+    # "the cost delta between the two flights", "drift detection in the ocean
+    # model" and "a helm chart for the sailing class" are not infrastructure;
+    # each phrase keeps this route only beside a word of infrastructure.
+    "iac-change": (
+        ("cost delta", "drift detection", "helm chart"),
+        frozenset(
+            {
+                "apply", "aws", "azure", "bucket", "cloud", "cloudformation", "cluster", "clusters",
+                "deployment", "eks", "gcp", "gke", "iac", "iam", "infra", "infracost", "infrastructure", "ingress", "k8s",
+                "kubectl", "kubernetes", "kustomize", "manifest", "manifests", "module", "modules", "namespace",
+                "opentofu", "plan", "pod", "pods", "provider", "pulumi", "release", "resource", "resources", "stack",
+                "state", "terraform", "tfvars", "values", "vpc", "workspace",
+            }
+        ),
+    ),
     # "the mouse cursor rules the screen in this game" is not an editor rule
     # file; the phrase keeps this route only beside a word of the repository.
     "agent-instructions": (

@@ -59,7 +59,7 @@
     "omh-decision-prototype/references/procedure.md": "53334fb4c76acb18a49272bd9dfab9317c0f9d3eb812b7ef9e87550d99762e88",
     "omh-decision-recall/SKILL.md": "e1a7e3a4ce0038595e824e8b3f98ba1e744c7a90a874d26410f7ea5334b33a42",
     "omh-deliverable-package/SKILL.md": "d95127680f8434153fce206ede906be91f0418fec60f22e016e0597440a01028",
-    "omh-deploy-and-monitor/SKILL.md": "ea2c75cd632d389a0ed7052e422130d7a8ac3f9a2affdc2cf65d7118555a5c6d",
+    "omh-deploy-and-monitor/SKILL.md": "e2090aa3d30a031770ede3c6672eca23120052fa0afa8b2a3332ec6cf95526c8",
     "omh-design-orchestration/SKILL.md": "1d498dcfe017e74bf45c43e971a77fbdefad8a057e69ef2864ad8a2c71737f82",
     "omh-design-quality-gate/SKILL.md": "18e28c3f2e45e0757b7282a722ad8f48fe6c8d25f10fa6cfa1f6765207816dbe",
     "omh-design-quality-gate/references/design-critique-rubric.md": "7b7bde56a390431bd46b1b1d3965723521c722f461d12bdc993407a54595e9ae",
@@ -87,6 +87,8 @@
     "omh-github-event-ops/SKILL.md": "805e73ee8af20dd201d60f47bec0c83f8718bd5259fbcf65f78c9e664883abeb",
     "omh-github-issue-intake/SKILL.md": "e284354c8060b6f7920ff40bd96a9e51163c8905b78528a2448104491cc442f6",
     "omh-harness-session-inventory/SKILL.md": "31d3f8b655da88fd3f85ef3369c617171a087c476de8de34febda38eaf00f330",
+    "omh-iac-change/SKILL.md": "d19dd76a38efc9fbd9285485b999ba05ca860dbfbf3e814a06826a2de3f7d2d0",
+    "omh-iac-change/references/iac-change-method.md": "25c75f8974c19cd74028d093a703facb0c66f7b199ca1dc16e937d93b5dbdb5a",
     "omh-idea-to-deploy/SKILL.md": "257991874db928786d1a4b0f36d8b96e12dcea15836aaf4738436917ce2a88cd",
     "omh-idea-to-deploy/references/project-bootstrap.md": "dc9a474dfc063984b84ae5d1a5d28a9ba1f0bb2b77292245b703b20b0fbe27e7",
     "omh-image-cards/SKILL.md": "0cde86181dc434180b4046622b9eefd33fdc23c25026e6f5e1bb8f549f2a383e",
@@ -235,6 +237,7 @@
     "omh-github-event-ops",
     "omh-github-issue-intake",
     "omh-harness-session-inventory",
+    "omh-iac-change",
     "omh-idea-to-deploy",
     "omh-image-cards",
     "omh-inference-serving",
@@ -299,7 +302,7 @@
     "ulw-work"
   ],
   "source": "agent-skills",
-  "source_digest": "c166d173762d90074462fcdd654d1a0559e20548b04719f89bc56c5c482061c9",
+  "source_digest": "86cf55edb19c064a12b1f0aa1474db2cb0b36c4954e7d83512b95571a50fa79b",
   "targets": {
     "repo": ".agents/skills",
     "user": ".agents/skills"

@@ -4521,6 +4521,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 - Do not use when:
   - An incident has already been declared and the work is commanding it -- severity, commander, running timeline, recovery verification -- rather than watching a release; use `live-incident-response`.
   - The ask is deciding a release before it ships -- what goes in, its version and tag, the canary stages, or which command rolls it back; use `release-cut`, which writes the rollback trigger down before it is needed.
+  - The change is to declared infrastructure itself -- a Terraform plan, a Kubernetes manifest, a Helm chart -- and needs its drift, blast radius, and cost delta read before it is applied; use `iac-change`.
 - Strong routing signals: `deploy-and-monitor`, `deploy and monitor`, `deploy monitor`, `deployment monitoring`, `release monitor`, `post deploy`, `post-deploy`, `rollback`, `rollback gate`, `health check`, `incident watch`, `release health`, `deploy this service`, `배포 모니터링`, `서비스 배포`, `프로덕션 배포`, `인프라에 배포`, `배포 감시`, `롤백`, `헬스 체크`, `장애 감시`, `릴리즈 모니터링`
 - Good example:
   - Prompt: deploy-and-monitor: prepare the release monitor, rollback signals, health checks, and post-deploy status card.
@@ -6960,6 +6961,83 @@ These surfaces are generated command references, not installed Hermes workflow s
   - Refuse to record counts, line numbers, test totals, or file sizes; they drift, so point at the command or file that derives them.
   - Write only what an agent cannot derive from the code; restating the code is drift waiting to happen.
   - Never copy secrets, tokens, or private hostnames into an instruction file.
+
+### iac-change
+
+[omh] Infrastructure-as-code change -- Terraform, OpenTofu, Pulumi, a Kubernetes manifest, a Helm chart: read the drift, the blast radius and the cost delta from the saved plan, then stage the apply behind a health gate with a rollback per stage.
+
+- Category: `planning`
+- Phase: `iac-change`
+- Hermes role: `planner`
+- Quality tier: `staged-apply-gated`
+- Reasoning demand: `standard`
+- Exposure: `direct_skill`
+- Install visibility: `true`
+- Docs visibility: `primary_workflow_skill`
+- Compatibility alias: `false`
+- Lifecycle stage: `canonical`
+- Preferred usage: Use as an installed Hermes workflow skill when this explicit workflow is the clearest user-facing handle.
+- Handoff policy: Keep the drift assessment, blast radius, cost delta, staged apply plan, health gates and rollbacks in Hermes. Plan output, diffs, apply results, rollout status and cost estimates are recorded only from executor, operator, or wrapper observed output; OMH never runs terraform, tofu, pulumi, kubectl or helm, and any apply is the operator's.
+- Why this exists: `iac-change` exists because infrastructure changes had no owner: `deploy-and-monitor` watches an application release, `release-cut` decides one, and `inference-serving` deploys a model server, while a Terraform plan with drift, a Helm chart change, or a manifest edit reached a generic planner with no blast radius, cost delta, or staged apply at all.
+- First steps:
+  - Ask for the saved plan or the diff output before assessing anything.
+  - Separate existing drift from the proposed change before ordering stages.
+- Use when: Use when a change to declared infrastructure is about to be applied or has drifted: a Terraform, OpenTofu, Pulumi or CloudFormation plan, a Kubernetes manifest or kustomization, or a Helm chart or values change. The output is the drift between state and reality, the blast radius and cost delta read from the saved plan, and a staged apply where every stage has a health gate and a rollback; OMH applies nothing.
+- Do not use when:
+  - The ask is shipping a new version of the application and watching its health signals after the deploy; use `deploy-and-monitor`.
+  - The ask is deciding a versioned release -- what goes in, its tag, or its canary -- rather than changing declared infrastructure; use `release-cut`.
+  - The ask is choosing and deploying a model-serving engine; use `inference-serving`.
+  - Production is down or degraded right now and the ask is command of the incident; use `live-incident-response`.
+- Strong routing signals: `iac-change`, `iac change`, `infrastructure as code`, `infrastructure-as-code`, `terraform plan`, `terraform apply`, `terraform state`, `terraform drift`, `terraform module`, `terraform change`, `opentofu`, `tofu plan`, `pulumi`, `pulumi preview`, `pulumi up`, `cloudformation`, `cloudformation change set`, `helm upgrade`, `helm diff`, `helm chart`, `helm chart change`, `kubectl apply`, `kubectl diff`, `kustomize`, `kubernetes manifest`, `kubernetes manifests`, `k8s manifest`, `k8s manifests`, `infracost`, `drift detection`, `cost delta`, `staged apply`, `stage the apply`
+- Good example:
+  - Prompt: terraform plan shows drift in the kubernetes cluster, stage the apply
+  - Expected behavior: Separate the drift from a refresh-only plan, read the saved plan's creates, replacements and destroys, give the cost delta or mark it unestimated, and stage the apply from staging to production with a rollout-status gate and a rollback per stage.
+  - Why: Applying over unresolved drift changes resources nobody meant to touch.
+- Bad example:
+  - Prompt: just run terraform apply -auto-approve in prod, the plan looked fine yesterday
+  - Expected behavior: Refuse the fresh apply: re-plan, save the plan, read its replacements and destroys, and apply that saved plan behind a health gate.
+  - Why: Yesterday's plan is not today's apply; drift and other merges change what a fresh apply does.
+- Quality bar:
+  - Read the saved plan or diff before anything else; the blast radius is what the plan says, not what the change was meant to do.
+  - Load `references/iac-change-method.md` for the per-tool drift, plan, health and rollback commands and the replacement markers instead of recalling them.
+  - Resolve existing drift before the apply, so the apply changes only what the change meant to.
+  - Give every stage a health gate and a rollback; a stage with neither is not a stage.
+  - Keep prepared, applied, and verified as separate states for every stage.
+- Completion checklist:
+  - Existing drift is separated from the proposed change.
+  - Every replacement or destroy is listed, and each stateful one waits for explicit approval.
+  - The cost delta is observed or marked unestimated.
+  - Every stage names its health gate and its rollback.
+  - OMH ran nothing, and every fact cites observed output or is marked unverified.
+- Recovery notes:
+  - If no saved plan exists, stop at the plan step and ask for one; do not assess from the diff of the code alone.
+  - If a resource cannot be rolled back, say so in its stage and ask for approval before that stage.
+- Required inputs:
+  - the tool and the unit of change: the Terraform workspace or stack, the cluster and namespace, or the Helm release
+  - the environments the change reaches, in promotion order
+  - the observed plan or diff output for the change, saved to a file where the tool allows it
+  - the health signal each environment already exposes: rollout status, probes, error rate, or a smoke check
+  - observed output for any drift, apply, health, or rollback claim
+- Expected outputs:
+  - drift_assessment/v1
+  - blast_radius/v1
+  - cost_delta/v1
+  - staged_apply_plan/v1
+  - health_gate/v1
+  - rollback_plan/v1
+- Artifact expectations:
+  - drift_assessment/v1 separates drift already present between state and the running infrastructure from the change being proposed, from a refresh-only plan or a live diff, and names who resolves each drifted resource before the apply
+  - blast_radius/v1 lists every resource the saved plan creates, updates in place, replaces, or destroys, calls out each replacement or destroy of a stateful resource, and names what depends on it
+  - cost_delta/v1 gives the monthly delta from an observed estimate for the saved plan, or marks the delta unestimated and names the resources that drive it
+  - staged_apply_plan/v1 orders the stages from the least to the most exposed environment and applies the reviewed saved plan, never a fresh one
+  - health_gate/v1 names, per stage, the observed signal that promotes it -- rollout status, a follow-up plan with no changes, an error rate -- and the value that stops it
+  - rollback_plan/v1 names, per stage, the command or revert that undoes it and what cannot be undone, such as a destroyed volume or a rotated resource id
+- Safety rules:
+  - Never promote a stage without its health gate observed; a prepared gate keeps the next stage blocked.
+  - A replacement or destroy of a stateful resource -- a database, a volume, a bucket, a load balancer address -- is a blocker for the user's explicit approval, not a line in the plan.
+  - Apply only the saved plan that was reviewed; a fresh apply can differ from what was read.
+  - Never hand-edit a state file or a live object to hide drift; import, move, or re-declare it, and say which.
+  - OMH never runs terraform, tofu, pulumi, kubectl, or helm, and never reads cloud credentials; every drift, cost, apply, and health fact comes from observed output or is marked unverified.
 
 ### release-cut
 
