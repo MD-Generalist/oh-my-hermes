@@ -419,6 +419,9 @@ Rules, all applied at freeze time:
   failure appends nothing, leaves the unit short of `integration_ready`, and is
   reported in `verification_failures` with the exit code and a bounded output
   tail. A command that cannot start is a failed check, never a failed dispatch.
+  A unit that ends with `unit_state_reason: verification_failed` makes the
+  batch exit 1, the same code as a failed unit, even though its process exited
+  0 and it carries no `failure_kind`.
   Under `--dry-run` the flag only names the commands in
   `planned_verification_commands`. This runs inside the same sanctioned
   dispatch bridge as the unit spawns themselves: still operator-invoked, still

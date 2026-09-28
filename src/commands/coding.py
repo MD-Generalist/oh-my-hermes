@@ -2562,6 +2562,11 @@ def _fanout_dispatch_exit_code(summary: dict) -> int:
     `classify_failure_kind` reading a finished process; `workspace_blocked` is
     assigned before the spawn by the workspace preflight, and it reaches this
     mapper by the same key for the same reason -- the work did not happen.
+
+    A unit whose process exited 0 but whose declared checks the dispatcher
+    observed failing carries no `failure_kind`, and until #1929 that batch
+    exited 0 too. Its `unit_state_reason` (`verification_failed`, or
+    `repair_budget_exhausted` once a repair budget is spent) now maps to 1.
     """
     if summary.get("interrupted"):
         return 130
@@ -2572,15 +2577,25 @@ def _fanout_dispatch_exit_code(summary: dict) -> int:
         isinstance(unit, dict) and unit.get("failure_kind") for unit in units
     ):
         return 1
-    # A unit whose process exited 0 carries no `failure_kind`, yet one the
-    # repair loop stopped blocked -- its budget spent with a declared check
-    # still observed failing -- is work that did not get done.
+    # A unit whose process exited 0 carries no `failure_kind`, yet one whose
+    # declared checks the dispatcher ran and saw fail -- with or without a
+    # repair budget -- is work that did not get done, and so is one the repair
+    # loop stopped blocked with its budget spent. Same code as a failed unit.
     if isinstance(units, list) and any(
-        isinstance(unit, dict) and isinstance(unit.get("repair"), dict) and unit["repair"].get("status") == "blocked"
+        isinstance(unit, dict)
+        and (
+            unit.get("unit_state_reason") in _VERIFICATION_FAILURE_REASONS
+            or (isinstance(unit.get("repair"), dict) and unit["repair"].get("status") == "blocked")
+        )
         for unit in units
     ):
         return 1
     return 0
+
+
+# `unit_state_reason` values that mean the dispatcher observed a declared check
+# fail. `verification_not_observed` is absent on purpose: nothing ran and failed.
+_VERIFICATION_FAILURE_REASONS = frozenset({"verification_failed", "repair_budget_exhausted"})
 
 
 def cmd_coding_fanout_dispatch(

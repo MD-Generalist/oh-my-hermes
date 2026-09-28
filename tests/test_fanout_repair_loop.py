@@ -424,6 +424,25 @@ class RepairTriggerNegativeTests(unittest.TestCase):
         self.assertNotIn("verification_observed_failures", core)
         self.assertEqual(harness.events(REPAIR_ATTEMPT_STARTED_EVENT), [])
         self.assertEqual(harness.events(REPAIR_ATTEMPT_OBSERVED_EVENT), [])
+        # Observed failing verification is failed work whether or not a budget
+        # was declared: the batch must not exit 0 (#1929 closed this gap).
+        self.assertNotIn("failure_kind", core)
+        self.assertEqual(_fanout_dispatch_exit_code(summary), 1)
+
+    def test_a_passing_batch_without_a_budget_exits_zero(self) -> None:
+        harness = _Harness(self, plan=["fixed"], max_repair_attempts=None)
+
+        summary = harness.dispatch()
+
+        self.assertEqual(_unit(summary)["unit_state"], "verified")
+        self.assertEqual(_fanout_dispatch_exit_code(summary), 0)
+
+    def test_a_verification_that_was_never_observed_is_not_mapped_as_failed(self) -> None:
+        # Every unit of a dispatch run without --run-verification reads this
+        # way; nothing ran and failed, so it stays outside the failure signal.
+        summary = {"units": [{"unit_id": "a", "unit_state_reason": "verification_not_observed"}]}
+
+        self.assertEqual(_fanout_dispatch_exit_code(summary), 0)
 
     def test_a_reproduction_units_expected_failure_is_not_repaired(self) -> None:
         repro_command = f"{shlex.quote(sys.executable)} -c \"raise SystemExit(1)\""

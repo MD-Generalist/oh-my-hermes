@@ -19,6 +19,9 @@ All notable changes will be documented here.
   of resetting it, and `fanout show` / `fanout brief` report the count and the
   stop reason. A contract without the field freezes and dispatches exactly as
   before.
+  Separately, a dispatch whose declared checks were observed failing now
+  exits 1 even without a repair budget; it used to exit 0 because the
+  unit's process had exited 0.
 
 - **Data pipeline work has an owner: `omh-data-pipelines`.** "our airflow etl
   backfill is producing duplicate events", "replay the last three days of
