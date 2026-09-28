@@ -64,6 +64,7 @@
    "web-research",
    "model-optimization",
    "inference-serving",
+   "model-finetuning",
    "research-brief",
    "jit-learn",
    "meeting-brief",

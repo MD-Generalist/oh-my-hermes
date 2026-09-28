@@ -284,6 +284,8 @@ VISIBLE_ACTIONS = (
     "show_apply_gate",
     "prepare_pipeline_plan",
     "show_replay_plan",
+    "prepare_finetune_decision",
+    "show_promotion_gate",
     "prepare_release_plan",
     "show_release_readiness",
     "show_frontend_handoff",
@@ -1129,6 +1131,8 @@ _ACK_PRIMARY_ACTIONS_BY_NEXT_ACTION = {
     "show_apply_gate": ("show_apply_gate", "Show the apply gates"),
     "prepare_pipeline_plan": ("prepare_pipeline_plan", "Plan the pipeline work"),
     "show_replay_plan": ("show_replay_plan", "Show the replay plan"),
+    "prepare_finetune_decision": ("prepare_finetune_decision", "Decide on fine-tuning"),
+    "show_promotion_gate": ("show_promotion_gate", "Show the promotion gate"),
     "prepare_release_plan": ("prepare_release_plan", "Plan the release"),
     "show_release_readiness": ("show_release_readiness", "Show release readiness"),
     "prepare_accessibility_audit": ("prepare_accessibility_audit", "Audit accessibility"),
@@ -2333,6 +2337,36 @@ _WORKFLOW_OPERATIONS_CHAT_CARDS: dict[str, dict[str, object]] = {
             "job run",
             "backfill performed",
             "quality check passed",
+        ],
+    },
+    "model-finetuning": {
+        "kind": "finetune_plan",
+        "headline": "I can decide whether this needs fine-tuning, and plan it if it does.",
+        "body": (
+            "I will measure the untuned model and the cheaper fixes against a held-out eval first, and stop at "
+            "`do_not_finetune` if one closes the gap; otherwise I choose SFT, DPO, or RLVR from the data you have, plan the "
+            "data with a held-out split, and gate promotion on beating the untuned baseline. I train nothing and run no eval."
+        ),
+        "phase": "finetune_plan_prepared",
+        "next_action": "prepare_finetune_decision",
+        "artifact_schema": "finetune_decision/v1",
+        "claim_boundary_suffix": "It is not a training run, an eval score, or a promoted checkpoint until the output is observed.",
+        "actions": [
+            {"id": "prepare_finetune_decision", "label": "Decide on fine-tuning", "style": "primary"},
+            {"id": "show_promotion_gate", "label": "Show the promotion gate", "style": "secondary"},
+            {"id": "show_status", "label": "Show status", "style": "secondary"},
+        ],
+        "recommended_flow": [
+            "measure_the_untuned_baseline_on_held_out_examples",
+            "try_prompting_and_retrieval_first",
+            "choose_the_method_from_the_data",
+            "plan_the_data_with_a_held_out_split",
+            "promote_only_a_checkpoint_that_beats_the_baseline",
+        ],
+        "evidence_not_observed": [
+            "training run",
+            "eval score",
+            "checkpoint promoted",
         ],
     },
     "iac-change": {
