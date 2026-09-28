@@ -3386,6 +3386,7 @@ _PRIMARY_HARNESSES = {
     "ultraperf": "goal-execution",
     "wiki": "docs-specialist",
     "agent-instructions": "docs-specialist",
+    "iac-change": "app-delivery-loop",
     "ask": "critic",
     "cancel": "goal-execution",
     "skill": "docs-specialist",

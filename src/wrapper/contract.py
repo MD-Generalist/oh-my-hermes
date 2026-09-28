@@ -280,6 +280,8 @@ VISIBLE_ACTIONS = (
     "show_event_closure",
     "prepare_instruction_file_update",
     "show_command_verification",
+    "prepare_iac_change_plan",
+    "show_apply_gate",
     "prepare_release_plan",
     "show_release_readiness",
     "show_frontend_handoff",
@@ -1121,6 +1123,8 @@ _ACK_PRIMARY_ACTIONS_BY_NEXT_ACTION = {
     "show_event_closure": ("show_event_closure", "Show event closure"),
     "prepare_instruction_file_update": ("prepare_instruction_file_update", "Update the instruction file"),
     "show_command_verification": ("show_command_verification", "Show command verification"),
+    "prepare_iac_change_plan": ("prepare_iac_change_plan", "Plan the infrastructure change"),
+    "show_apply_gate": ("show_apply_gate", "Show the apply gates"),
     "prepare_release_plan": ("prepare_release_plan", "Plan the release"),
     "show_release_readiness": ("show_release_readiness", "Show release readiness"),
     "prepare_accessibility_audit": ("prepare_accessibility_audit", "Audit accessibility"),
@@ -2295,6 +2299,37 @@ _WORKFLOW_OPERATIONS_CHAT_CARDS: dict[str, dict[str, object]] = {
             "command run",
             "file written",
             "region replaced",
+        ],
+    },
+    "iac-change": {
+        "kind": "iac_change_plan",
+        "headline": "I can plan this infrastructure change before it is applied.",
+        "body": (
+            "I will separate existing drift from the change, read the creates, replacements and destroys from the saved plan, "
+            "give the cost delta or mark it unestimated, and stage the apply from the least exposed environment with a health "
+            "gate and a rollback per stage. A stateful replacement waits for your approval, and I apply nothing."
+        ),
+        "phase": "iac_change_plan_prepared",
+        "next_action": "prepare_iac_change_plan",
+        "artifact_schema": "staged_apply_plan/v1",
+        "claim_boundary_suffix": "It is not a plan run, an apply, a passed health gate, or a rollback until the output is observed.",
+        "actions": [
+            {"id": "prepare_iac_change_plan", "label": "Plan the infrastructure change", "style": "primary"},
+            {"id": "show_apply_gate", "label": "Show the apply gates", "style": "secondary"},
+            {"id": "show_status", "label": "Show status", "style": "secondary"},
+        ],
+        "recommended_flow": [
+            "read_the_saved_plan",
+            "separate_drift_from_the_change",
+            "list_replacements_and_destroys",
+            "estimate_the_cost_delta",
+            "stage_the_apply_with_gates_and_rollbacks",
+        ],
+        "evidence_not_observed": [
+            "plan run",
+            "apply performed",
+            "health gate passed",
+            "rollback performed",
         ],
     },
     "security-event-response": {

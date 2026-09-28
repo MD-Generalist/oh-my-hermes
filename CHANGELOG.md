@@ -4,6 +4,27 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **Infrastructure-as-code changes have an owner: `omh-iac-change`.**
+  "terraform plan shows drift in the kubernetes cluster, stage the apply"
+  used to ask a question led by `plan`; a Helm chart values change, a Pulumi
+  preview with replacements and a Terraform cost estimate had no owner at all.
+  They now dispatch to a skill that reads six named outputs from the saved
+  plan, not from the code diff:
+  - `drift_assessment/v1` separates drift already present from the change;
+  - `blast_radius/v1` lists every replacement and destroy, and a stateful one
+    waits for explicit approval;
+  - `cost_delta/v1` is observed or marked unestimated, never zero;
+  - `staged_apply_plan/v1`, `health_gate/v1` and `rollback_plan/v1` give
+    every stage a promoting signal and a way back, and apply only the reviewed
+    saved plan.
+
+  The per-tool drift, plan, health and rollback commands for Terraform and
+  OpenTofu, Pulumi, CloudFormation, Kubernetes and Helm load on demand from
+  `references/iac-change-method.md`. Application releases stay where they
+  were: shipping a new app version to a cluster and watching it is
+  `deploy-and-monitor`, and cutting or rolling back a release is
+  `release-cut`. OMH applies nothing (#1566).
+
 - **A version bump reaches the upgrade plan, and "safe to merge" is a
   call-site verdict.** "dependabot bumped express 4.18 to 5.0, safe to merge",
   "upgrade react from 18 to 19" and "upgrade python from 3.11 to 3.13" used to

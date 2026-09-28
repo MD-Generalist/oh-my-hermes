@@ -418,6 +418,46 @@ _AGENT_INSTRUCTIONS_EXPLICIT_PHRASES = tuple(
     )
 )
 
+# `iac-change` holds back every everyday token its phrases are built from.
+# Listed are the phrases that name a tool's own operation on infrastructure.
+# A bare "terraform" is not: "what is terraform" is a concept question. "cost
+# delta" and "drift detection" are not either, since they are ordinary English
+# without a word of infrastructure beside them. "helm upgrade" is not: "pods
+# stuck in CrashLoopBackOff after helm upgrade" is a failure to debug, and it
+# stays a clarification. "helm chart" is safe to boost because
+# `EVERYDAY_SENSE_PHRASES` has already dropped this skill when no word of
+# infrastructure stands beside it.
+_IAC_CHANGE_EXPLICIT_PHRASES = tuple(
+    normalized_phrase(phrase)
+    for phrase in (
+        "iac-change",
+        "iac change",
+        "infrastructure as code",
+        "infrastructure-as-code",
+        "terraform plan",
+        "terraform apply",
+        "terraform state",
+        "terraform drift",
+        "terraform module",
+        "terraform change",
+        "tofu plan",
+        "pulumi preview",
+        "pulumi up",
+        "cloudformation change set",
+        "helm diff",
+        "helm chart",
+        "helm chart change",
+        "kubectl apply",
+        "kubectl diff",
+        "kubernetes manifest",
+        "kubernetes manifests",
+        "k8s manifest",
+        "k8s manifests",
+        "staged apply",
+        "stage the apply",
+    )
+)
+
 # `security-event-response` holds back every token its phrases are built from,
 # which left "we committed a secret, what now" and "is this dependency's license
 # OK for us" at the bare phrase credit. Listed are the phrases that name an
@@ -1024,6 +1064,18 @@ _SKILL_POLICIES = {
             "Prepare instruction_file_inventory/v1 with every file and its reader; command_verification_record/v1 marking "
             "each command verified with its observed run or unverified; instruction_region_update/v1 replacing only the text "
             "between the omh:agent-instructions markers; and drift_refusal_note/v1 for any requested count or line number."
+        ),
+    ),
+    "iac-change": RecommendationPolicy(
+        next_action="prepare_iac_change_plan",
+        evidence_boundary=(
+            "An infrastructure change plan is not a plan run, an apply, a passed health gate, or a rollback until observed; "
+            "OMH never runs terraform, tofu, pulumi, kubectl or helm, and a stage is not promoted while its gate is prepared."
+        ),
+        wrapper_guidance=(
+            "Prepare drift_assessment/v1 separating existing drift from the change; blast_radius/v1 with every replacement "
+            "and destroy from the saved plan; cost_delta/v1 observed or marked unestimated; staged_apply_plan/v1 applying "
+            "the reviewed saved plan per environment; and health_gate/v1 and rollback_plan/v1 for every stage."
         ),
     ),
     "security-event-response": RecommendationPolicy(
@@ -2785,6 +2837,45 @@ _WHOLE_PHRASE_ONLY_TRIGGER_TOKENS = {
             "write",
         }
     ),
+    # `iac-change` is built from "infrastructure", "code", "plan", "apply",
+    # "state", "drift", "cost", "delta", "helm", "chart", "stage" and
+    # "kubernetes" -- a sci-fi plan, a boat's helm, continental drift and a
+    # crashing pod all reached it as bare tokens. Only the complete phrases
+    # score, and "cost delta", "drift detection" and "helm chart" also need a
+    # word of infrastructure beside them (`EVERYDAY_SENSE_PHRASES`).
+    # `terraform` is held too: "we need to terraform mars" is a verb. Tokens
+    # that name only an infrastructure tool stay creditable: `iac`, `opentofu`,
+    # `pulumi`, `cloudformation`, `kubectl`, `kustomize` and `infracost`.
+    "iac-change": frozenset(
+        {
+            "apply",
+            "change",
+            "chart",
+            "code",
+            "cost",
+            "delta",
+            "detection",
+            "diff",
+            "drift",
+            "helm",
+            "infrastructure",
+            "k8s",
+            "kubernetes",
+            "manifest",
+            "manifests",
+            "module",
+            "plan",
+            "preview",
+            "set",
+            "stage",
+            "staged",
+            "state",
+            "the",
+            "terraform",
+            "tofu",
+            "upgrade",
+        }
+    ),
     # `security-event-response` is built from "security", "event", "secret",
     # "license", "advisory", "leaked", "committed", "key", "history" and
     # "dependency" -- a travel security advisory, a driver's licence, a secret
@@ -3801,6 +3892,9 @@ def _score_definition(
     if definition.name == "release-cut" and _release_cut_explicit_match(normalized_query):
         score += 30
         matched.add("direct:release_cut")
+    if definition.name == "iac-change" and _iac_change_explicit_match(normalized_query):
+        score += 30
+        matched.add("direct:iac_change")
     if definition.name == "agent-instructions" and _agent_instructions_explicit_match(normalized_query):
         score += 30
         matched.add("direct:agent_instructions")
@@ -4603,6 +4697,10 @@ def _relational_db_explicit_match(normalized_query: str) -> bool:
 
 def _release_cut_explicit_match(normalized_query: str) -> bool:
     return any(_explicit_phrase_match(normalized_query, phrase) for phrase in _RELEASE_CUT_EXPLICIT_PHRASES)
+
+
+def _iac_change_explicit_match(normalized_query: str) -> bool:
+    return any(_explicit_phrase_match(normalized_query, phrase) for phrase in _IAC_CHANGE_EXPLICIT_PHRASES)
 
 
 def _agent_instructions_explicit_match(normalized_query: str) -> bool:
