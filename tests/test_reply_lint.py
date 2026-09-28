@@ -343,7 +343,8 @@ class AuditTermTests(unittest.TestCase):
     """The 2026-09-28 audit's terms: qualified compounds in, everyday words out."""
 
     def test_the_qualified_terms_are_flagged(self) -> None:
-        for term in ("route_question", "closure receipt", "fanout dispatch"):
+        # The two key names ride every omh_delegate_route / omh_todo result.
+        for term in ("route_question", "closure receipt", "fanout dispatch", "evidence_boundary", "claim_boundary"):
             with self.subTest(term=term):
                 self.assertEqual(
                     _kinds(build_reply_lint(f"Next I will check the {term} for this change.")),

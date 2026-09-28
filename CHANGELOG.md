@@ -47,8 +47,9 @@ All notable changes will be documented here.
   `say`, and every other result field is unchanged. The reply lint
   (`omh quality-evidence reply-lint`) now also catches every `[OMH ...]`
   head OMH writes, 98 OMH schema ids (every `omh_` id in the bundle plus
-  every id a plugin tool schema names), and `route_question`, `closure
-  receipt` and `fanout dispatch`, while markdown links, `/v1` URLs and
+  every id a plugin tool schema names), `route_question`, `closure receipt`,
+  `fanout dispatch`, and the result keys `evidence_boundary` and
+  `claim_boundary`, while markdown links, `/v1` URLs and
   one-word version ids stay clean; the common rail's vocabulary line now
   lists the same words and a test keeps the two in step. Fan-out narration
   for `delegate_task` is not included: the host dispatches that tool outside

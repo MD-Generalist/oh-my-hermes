@@ -64,6 +64,8 @@ _ENGLISH_RECORD_TERMS: tuple[str, ...] = (
     "not_observed",
     "not_available",
     "routing_observation",
+    "evidence_boundary",
+    "claim_boundary",
     "evidence boundary",
     "claim boundary",
     "evidence-bounded",
