@@ -61,6 +61,10 @@ _CANDIDATE_REQUEST = (
 )
 
 
+# The row Hermes writes when a background process it was told to watch exits.
+_PROCESS_COMPLETE_NOTICE = "[Background process proc_scenario finished with exit code 0]"
+
+
 class _RecordingPluginContext:
     """The two registration methods `register()` requires, recording what it passes."""
 
@@ -137,6 +141,51 @@ def _seed_running_board(omh_home: Path) -> None:
         )
 
 
+def _seed_done_unverified_plan(omh_home: Path) -> None:
+    """A plan whose done item's bound command failed, and the store that says so.
+
+    The session's own `state.db` sits in the Hermes home beside `omh_home`
+    (`_run_pre_llm_call` makes both under one directory). The item carries
+    the longest reason phrase the plan line renders, so the scenario measures
+    the evidence clause and `TODO_EVIDENCE_RULE` at their largest.
+    """
+    import sqlite3
+    import time
+    from datetime import datetime, timezone
+
+    from ..plugin_bundle.omh.todo_store import build_todo_record, write_todo
+
+    now = time.time()
+    hermes_home = omh_home.parent / "hermes"
+    connection = sqlite3.connect(hermes_home / "state.db")
+    try:
+        connection.execute("CREATE TABLE sessions (id TEXT PRIMARY KEY, parent_session_id TEXT)")
+        connection.execute(
+            "CREATE TABLE messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, role TEXT, "
+            "content TEXT, tool_call_id TEXT, tool_name TEXT, effect_disposition TEXT, timestamp REAL)"
+        )
+        connection.execute("INSERT INTO sessions VALUES (?, NULL)", (_SCENARIO_SESSION,))
+        for call_id in ("scenario_bound", "scenario_unbound"):
+            connection.execute(
+                "INSERT INTO messages (session_id, role, content, tool_call_id, tool_name, timestamp) "
+                "VALUES (?, 'tool', ?, ?, 'terminal', ?)",
+                (_SCENARIO_SESSION, json.dumps({"exit_code": 0}), call_id, now - 30),
+            )
+        connection.commit()
+    finally:
+        connection.close()
+    window = {
+        "window_start": datetime.fromtimestamp(now - 60, timezone.utc).isoformat().replace("+00:00", "Z"),
+        "done_at": datetime.fromtimestamp(now - 10, timezone.utc).isoformat().replace("+00:00", "Z"),
+    }
+    items = [
+        {"text": "land the fix", "state": "done", "evidence": {"kind": "tool_call", "ref": "scenario_bound"}, **window},
+        {"text": "run the full suite and report the observed result", "state": "done", **window},
+        {"text": "open the pull request", "state": "active"},
+    ]
+    write_todo(omh_home, build_todo_record("plan", items, source="omh_todo", session_ref=_SCENARIO_SESSION))
+
+
 def _run_pre_llm_call(
     seeds: tuple[Callable[[Path], None], ...], *, section: bool = True, **kwargs: Any
 ) -> int:
@@ -203,6 +252,12 @@ def pre_llm_call_context_scenario_chars() -> dict[str, int]:
       largest shipped role.
     - `active_workflow`: a later turn while a workflow is active.
     - `running_work_board`: a later turn with a full running-work board.
+    - `done_unverified_plan`: a later turn, opened by a finished background
+      process, with an open plan whose done item has commands in its window
+      and none bound to it, so the plan line carries the evidence clause and
+      `TODO_EVIDENCE_RULE`. The todo
+      reminder is otherwise not seeded (see below); this measures the one
+      part of it that grows a line.
     - `all_surfaces_without_section`: `all_surfaces` on the fallback, primer
       included; the fallback's maximum.
     - `all_surfaces`: all of the above in one first turn. The parts add, so
@@ -242,6 +297,18 @@ def pre_llm_call_context_scenario_chars() -> dict[str, int]:
         "role_marker": _largest_role("continue", no_seed, **later),
         "active_workflow": _run_pre_llm_call((_seed_active_workflow,), user_message="continue", **later),
         "running_work_board": _run_pre_llm_call((_seed_running_board,), user_message="continue", **later),
+        # A turn the host opened for a finished background process: the plan
+        # line then carries the drive and `TODO_EVIDENCE_RULE` rather than
+        # the answer-first variant a person's message gets, which is the
+        # larger of the two lines the evidence clause can ride.
+        "done_unverified_plan": _run_pre_llm_call(
+            (_seed_done_unverified_plan,),
+            user_message=_PROCESS_COMPLETE_NOTICE,
+            conversation_history=[
+                {"role": "user", "content": _PROCESS_COMPLETE_NOTICE, "display_kind": "process_complete"}
+            ],
+            **later,
+        ),
         "all_surfaces": _largest_role(
             _ROUTED_REQUEST,
             (_seed_active_workflow, _seed_running_board),

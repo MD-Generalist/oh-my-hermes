@@ -23,6 +23,51 @@ All notable changes will be documented here.
   exits 1 even without a repair budget; it used to exit 0 because the
   unit's process had exited 0.
 
+- **A plan item marked done now closes only on a recorded result.** The
+  continuation rule stopped a plan once every item said done, so a run could
+  mark an item done over a failed command, or tick several items off one
+  command, and end its own loop. The `omh_todo` tool now binds every item
+  itself and ignores any binding the writer sends. An item's window opens at
+  its own last transition (declared, pending to active, out of done). At the
+  done write it takes `done_at` and the latest `terminal`, `write_file` or
+  `patch` call inside its window that no other item holds. The call is read
+  from the session's own Hermes `state.db` (`mode=ro`, rewound rows ignored,
+  bounded at the done write) and stored as a typed `evidence` reference
+  `{kind, ref}`, with kinds `tool_call`, `file_write`, `pr`, `ci_run` and
+  `team_check`. A failed binding is sticky across a reopen. A binding a `set`
+  drops by a rename, a split or a removal is kept on the plan as
+  `dropped_bindings`, and while it is a failure no item opened after the drop
+  closes until one passes a command of its own. An item is also failed while
+  the latest call before its done mark that no other item holds failed, and a
+  file write does not close an item over a failing command in its window.
+  Items that share a text pair with the stored items in order.
+  `omh runtime todo set --items-json` refuses the binding fields.
+  - **When an item closes.** The stop criterion reads that record, never the
+    item's text. `tool_call` closes on a recorded `exit_code` of 0 inside the
+    window; `file_write` closes on a landed write or a successful patch (#1922's
+    outcome rules). An item with no reference closes when its window recorded
+    no command and the session's last call before it did not fail, so a
+    conversational item is not held open.
+  - **When it stays open.** Any other done item is `done_unverified` and still
+    open. The turn-end directive and the per-turn plan line name it in plain
+    words, and the tool result carries its reason code (`no_evidence`,
+    `evidence_failed`, `evidence_unresolved`, `evidence_unreadable`). An
+    unreadable store is reported but never closes an item and never drives the
+    loop.
+  - **How to close it.** Mark the item done again after a passing command, or
+    give it a `blocked_reason`.
+  - **What is not resolved yet.** `pr`, `ci_run` and `team_check` are accepted
+    but resolve nothing, since OMH makes no network call.
+  - **What time cannot prevent.** Binding is by time, not content. `clear`
+    removes the plan with its dropped bindings, and with two items active at
+    once a pass or a failure can be bound to the wrong one. Both are stated in
+    `docs/HARNESS_QUALITY.md`.
+  - **What does not change.** Items done before this change, CLI writes and
+    hand edits carry no binding and count as done as before. A no-op
+    re-advance is not a write, so it cannot buy another turn-end nudge. The
+    `omh_todo` schema is unchanged, and the new `done_unverified_plan`
+    per-turn scenario sits under the existing limit.
+
 - **Data pipeline work has an owner: `omh-data-pipelines`.** "our airflow etl
   backfill is producing duplicate events", "replay the last three days of
   kafka events into the warehouse without double counting", "the dbt model

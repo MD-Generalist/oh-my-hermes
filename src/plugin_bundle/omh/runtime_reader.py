@@ -40,10 +40,12 @@ from .metadata import (
     TOOL_FILE_STEMS,
     TOOLS_REQUIRING_ROLE_CATALOG,
 )
+from .todo_evidence import valid_evidence
 from .todo_store import (
     MAX_TODO_BLOCKED_REASON_CHARS,
     MAX_TODO_DEFERRED_REASON_CHARS,
     MAX_TODO_DEPTH,
+    MAX_TODO_DROPPED_BINDINGS,
     MAX_TODO_ITEMS,
     MAX_TODO_PHASE_CHARS,
     MAX_TODO_PLAN_STAGE_CHARS,
@@ -2178,6 +2180,20 @@ def _todo_summary(
                 entry["depth"] = depth
             if blocked_reason:
                 entry["blocked_reason"] = blocked_reason
+            # Projected only in a known kind's shape, and `done_at` only on a
+            # done item -- the rules the writer enforces -- so a hand-edited
+            # value cannot reach a reader as something to look up. The
+            # projection must carry every field the writer does, or the
+            # deferral digest would disagree. Whether it CLOSES the item is not
+            # decided here: that reads the session store, which the HUD poll
+            # does not open (`todo_reconciliation.unverified_done_items`).
+            evidence = valid_evidence(raw.get("evidence"))
+            if evidence:
+                entry["evidence"] = evidence
+            for stamp_key in ("done_at", "window_start"):
+                stamp_value = raw.get(stamp_key) if stamp_key == "window_start" or state == "done" else None
+                if isinstance(stamp_value, str) and stamp_value:
+                    entry[stamp_key] = strip_control_characters(stamp_value)[:40]
             items.append(entry)
         if len(items) >= MAX_TODO_ITEMS:
             break
@@ -2222,6 +2238,19 @@ def _todo_summary(
         : MAX_TODO_PLAN_STAGE_CHARS + 1
     ]
     summary["plan_stage"] = plan_stage if plan_stage in TODO_PLAN_STAGES else ""
+    # The bindings a `set` dropped (`todo_store.dropped_bindings`), projected in
+    # a known kind's shape with a stamp and only when there are any, so a plan
+    # that never dropped one projects exactly as before. The stop criterion
+    # reads them; nothing renders them.
+    raw_dropped = record.get("dropped_bindings")
+    dropped: list[dict[str, str]] = []
+    for entry in raw_dropped[-MAX_TODO_DROPPED_BINDINGS:] if isinstance(raw_dropped, list) else []:
+        checked = valid_evidence(entry)
+        stamp = entry.get("dropped_at") if checked else None
+        if checked and isinstance(stamp, str) and stamp:
+            dropped.append({**checked, "dropped_at": strip_control_characters(stamp)[:40]})
+    if dropped:
+        summary["dropped_bindings"] = dropped
     # Ownership, stated as a fact about WHICH RECORD this is rather than as a
     # verdict about whether to show it. `status` cannot answer it: the
     # identity rule behind `established` reads an unanswerable case as

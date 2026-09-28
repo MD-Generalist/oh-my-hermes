@@ -25,7 +25,7 @@ import secrets
 import stat
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any, Callable, Iterator
 
 # The bundle's one sanctioned lock, the same object `tool_bursts`,
 # `approval_bypass` and `memory_open_reminders` take. It carries both backends
@@ -33,6 +33,7 @@ from typing import Any, Iterator
 # import omh core; a copy here would be the third, and the policy gate in
 # `tests/test_journal_lock_portability.py` exists to stop exactly that.
 from .awareness_delivery import _awareness_delivery_lock
+from .todo_evidence import EVIDENCE_KINDS, evidence_key, valid_evidence
 from .todo_templates import (
     TODO_TEMPLATES,
     template_coverage_error,
@@ -161,7 +162,29 @@ TODO_DEFERRED_DIGEST_CHARS = 32
 # The item fields the digest covers: every field an item declares. Any edit to
 # any of them is the plan moving, `blocked_reason` included -- writing down
 # that an item is stuck is a plan advancing, not a plan standing still.
-_DIGESTED_ITEM_KEYS = ("text", "state", "phase", "depth", "blocked_reason")
+_DIGESTED_ITEM_KEYS = (
+    "text", "state", "phase", "depth", "blocked_reason", "evidence", "done_at", "window_start",
+)
+# The fields OMH binds and a writer never supplies on the tool path
+# (`bind_done_items`): what closed the item, when it was marked done, and where
+# its window starts. `window_start` is stamped on an OPEN item too -- when it
+# is declared, when it goes from pending to active, and when it leaves done --
+# because a window opens at the item's own last transition, never at whatever
+# plan write happened last. `evidence` survives a reopen: a failed binding is
+# sticky until a later call in the item's window replaces it. `done_at` is only
+# on a done item, and is the line between an item done before evidence existed
+# -- none of the three, counted done as it always was -- and one the stop
+# criterion judges.
+TODO_DONE_BINDING_KEYS = ("evidence", "done_at", "window_start")
+MAX_TODO_STAMP_CHARS = 40
+# Plan-level: the bindings a whole-list `set` dropped because no item of the
+# new list carries the text they were bound under -- a rename, a split, a
+# removal -- each with when it was dropped. A binding that failed is the
+# plan's memory of a check that did not pass under a name it no longer uses,
+# so an item opened at or after the drop cannot close until a passing command
+# of its own resolves it (`todo_evidence`). Bounded to the newest entries, one
+# plan's worth. It lives in the record, so `clear` removes it with the plan.
+MAX_TODO_DROPPED_BINDINGS = 20
 # Optional nesting depth per item: 0 is a top-level task, 1..3 are subtask
 # levels rendered indented beneath it (e.g. "검증작업하기" with usability /
 # UI / load-verification children). Three levels is the owner's declared
@@ -210,6 +233,9 @@ def validate_todo_items(items: object) -> list[dict[str, Any]]:
     if len(items) > MAX_TODO_ITEMS:
         raise TodoValidationError(f"todo items are capped at {MAX_TODO_ITEMS}")
     validated: list[dict[str, str]] = []
+    # One recorded fact closes at most one item: a call that closed item 1
+    # copied onto items 2 and 3 would close three items with one command.
+    bound: set[str] = set()
     for item in items:
         if not isinstance(item, dict):
             raise TodoValidationError("each todo item must be an object")
@@ -232,6 +258,9 @@ def validate_todo_items(items: object) -> list[dict[str, Any]]:
         depth = item.get("depth", 0)
         if isinstance(depth, bool) or not isinstance(depth, int) or not 0 <= depth <= MAX_TODO_DEPTH:
             raise TodoValidationError(f"todo item depth must be an integer from 0 to {MAX_TODO_DEPTH}")
+        evidence = _validated_evidence(item.get("evidence"), state)
+        done_at = _validated_stamp(item.get("done_at"), state, "done_at")
+        window_start = _validated_stamp(item.get("window_start"), "done", "window_start")
         entry: dict[str, Any] = {"text": text, "state": state}
         if phase:
             entry["phase"] = phase
@@ -239,8 +268,226 @@ def validate_todo_items(items: object) -> list[dict[str, Any]]:
             entry["depth"] = depth
         if blocked_reason:
             entry["blocked_reason"] = blocked_reason
+        if evidence:
+            key = evidence_key(evidence)
+            if key in bound:
+                raise TodoValidationError("todo item evidence is already bound to another item")
+            bound.add(key)
+            entry["evidence"] = evidence
+        if done_at:
+            entry["done_at"] = done_at
+        if window_start:
+            entry["window_start"] = window_start
         validated.append(entry)
     return validated
+
+
+def _validated_evidence(evidence: object, state: str) -> dict[str, str] | None:
+    """The item's evidence reference as it will be stored, or ``None``.
+
+    A typed ``{"kind", "ref"}`` naming the recorded fact that closes a done
+    item (`todo_evidence` says which kinds resolve and how). It is kept on an
+    item that left done, because a failed binding is sticky until a later
+    call replaces it, and refused when it is not one of the known kinds in
+    its kind's shape, since a reader that cannot look it up would have to
+    treat it as text.
+
+    Absence is the common case and costs nothing: a record whose items carry
+    no reference is byte-identical to one written before the field existed.
+    """
+    if evidence is None or evidence == "" or evidence == {}:
+        return None
+    checked = valid_evidence(evidence)
+    if checked is None:
+        kinds = ", ".join(EVIDENCE_KINDS)
+        raise TodoValidationError(
+            f"todo item evidence must be {{kind, ref}} with kind one of: {kinds}"
+        )
+    return checked
+
+
+def _validated_stamp(value: object, state: str, name: str) -> str:
+    """A bound ISO stamp as it will be stored, or ``""``; only on a done item."""
+    if value is None or value == "":
+        return ""
+    if not isinstance(value, str):
+        raise TodoValidationError(f"todo item {name} must be a timestamp string")
+    safe = strip_control_characters(value)
+    try:
+        datetime.fromisoformat(safe.replace("Z", "+00:00"))
+    except ValueError as error:
+        raise TodoValidationError(f"todo item {name} must be an ISO timestamp") from error
+    if len(safe) > MAX_TODO_STAMP_CHARS:
+        raise TodoValidationError(f"todo item {name} is capped at {MAX_TODO_STAMP_CHARS} characters")
+    if state != "done":
+        raise TodoValidationError(f"todo item {name} is recorded only on a done item")
+    return safe
+
+
+def bind_done_items(
+    items: object,
+    *,
+    prior_items: object,
+    calls: list[dict[str, Any]],
+    fallback_start: str,
+    now: str,
+) -> object:
+    """``items`` as the `omh_todo` tool writes them: bindings are OMH's, never the writer's.
+
+    Every binding field the writer sent is dropped first -- a reference it
+    can send is a reference it can copy from a result it was shown. Each item
+    is then matched to the stored item with the same text (items sharing a
+    text pair in order, `_paired_with_prior`), and:
+
+    * an item done before and done now keeps exactly what it had, including
+      nothing: an item done before evidence existed stays unbound and counts
+      as done, and re-sending a done item is the list standing still;
+    * an open item keeps its window and any failed binding. Its window opens
+      NOW when it is new, goes from pending to active, or leaves done;
+    * an item newly done is judged over its own window -- from its stored
+      ``window_start``, else the previous plan write (``fallback_start``), and
+      from ``now`` when the item is new, so a renamed or re-declared item has
+      an empty window. It takes the LATEST of ``calls`` inside that window
+      that no other item holds, replacing a sticky binding, and each call is
+      given to one item. Nothing inside keeps any sticky binding it had.
+
+    ``calls`` are ``{"evidence", "at"}`` entries (`todo_evidence.observed_calls`).
+    Pure and tolerant: anything that is not a dict item passes through for
+    ``validate_todo_items`` to refuse with its own message.
+    """
+    if not isinstance(items, list):
+        return items
+    pairs, _ = _paired_with_prior(items, prior_items)
+    entries: list[tuple[Any, dict[str, Any] | None]] = [
+        (
+            {key: value for key, value in item.items() if key not in TODO_DONE_BINDING_KEYS}
+            if isinstance(item, dict)
+            else item,
+            prior,
+        )
+        for item, prior in pairs
+    ]
+    held = {
+        index: evidence_key(checked)
+        for index, (entry, prior) in enumerate(entries)
+        if isinstance(entry, dict)
+        and prior is not None
+        and (checked := valid_evidence(prior.get("evidence")))
+    }
+    bound: list[Any] = []
+    for index, (entry, prior) in enumerate(entries):
+        if not isinstance(entry, dict):
+            bound.append(entry)
+            continue
+        carried = {key: prior[key] for key in TODO_DONE_BINDING_KEYS if prior and prior.get(key)}
+        prior_state = prior.get("state") if prior else None
+        state = entry.get("state", "pending")
+        if state == "done" and prior_state == "done":
+            entry.update(carried)
+        elif state == "done":
+            opened = carried.get("window_start") or (fallback_start if prior else now)
+            entry.update(evidence=carried.get("evidence"), window_start=opened, done_at=now)
+            others = {key for other, key in held.items() if other != index}
+            call = _latest_call_after(calls, opened, others)
+            if call is not None:
+                entry["evidence"] = call
+                held[index] = evidence_key(call)
+            if not entry.get("evidence"):
+                entry.pop("evidence", None)
+        else:
+            carried.pop("done_at", None)
+            entry.update(carried)
+            if prior is None or prior_state == "done" or (prior_state == "pending" and state == "active"):
+                entry["window_start"] = now
+        bound.append(entry)
+    return bound
+
+
+def _paired_with_prior(
+    items: list[Any], prior_items: object
+) -> tuple[list[tuple[Any, dict[str, Any] | None]], list[dict[str, Any]]]:
+    """Each item with the stored item it continues, and the stored items none continues.
+
+    An item continues the stored item with the same text; items sharing a
+    text pair in order, the first with the first. Anything that is not a
+    dict item continues nothing.
+    """
+    by_text: dict[str, list[dict[str, Any]]] = {}
+    for prior in prior_items if isinstance(prior_items, list) else []:
+        if isinstance(prior, dict):
+            by_text.setdefault(strip_control_characters(prior.get("text", "")), []).append(prior)
+    pairs: list[tuple[Any, dict[str, Any] | None]] = []
+    for item in items:
+        queue = by_text.get(strip_control_characters(item.get("text", ""))) if isinstance(item, dict) else None
+        pairs.append((item, queue.pop(0) if queue else None))
+    return pairs, [prior for queue in by_text.values() for prior in queue]
+
+
+def dropped_bindings(
+    items: object, *, prior_items: object, prior_dropped: object, now: str
+) -> list[dict[str, str]]:
+    """The record's dropped bindings after a whole-list `set` of ``items``.
+
+    The ones already recorded, then the binding of every stored item the new
+    list does not continue, stamped ``now`` -- the stamp the same write opens
+    a new item's window at, so a renamed item opens at its own drop.
+    """
+    kept = [entry for entry in prior_dropped if isinstance(entry, dict)] if isinstance(prior_dropped, list) else []
+    if isinstance(items, list):
+        for prior in _paired_with_prior(items, prior_items)[1]:
+            checked = valid_evidence(prior.get("evidence"))
+            if checked is not None:
+                kept.append({**checked, "dropped_at": now})
+    return kept[-MAX_TODO_DROPPED_BINDINGS:]
+
+
+def _validated_dropped_bindings(value: object) -> list[dict[str, str]]:
+    """The plan's dropped bindings as they will be stored; an entry out of shape is refused."""
+    if value is None or value == [] or value == ():
+        return []
+    if not isinstance(value, (list, tuple)) or len(value) > MAX_TODO_DROPPED_BINDINGS:
+        raise TodoValidationError(
+            f"todo dropped_bindings must be a list of at most {MAX_TODO_DROPPED_BINDINGS} entries"
+        )
+    validated: list[dict[str, str]] = []
+    for entry in value:
+        checked = valid_evidence(entry) if isinstance(entry, dict) else None
+        stamp = _validated_stamp(entry.get("dropped_at"), "done", "dropped_at") if checked else ""
+        if checked is None or not stamp:
+            raise TodoValidationError("todo dropped_bindings entries must be {kind, ref, dropped_at}")
+        validated.append({**checked, "dropped_at": stamp})
+    return validated
+
+
+def _latest_call_after(
+    calls: list[dict[str, Any]], opened: str, held: set[str]
+) -> dict[str, str] | None:
+    """The latest call recorded after ``opened`` that nothing in ``held`` holds."""
+    start = _stamp_epoch(opened)
+    for call in reversed(calls):
+        evidence = valid_evidence(call.get("evidence"))
+        at = call.get("at")
+        if evidence is None or evidence_key(evidence) in held or not isinstance(at, (int, float)):
+            continue
+        if start is not None and at <= start:
+            continue
+        return evidence
+    return None
+
+
+def _stamp_epoch(value: object) -> float | None:
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return (parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)).timestamp()
+
+
+def todo_timestamp() -> str:
+    """The stamp format every record field here uses."""
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
 def todo_items_digest(items: object) -> str:
@@ -281,6 +528,7 @@ def build_todo_record(
     deferred_reason: object = "",
     template: object = "",
     plan_stage: object = "",
+    dropped: object = (),
 ) -> dict[str, Any]:
     """Build the on-disk todo record.
 
@@ -320,6 +568,10 @@ def build_todo_record(
     text, and an unrecognised value raises instead of being stored -- a stamp
     a reader cannot classify would make that gate silent on a plan that
     believes it is guarded, which is the worst of the three states.
+
+    ``dropped`` is the plan's ``dropped_bindings`` (`dropped_bindings`),
+    written only when non-empty, so a plan that never dropped a binding is
+    byte-identical to one written before the field existed.
     """
     safe_title = strip_control_characters(title)
     if len(safe_title) > MAX_TODO_TITLE_CHARS:
@@ -329,6 +581,7 @@ def build_todo_record(
     safe_deferred_reason = _validated_deferred_reason(deferred_reason)
     safe_template = _validated_template(template)
     safe_plan_stage = _validated_plan_stage(plan_stage)
+    safe_dropped = _validated_dropped_bindings(dropped)
     if safe_template and items in (None, []):
         items = template_items(safe_template)
     # The cap refusal, answered here rather than in `validate_todo_items`,
@@ -357,6 +610,8 @@ def build_todo_record(
         record["template"] = safe_template
     if safe_plan_stage:
         record["plan_stage"] = safe_plan_stage
+    if safe_dropped:
+        record["dropped_bindings"] = safe_dropped
     return record
 
 
@@ -632,6 +887,7 @@ def advance_todo_item(
     session_ref: object = "",
     blocked_reason: object = "",
     deferred_reason: object = "",
+    observed_calls: Callable[[str, set[str]], list[dict[str, Any]]] | None = None,
 ) -> dict[str, Any]:
     """Change ONE item's state on an existing record, and return the new record.
 
@@ -680,6 +936,24 @@ def advance_todo_item(
     The whole read-modify-write runs inside the record's lock, so a `set` from
     another turn or another process cannot land between the read and the
     write and be overwritten by a list this call read before it.
+
+    ``observed_calls`` is how the tool path binds. Called inside the lock with
+    the start of the item's window -- its own ``window_start``, else the
+    stored ``updated_at`` -- and the evidence keys the OTHER items hold, it
+    returns the calls recorded since, oldest first. The store reads no
+    session records itself; the CLI shares this module, passes none, and its
+    writes bind nothing. With a reader:
+
+    * done: the latest call in the window binds, replacing a sticky binding;
+      with none, an item newly done is stamped ``done_at`` over its window
+      and keeps any failed binding it carried, and an item already done
+      changes nothing -- a no-op re-advance is not a write, so it neither
+      restamps the plan nor reads as progress to `nudge_budget`;
+    * pending to active, or out of done: the item's window opens now, and a
+      binding it had is kept, since a failure is sticky.
+
+    Leaving done always drops ``done_at``. A call whose record is identical
+    to the stored one apart from its stamp is not written at all.
     """
     destination = todo_path(omh_home, session_ref)
     _reject_symlink_ancestry(destination, root=omh_home)
@@ -703,7 +977,11 @@ def advance_todo_item(
             raise TodoValidationError(
                 "the stored todo record has no items; declare one with action=set"
             )
-        if all(
+        # A finished plan still takes a done write: a done mark with no
+        # command behind it leaves the item open for the stop criterion
+        # (`todo_evidence`), and marking it done again after the command ran
+        # is how it closes. Every other move on a finished plan is refused.
+        if state != "done" and all(
             isinstance(entry, dict) and entry.get("state") == "done" for entry in stored
         ):
             raise TodoValidationError(
@@ -725,6 +1003,36 @@ def advance_todo_item(
             updated["blocked_reason"] = blocked_reason
         else:
             updated.pop("blocked_reason", None)
+        prior_state = current.get("state")
+        if state != "done":
+            updated.pop("done_at", None)
+            if observed_calls is not None and (
+                prior_state == "done" or (prior_state == "pending" and state == "active")
+            ):
+                updated["window_start"] = todo_timestamp()
+        elif observed_calls is not None:
+            stamp = record.get("updated_at", "")
+            opened = current.get("window_start") or (stamp if isinstance(stamp, str) else "")
+            # The OTHER items' references only. This item's own is left
+            # rebindable on purpose: were it held, a re-advance after its bound
+            # failure would skip that failure and bind an older passing call.
+            held = {
+                evidence_key(checked)
+                for index, entry in enumerate(stored)
+                if index != position
+                and isinstance(entry, dict)
+                and (checked := valid_evidence(entry.get("evidence")))
+            }
+            calls = observed_calls(opened, held)
+            # The latest call being the one already bound is nothing new: a
+            # re-advance over it must stay a no-op, or it would restamp
+            # `done_at` and buy a turn-end nudge with no work behind it.
+            if calls and calls[-1]["evidence"] != current.get("evidence"):
+                updated.update(
+                    evidence=calls[-1]["evidence"], done_at=todo_timestamp(), window_start=opened
+                )
+            elif prior_state != "done":
+                updated.update(done_at=todo_timestamp(), window_start=opened)
         items = list(stored)
         items[position] = updated
         stored_template = record.get("template", "")
@@ -756,11 +1064,23 @@ def advance_todo_item(
                 deferred_reason=deferred_reason,
                 template=stored_template,
                 plan_stage=stored_plan_stage,
+                # An advance moves one item and drops none, so it carries the
+                # plan's dropped bindings exactly as they were.
+                dropped=record.get("dropped_bindings", ()),
             )
         except TodoValidationError as error:
             raise _advance_template_error(stored_template, error) from error
+        if _same_apart_from_stamp(advanced, record):
+            return record
         _replace_todo_record(destination)(advanced)
     return advanced
+
+
+def _same_apart_from_stamp(new: dict[str, Any], old: dict[str, Any]) -> bool:
+    """Whether a write would change nothing but ``updated_at``."""
+    return {key: value for key, value in new.items() if key != "updated_at"} == {
+        key: value for key, value in old.items() if key != "updated_at"
+    }
 
 
 def _advance_template_error(
@@ -860,6 +1180,11 @@ def _read_todo_record(path: Path) -> dict[str, Any] | None:
     finally:
         os.close(descriptor)
     return record if isinstance(record, dict) else None
+
+
+def read_todo_record(omh_home: Path, session_ref: object = "") -> dict[str, Any] | None:
+    """The raw record ``session_ref`` selects, or ``None``; see `_read_todo_record`."""
+    return _read_todo_record(todo_path(omh_home, session_ref))
 
 
 def clear_todo(omh_home: Path, session_ref: object = "") -> bool:

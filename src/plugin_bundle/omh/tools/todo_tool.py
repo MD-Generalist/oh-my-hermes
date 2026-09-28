@@ -11,7 +11,10 @@ from ..host_observation import (
     host_session_id,
     observe_plugin_tool_call,
 )
+from ..dispatch_outcomes import _parse_timestamp
 from ..runtime_reader import default_omh_home, read_omh_todo
+from ..todo_evidence import observed_calls
+from ..todo_reconciliation import unverified_done_items
 from ..todo_store import (
     TODO_CLAIM_BOUNDARY,
     TODO_ITEM_STATES,
@@ -20,8 +23,12 @@ from ..todo_store import (
     TodoStoreError,
     TodoValidationError,
     advance_todo_item,
+    bind_done_items,
     build_todo_record,
     clear_todo,
+    dropped_bindings,
+    read_todo_record,
+    todo_timestamp,
     write_todo,
 )
 from ..todo_templates import CODE_STORY_TEMPLATE
@@ -238,14 +245,50 @@ def omh_todo_handler(args: dict[str, Any], **kwargs) -> str:
         return json.dumps(attach_public_observation(payload, observation), sort_keys=True)
     if action == "set":
         try:
+            items = args.get("items")
+            dropped: list[dict[str, str]] = []
+            if isinstance(items, list):
+                # OMH binds items itself and ignores any binding the writer
+                # sent (`bind_done_items`). Each item is judged over its own
+                # window; a new item's opens at this write.
+                prior = read_todo_record(default_omh_home(), session_ref) or {}
+                now = todo_timestamp()
+                prior_stamp = prior.get("updated_at")
+                fallback_start = (
+                    prior_stamp
+                    if isinstance(prior_stamp, str) and _parse_timestamp(prior_stamp)
+                    else now
+                )
+                calls = (
+                    _calls_since(session_ref, _earliest_window(prior.get("items"), fallback_start), set(), now)
+                    if _declares_done(items)
+                    else []
+                )
+                # A binding no item of the new list continues is kept on the
+                # plan (`dropped_bindings`): a rename or a split must not carry
+                # work past the check that failed under its old name.
+                dropped = dropped_bindings(
+                    items,
+                    prior_items=prior.get("items"),
+                    prior_dropped=prior.get("dropped_bindings"),
+                    now=now,
+                )
+                items = bind_done_items(
+                    items,
+                    prior_items=prior.get("items"),
+                    calls=calls,
+                    fallback_start=fallback_start,
+                    now=now,
+                )
             record = build_todo_record(
                 args.get("title", ""),
-                args.get("items"),
+                items,
                 source="omh_todo",
                 session_ref=session_ref,
                 deferred_reason=args.get("deferred_reason", ""),
                 template=args.get("template", ""),
                 plan_stage=args.get("plan_stage", ""),
+                dropped=dropped,
             )
             write_todo(default_omh_home(), record)
             payload["status"] = "written"
@@ -274,6 +317,9 @@ def omh_todo_handler(args: dict[str, Any], **kwargs) -> str:
                 session_ref=session_ref,
                 blocked_reason=args.get("blocked_reason", ""),
                 deferred_reason=args.get("deferred_reason", ""),
+                observed_calls=lambda opened, held: _calls_since(
+                    session_ref, opened, held, todo_timestamp()
+                ),
             )
             payload["status"] = "written"
         except TodoContendedError as error:
@@ -296,4 +342,69 @@ def omh_todo_handler(args: dict[str, Any], **kwargs) -> str:
         payload["status"] = "invalid_action"
         payload["error"] = 'action must be set, advance, clear, show, checkpoint, record, or recall'
     payload["todo"] = read_omh_todo(runtime_paths.plugin_home(home_arg), session_ref=session_ref)
+    # What the stop criterion reads for this plan, returned where the writer
+    # can act on it: each done item no recorded fact closes, with the reason.
+    # Omitted when there is none, so a plan without one reads as it did.
+    unverified = _unverified(payload["todo"], session_ref)
+    if unverified:
+        payload["done_unverified"] = unverified
     return json.dumps(attach_public_observation(payload, observation), sort_keys=True)
+
+
+def _declares_done(items: object) -> bool:
+    return isinstance(items, list) and any(
+        isinstance(item, dict) and item.get("state") == "done" for item in items
+    )
+
+
+def _calls_since(
+    session_ref: str, stamp: object, held: set[str], until: str
+) -> list[dict[str, Any]]:
+    """The calls this session recorded in ``(stamp, until]`` that ``held`` does not hold.
+
+    Oldest first, as `todo_evidence.observed_calls` returns them. An
+    unparseable ``stamp`` is no window and binds nothing; ``until`` is the
+    done write's own stamp, so a call can never be bound to a done mark made
+    before it was recorded. A host that cannot bind its home has no records
+    to name, the same answer as a session that ran nothing.
+    """
+    start = _parse_timestamp(stamp) if isinstance(stamp, str) and stamp else None
+    end = _parse_timestamp(until)
+    if start is None or end is None:
+        return []
+    try:
+        hermes_home = runtime_paths.plugin_home(None, hermes=True)
+    except (runtime_paths.RuntimeBindingError, OSError, RuntimeError):
+        return []
+    return observed_calls(
+        hermes_home,
+        session_ref,
+        after_epoch=start.timestamp(),
+        until_epoch=end.timestamp(),
+        exclude=held,
+    )
+
+
+def _earliest_window(items: object, fallback: str) -> str:
+    """The earliest window any stored item opens, so one read covers every item's."""
+    earliest = fallback
+    earliest_at = _parse_timestamp(fallback)
+    for item in items if isinstance(items, list) else []:
+        stamp = item.get("window_start") if isinstance(item, dict) else None
+        parsed = _parse_timestamp(stamp) if isinstance(stamp, str) else None
+        if parsed is not None and (earliest_at is None or parsed < earliest_at):
+            earliest, earliest_at = stamp, parsed
+    return earliest
+
+
+def _unverified(todo: object, session_ref: str) -> list[dict[str, Any]]:
+    try:
+        hermes_home = str(runtime_paths.plugin_home(None, hermes=True))
+    except (runtime_paths.RuntimeBindingError, OSError, RuntimeError):
+        hermes_home = ""
+    if not isinstance(todo, dict):
+        return []
+    return [
+        {key: entry[key] for key in ("item", "state", "reason")}
+        for entry in unverified_done_items(todo, hermes_home=hermes_home, session_ref=session_ref)
+    ]
