@@ -96,9 +96,17 @@ UNIT_STATES: Final = (
 TEAM_STATES: Final = ("running", "done", "blocked")
 CHECK_OUTCOMES: Final = ("passed", "failed", "inconclusive")
 EVIDENCE_KIND: Final = "team_check"
+# Renderable team events: a header (`teammate` + `event`), one plain summary
+# line, and a `detail_ref` into this record. Append-only with a monotonic
+# `seq`; only the newest MAX_TEAM_EVENTS are kept (the oldest drop first), so
+# a record's event history is bounded at 64 entries. Metadata only: no helper
+# summary and no command output is ever an event.
+TEAM_EVENTS: Final = ("started", "finished", "check_passed", "check_failed", "repairing", "blocked", "done")
+MAX_TEAM_EVENTS: Final = 64
 TEAM_CAVEAT: Final = (
-    "Each check runs code the helpers wrote, as your own user account with your real home "
-    "folder. Helpers share this one workspace, so a check can see another part's edits."
+    "Helpers run under this same Hermes profile, and each check runs the code they wrote as your own "
+    "user account with your real home folder. Helpers share this one workspace, so a check can see "
+    "another part's edits."
 )
 # INVARIANT 3 (`tests/test_handoff_safety_contract_enforcement.py`) applied to
 # the one command-execution surface that does NOT go through the evidence
@@ -404,6 +412,38 @@ def _reserve(unit: dict[str, Any], now: float, *, repairs_check: Mapping[str, An
     return attempt
 
 
+def _emit(
+    record: dict[str, Any],
+    now: float,
+    *,
+    unit: Mapping[str, Any] | None,
+    event: str,
+    summary: str,
+    detail_ref: str,
+) -> None:
+    """Append one renderable event; `seq` never repeats, even after the cap drops old ones."""
+    seq = int(record.get("next_seq", 1))
+    record["next_seq"] = seq + 1
+    events = record.setdefault("events", [])
+    events.append({
+        "seq": seq,
+        "at": _iso(now),
+        "unit_id": str(unit["unit_id"]) if unit is not None else "",
+        "teammate": str(unit["title"]) if unit is not None else "The team",
+        "event": event,
+        "summary": summary,
+        "detail_ref": detail_ref,
+    })
+    del events[:-MAX_TEAM_EVENTS]
+
+
+def _block(record: dict[str, Any], unit: dict[str, Any], now: float, blocked: dict[str, Any]) -> None:
+    unit["blocked"] = blocked
+    why = _BLOCKED_SAY.get(str(blocked.get("reason")), "it cannot continue")
+    _emit(record, now, unit=unit, event="blocked", summary=f"Stopped: {why}.",
+          detail_ref=f"{record['team_id']}/{unit['unit_id']}/blocked")
+
+
 def _iso(epoch: float) -> str:
     return datetime.fromtimestamp(epoch, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -540,6 +580,8 @@ def team_start(
             "commands_digest": frozen_commands_digest(validated),
             "check_timeout_seconds": TEAM_CHECK_TIMEOUT_SECONDS,
             "units": [{**unit, "attempts": [], "blocked": None, "lease": None} for unit in validated],
+            "events": [],
+            "next_seq": 1,
         }
         entries = []
         for unit in record["units"]:
@@ -569,7 +611,7 @@ def _reemit(record: dict[str, Any], now: float, *, reserved_now: frozenset[str] 
             continue
         attempt["reemits"] = int(attempt.get("reemits", 0)) + 1
         if attempt["reemits"] > MAX_REEMITS:
-            unit["blocked"] = {"reason": "dispatch_not_observed", "observed_at": _iso(now)}
+            _block(record, unit, now, {"reason": "dispatch_not_observed", "observed_at": _iso(now)})
             continue
         entries.append(_delegate_entry(str(record["team_id"]), unit, attempt))
     return entries
@@ -599,7 +641,7 @@ def _in_flight(record: dict[str, Any], now: float) -> list[str]:
             continue
         started = _epoch(attempt["dispatch"].get("dispatched_at"))
         if started is not None and now - started > DELEGATION_STALE_SECONDS:
-            unit["blocked"] = {"reason": "delegation_not_returned", "observed_at": _iso(now)}
+            _block(record, unit, now, {"reason": "delegation_not_returned", "observed_at": _iso(now)})
             continue
         flying.append(str(unit["unit_id"]))
     return flying
@@ -613,7 +655,7 @@ def _lease_live(unit: Mapping[str, Any], now: float) -> bool:
     return started is not None and now - started < TEAM_CHECK_TIMEOUT_SECONDS + TEAM_LEASE_MARGIN_SECONDS
 
 
-def team_reconcile(ctx: TeamContext, *, team_id: object) -> dict[str, Any]:
+def team_reconcile(ctx: TeamContext, *, team_id: object, since_seq: object = 0) -> dict[str, Any]:
     # Phase A, under the lock: barrier, then lease every unit that needs a check.
     with locked_team(ctx.omh_home, ctx.session_ref, str(team_id)):
         path, record = _load(ctx, team_id)
@@ -622,7 +664,8 @@ def team_reconcile(ctx: TeamContext, *, team_id: object) -> dict[str, Any]:
         if flying:
             write_team(path, record)
             return _result(record, "team_reconcile", entries=[], reason="delegations_in_flight",
-                           say=f"{len(flying)} part(s) are still being worked on; nothing is checked until they come back.")
+                           say=f"{len(flying)} part(s) are still being worked on; nothing is checked until they come back.",
+                           since_seq=since_seq)
         nonce = secrets.token_hex(8)
         to_check: list[str] = []
         busy: list[str] = []
@@ -665,9 +708,13 @@ def team_reconcile(ctx: TeamContext, *, team_id: object) -> dict[str, Any]:
             for attempt in (unit.get("attempts") or [])[before[str(unit["unit_id"])]:]
         )
         entries.extend(_reemit(record, now, reserved_now=reserved_now))
+        if team_state(record) == "done" and not any(item["event"] == "done" for item in record.get("events", [])):
+            _emit(record, now, unit=None, event="done",
+                  summary=f"All {len(record['units'])} parts passed their checks.", detail_ref=str(record["team_id"]))
         write_team(path, record)
     reason = "check_in_progress" if busy and not to_check else ""
-    return _result(record, "team_reconcile", entries=entries, reason=reason, say=_say(record, events=events))
+    return _result(record, "team_reconcile", entries=entries, reason=reason, say=_say(record, events=events),
+                   since_seq=since_seq)
 
 
 def _run_check(ctx: TeamContext, command: str, workdir: Path) -> dict[str, Any]:
@@ -710,23 +757,31 @@ def _apply_check(
         attempt.setdefault("inconclusive", []).append(
             {"reason": result["reason"], "observed_at": result["observed_at"]})
         if len(attempt["inconclusive"]) >= MAX_INCONCLUSIVE_PER_ATTEMPT:
-            unit["blocked"] = {"reason": "check_inconclusive", "last_reason": result["reason"],
-                               "observed_at": result["observed_at"]}
+            _block(record, unit, now, {"reason": "check_inconclusive", "last_reason": result["reason"],
+                                       "observed_at": result["observed_at"]})
             return [f"Stopped '{title}': its check could not give a clear answer ({_REASON_SAY[result['reason']]})."]
         return [f"The check for '{title}' could not give a clear answer ({_REASON_SAY[result['reason']]}); "
                 "no try was used, and it will run again."]
     attempt["check"] = dict(result)
+    check_ref = f"{attempt_key(str(record['team_id']), str(unit['unit_id']), int(attempt['n']))}/check"
     if result["outcome"] == "passed":
+        _emit(record, now, unit=unit, event="check_passed", summary="Its check passed (exit code 0).",
+              detail_ref=check_ref)
         return [f"'{title}' passed its check."]
+    _emit(record, now, unit=unit, event="check_failed",
+          summary=f"Its check failed with exit code {result['exit_code']}.", detail_ref=check_ref)
     if int(attempt["n"]) < _attempt_limit(record):
         repair = _reserve(unit, now, repairs_check=result)
         entries.append(_delegate_entry(str(record["team_id"]), unit, repair))
+        _emit(record, now, unit=unit, event="repairing",
+              summary=f"Sent back for a fix, try {repair['n']} of {_attempt_limit(record)}.",
+              detail_ref=attempt_key(str(record["team_id"]), str(unit["unit_id"]), int(repair["n"])))
         return [f"The check for '{title}' failed (exit code {result['exit_code']}); sending it back for a fix, "
                 f"try {repair['n']} of {_attempt_limit(record)}."]
-    unit["blocked"] = {
+    _block(record, unit, now, {
         "reason": "repair_budget_exhausted",
         "last_check": {key: result[key] for key in ("command", "exit_code", "observed_at")},
-    }
+    })
     return [f"Stopped '{title}': it still fails its check after {attempt['n']} tries "
             f"(exit code {result['exit_code']})."]
 
@@ -767,6 +822,9 @@ def observe_dispatch(omh_home: Path, session_ref: str, *, child_session_id: obje
         if attempt is None or attempt["n"] != n or attempt.get("dispatch") or attempt.get("returned_at"):
             return False
         attempt["dispatch"] = {"child_session_id": child_session_id.strip()[:160], "dispatched_at": _iso(now)}
+        _emit(record, now, unit=unit, event="started",
+              summary="Started a fix for this part." if n > 1 else "Started working on this part.",
+              detail_ref=attempt_key(team_id, unit_id, n))
         write_team(path, record)
     return True
 
@@ -789,6 +847,8 @@ def observe_return(omh_home: Path, session_ref: str, *, child_session_id: object
                 dispatch = attempt.get("dispatch") if attempt else None
                 if dispatch and dispatch.get("child_session_id") == child and not attempt.get("returned_at"):
                     attempt["returned_at"] = _iso(now)
+                    _emit(record, now, unit=unit, event="finished", summary="Came back; its check runs next.",
+                          detail_ref=attempt_key(str(record["team_id"]), str(unit["unit_id"]), int(attempt["n"])))
                     write_team(path, record)
                     return True
     return False
@@ -799,9 +859,11 @@ def observe_return(omh_home: Path, session_ref: str, *, child_session_id: object
 # --------------------------------------------------------------------------
 
 
-def team_status(ctx: TeamContext, *, team_id: object, cost: Mapping[str, Any] | None = None) -> dict[str, Any]:
+def team_status(
+    ctx: TeamContext, *, team_id: object, cost: Mapping[str, Any] | None = None, since_seq: object = 0,
+) -> dict[str, Any]:
     _, record = _load(ctx, team_id)
-    result = _result(record, "team_status", entries=[], say=_say(record))
+    result = _result(record, "team_status", entries=[], say=_say(record), since_seq=since_seq)
     result["cost"] = dict(cost) if cost is not None else {"status": "not_observed"}
     result["caveat"] = TEAM_CAVEAT
     result["check_timeout_seconds"] = TEAM_CHECK_TIMEOUT_SECONDS
@@ -835,6 +897,7 @@ def _result(
     entries: list[dict[str, str]],
     say: str,
     reason: str = "",
+    since_seq: object = 0,
 ) -> dict[str, Any]:
     units = [_unit_view(record, unit) for unit in record["units"]]
     counts = {state: 0 for state in UNIT_STATES}
@@ -851,9 +914,22 @@ def _result(
         "say": say,
         "delegate_task": {"tool_name": "delegate_task", "arguments": {"tasks": entries}} if entries else None,
     }
+    result.update(_events_since(record, since_seq))
     if reason:
         result["reason"] = reason
     return result
+
+
+def _events_since(record: Mapping[str, Any], since_seq: object) -> dict[str, Any]:
+    """Events newer than the caller's last seen `seq`, and whether the cap dropped some."""
+    seen = since_seq if isinstance(since_seq, int) and not isinstance(since_seq, bool) and since_seq > 0 else 0
+    events = [dict(item) for item in record.get("events") or [] if int(item["seq"]) > seen]
+    oldest = int(events[0]["seq"]) if events else int(record.get("next_seq", 1))
+    return {
+        "events": events,
+        "last_seq": int(record.get("next_seq", 1)) - 1,
+        "events_truncated": oldest > seen + 1,
+    }
 
 
 def _say(record: Mapping[str, Any], *, events: list[str] | None = None, resumed: bool = False) -> str:

@@ -198,6 +198,12 @@ All notable changes will be documented here.
     wrote as the person's own user with the real home folder. Accepted lanes
     carry `{kind: team_check, ref: <team>/<unit>/attempt-<n>/check}` for the
     matching todo item.
+  - The record keeps a bounded list (newest 64) of renderable team events --
+    `started`, `finished`, `check_passed`, `check_failed`, `repairing`,
+    `blocked`, `done` -- each with a monotonic `seq`, the part's title as the
+    teammate, one plain summary line and a reference into the record.
+    `team_reconcile` and `team_status` return the events newer than the
+    caller's `since_seq`.
 
   `omh_agent_board` is unchanged, pinned byte for byte by a fixture captured
   before this change. Board (kanban) lanes are not yet checked by `omh_team`.

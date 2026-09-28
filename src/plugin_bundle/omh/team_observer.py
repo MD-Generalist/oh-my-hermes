@@ -49,6 +49,9 @@ def observe_team_return(kwargs: dict[str, object]) -> bool:
     try:
         from omh.workflows import team
 
+        # Most homes never start a team: one stat before any session lookup.
+        if not (runtime_paths.plugin_home(kwargs.get("omh_home")) / "runtime" / "teams").is_dir():
+            return False
         home, parent = _parent(kwargs)
         if not parent or not team.teams_dir(home, parent).is_dir():
             return False

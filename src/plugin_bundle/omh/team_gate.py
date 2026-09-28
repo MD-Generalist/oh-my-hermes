@@ -66,6 +66,13 @@ def team_start_directive(
     commands = team_start_commands(tool_input)
     if not commands:
         return None
+    plan_ref = tool_input.get("plan_ref") if isinstance(tool_input, Mapping) else None
+    if not isinstance(plan_ref, str) or not plan_ref.strip():
+        # A start without a plan reference cannot succeed -- the engine
+        # refuses it before anything is frozen and hands back the accepted
+        # plan's reference -- so asking the person here would only make them
+        # answer the same list twice.
+        return None
     if not escalation_allowed:
         return {"action": "block", "message": TEAM_START_UNATTENDED_MESSAGE}
     listed = "\n".join(f"{index}. {command}" for index, command in enumerate(commands, start=1))

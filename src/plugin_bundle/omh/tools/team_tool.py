@@ -32,7 +32,7 @@ OMH_TEAM_SCHEMA = {
         "plan_ref and a check command written word for word in that plan; the person approves the "
         "command list. Dispatch the returned delegate_task entries unchanged, call team_reconcile "
         "after helpers return, and follow its fix-up entries until team_state is done or blocked. "
-        "Relay each say line."
+        "Relay each say line; events newer than since_seq describe each helper's progress."
     ),
     "parameters": {
         "type": "object",
@@ -54,6 +54,7 @@ OMH_TEAM_SCHEMA = {
                 },
             },
             "max_repair_attempts": {"type": "integer"},
+            "since_seq": {"type": "integer"},
         },
         "required": ["action", "team_id"],
         "additionalProperties": False,
@@ -111,9 +112,10 @@ def omh_team_handler(args: Mapping[str, object], **kwargs: object) -> str:
                     payload["plan_ref"] = plan["items_digest"]
                 return json.dumps(payload, sort_keys=True)
         elif action == "team_reconcile":
-            result = team.team_reconcile(ctx, team_id=args.get("team_id"))
+            result = team.team_reconcile(ctx, team_id=args.get("team_id"), since_seq=args.get("since_seq", 0))
         else:
-            result = team.team_status(ctx, team_id=args.get("team_id"), cost=_cost(hermes_home, omh_home, durable))
+            result = team.team_status(ctx, team_id=args.get("team_id"), cost=_cost(hermes_home, omh_home, durable),
+                                      since_seq=args.get("since_seq", 0))
         return json.dumps(result, sort_keys=True)
     except team.TeamRefusal as refusal:
         return json.dumps(team.refusal_result(action, refusal), sort_keys=True)

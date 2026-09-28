@@ -221,15 +221,15 @@ SKILL_INDEX_LINE_CHAR_LIMIT = 100
 # alternatives were a primer line (19 chars of headroom left) or a
 # `pre_llm_call` line, both paid on every turn and both the channel the reply
 # rules keep out of. Re-derived from the producer.
-# 61183 -> 62291: the `omh_team` schema (1108), a new tool rather than three
+# 61183 -> 62386: the `omh_team` schema (1203), a new tool rather than three
 # more actions on `omh_agent_board`, because `omh_team` runs check commands and
 # `omh_agent_board`'s description promises it runs nothing; widening that tool
 # would have made its own description false and its outputs no longer
 # byte-identical. The description carries the whole loop (start from the
 # accepted plan, dispatch unchanged, reconcile after helpers return, stop at
-# done or blocked, relay `say`) so no per-turn primer line is added for it.
-# Re-derived from the producer.
-PLUGIN_TOOL_SCHEMA_CHAR_LIMIT = 62291
+# done or blocked, relay `say`, read events newer than `since_seq`) so no
+# per-turn primer line is added for it. Re-derived from the producer.
+PLUGIN_TOOL_SCHEMA_CHAR_LIMIT = 62386
 # The largest fenced `pre_llm_call` context over the named scenario set in
 # `src/maintenance/per_turn_context.py` (the `all_surfaces` scenario). Hermes
 # replays each turn's injection from `api_content` on every later turn, so this

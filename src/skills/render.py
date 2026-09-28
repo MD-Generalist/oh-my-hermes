@@ -5039,7 +5039,7 @@ Load this reference when an accepted `ultrawork` plan splits into in-session `de
 ## Before `team_start`
 
 - Every lane has one `verification_command`, and that exact text is written in the plan the person accepted: put it in the lane's `omh_todo` item before the plan is accepted. A command that is not word for word in the accepted plan is refused as `command_not_in_accepted_plan`.
-- The plan is this session's own `omh_todo` plan with `plan_stage=accepted`. Pass its reference as `plan_ref`; a call without the right one is refused as `plan_ref_mismatch` and the refusal carries the accepted plan's reference.
+- The plan is this session's own `omh_todo` plan with `plan_stage=accepted`. Call `team_start` once without `plan_ref`: it is refused as `plan_ref_mismatch`, starts nothing, asks the person nothing, and carries the accepted plan's reference. Repeat the same call with that `plan_ref`.
 - A check is one plain command: no shell, no `sh`/`bash`/`env` or `python -c` as the program, no pipes or `;`, no forge CLI, and no `git` verb that moves a remote.
 - `team_start` asks the person to approve the exact command list. Where nobody can answer, it is refused; report that instead of retrying.
 

@@ -360,7 +360,8 @@ class T8ApprovalBinding(TeamHarness):
         self.assertEqual(team.validate_team_command("npm test"), ["npm", "test"])
 
     def test_start_escalates_to_the_person_with_the_exact_commands(self) -> None:
-        args = {"action": "team_start", "team_id": "t1", "units": [unit("a", CHECK_A), unit("b", CHECK_B)]}
+        args = {"action": "team_start", "team_id": "t1", "plan_ref": "ref",
+                "units": [unit("a", CHECK_A), unit("b", CHECK_B)]}
         directive = team_gate.team_start_directive(tool_name="omh_team", tool_input=args, escalation_allowed=True)
         assert directive is not None
         self.assertEqual(directive["action"], "approve")
@@ -369,7 +370,8 @@ class T8ApprovalBinding(TeamHarness):
         self.assertEqual(directive["rule_key"], team.approval_rule_key([CHECK_A, CHECK_B]))
         unattended = team_gate.team_start_directive(tool_name="omh_team", tool_input=args, escalation_allowed=False)
         self.assertEqual(unattended["action"], "block")
-        for other in ({**args, "action": "team_reconcile"}, {**args, "units": []}):
+        # No plan_ref: the engine refuses before freezing anything, so the person is not asked twice.
+        for other in ({**args, "action": "team_reconcile"}, {**args, "units": []}, {**args, "plan_ref": ""}):
             self.assertIsNone(team_gate.team_start_directive(tool_name="omh_team", tool_input=other,
                                                              escalation_allowed=True))
         self.assertIsNone(team_gate.team_start_directive(tool_name="omh_agent_board", tool_input=args,
@@ -380,7 +382,8 @@ class T8ApprovalBinding(TeamHarness):
 
         with tempfile.TemporaryDirectory() as home:
             directive = pre_tool_call(tool_name="omh_team", session_id="s-approve", omh_home=home, hermes_home=home,
-                                      args={"action": "team_start", "team_id": "t1", "units": [unit("a", CHECK_A)]})
+                                      args={"action": "team_start", "team_id": "t1", "plan_ref": "ref",
+                                            "units": [unit("a", CHECK_A)]})
         assert directive is not None
         self.assertEqual(directive["action"], "approve")
         self.assertIn(CHECK_A, directive["message"])
@@ -505,6 +508,67 @@ class TeamStatusSpeaksPlainly(TeamHarness):
                 self.assertNotIn(word, text)
 
 
+class TeamEventsAreRenderable(TeamHarness):
+    """A header (teammate + event), one plain summary line, and a reference: nothing else."""
+
+    def lifecycle(self) -> list[dict[str, object]]:
+        self.runner = FakeRunner({CHECK_A: [exited(1), exited(0)]})
+        self.dispatch_all(self.start([unit("a", CHECK_A)]))
+        self.dispatch_all(self.reconcile())
+        return list(self.reconcile()["events"])
+
+    def test_one_lifecycle_in_order_with_a_monotonic_seq(self) -> None:
+        events = self.lifecycle()
+        self.assertEqual([item["event"] for item in events],
+                         ["started", "finished", "check_failed", "repairing", "started", "finished",
+                          "check_passed", "done"])
+        seqs = [item["seq"] for item in events]
+        self.assertEqual(seqs, sorted(set(seqs)))
+        self.assertEqual(seqs, list(range(1, len(seqs) + 1)))
+        for item in events:
+            self.assertEqual(set(item), {"seq", "at", "unit_id", "teammate", "event", "summary", "detail_ref"})
+            self.assertIn(item["event"], team.TEAM_EVENTS)
+            self.assertNotEqual(item["teammate"], item["unit_id"])
+        failed = events[2]
+        self.assertEqual((failed["teammate"], failed["detail_ref"]), ("Part a", "t1/a/attempt-1/check"))
+        self.assertEqual(events[-1]["teammate"], "The team")
+
+    def test_since_seq_returns_only_newer_events(self) -> None:
+        events = self.lifecycle()
+        status = team.team_status(self.ctx, team_id="t1", since_seq=5)
+        self.assertEqual([item["seq"] for item in status["events"]], [item["seq"] for item in events if item["seq"] > 5])
+        self.assertEqual(status["last_seq"], events[-1]["seq"])
+        self.assertFalse(status["events_truncated"])
+        self.assertEqual(team.team_status(self.ctx, team_id="t1", since_seq=status["last_seq"])["events"], [])
+
+    def test_every_summary_passes_the_reply_lint(self) -> None:
+        from omh.quality.reply_lint import build_reply_lint
+
+        events = self.lifecycle()
+        self.runner = FakeRunner({CHECK_B: [exited(4)]})
+        record = self.record()
+        team._block(record, record["units"][0], self.now(), {"reason": "dispatch_not_observed"})
+        summaries = {item["summary"] for item in events} | {record["events"][-1]["summary"]}
+        summaries |= {f"Stopped: {why}." for why in team._BLOCKED_SAY.values()}
+        for summary in summaries:
+            with self.subTest(summary=summary):
+                self.assertTrue(build_reply_lint(summary)["ok"], build_reply_lint(summary)["findings"])
+                self.assertNotIn("\n", summary)
+
+    def test_the_list_is_capped_and_seq_keeps_counting(self) -> None:
+        self.start([unit("a", CHECK_A)])
+        record = self.record()
+        for _ in range(team.MAX_TEAM_EVENTS + 6):
+            team._emit(record, self.now(), unit=record["units"][0], event="started",
+                       summary="Started working on this part.", detail_ref="t1/a/attempt-1")
+        self.assertEqual(len(record["events"]), team.MAX_TEAM_EVENTS)
+        self.assertEqual(record["events"][0]["seq"], 7)
+        self.assertEqual(record["events"][-1]["seq"], team.MAX_TEAM_EVENTS + 6)
+        view = team._events_since(record, 0)
+        self.assertTrue(view["events_truncated"])
+        self.assertFalse(team._events_since(record, 6)["events_truncated"])
+
+
 class TeamToolHandler(unittest.TestCase):
     """The plugin handler end to end: plan read, start, and the cost read on status."""
 
@@ -534,6 +598,24 @@ class TeamToolHandler(unittest.TestCase):
         self.assertEqual(started["status"], "ok")
         self.assertEqual(started["team_state"], "running")
         self.assertEqual(len(started["delegate_task"]["arguments"]["tasks"]), 1)
+
+
+class HostLifecycleHooksDriveTheBarrier(TeamHarness):
+    """The registered `subagent_start` / `subagent_stop` hooks, not the engine calls, move a helper."""
+
+    def test_hooks_bind_start_and_return(self) -> None:
+        from omh.plugin_bundle.omh.hooks.session_hooks import subagent_start, subagent_stop
+
+        nudge_budget.reset_nudge_budget()
+        self.addCleanup(nudge_budget.reset_nudge_budget)
+        goal = self.entries(self.start([unit("a", CHECK_A)]))[0]["goal"]
+        common = {"omh_home": str(self.home), "hermes_home": str(self.home), "parent_session_id": SESSION}
+        subagent_start(child_session_id="hook-child", child_goal=goal, **common)
+        self.assertEqual(self.states(team.team_status(self.ctx, team_id="t1")), {"a": "dispatched"})
+        subagent_stop(child_session_id="other-child", **common)
+        self.assertEqual(self.states(team.team_status(self.ctx, team_id="t1")), {"a": "dispatched"})
+        subagent_stop(child_session_id="hook-child", **common)
+        self.assertEqual(self.states(team.team_status(self.ctx, team_id="t1")), {"a": "awaiting_check"})
 
 
 class AgentBoardStaysByteIdentical(unittest.TestCase):
