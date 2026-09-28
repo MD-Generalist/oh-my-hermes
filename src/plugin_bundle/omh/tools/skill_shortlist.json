@@ -84,7 +84,7 @@
 }
 },
 {
-"anchors":"applicabl apply blocker book cours creator gap highest hit immediat immediately jit knowledg learn leverag payoff podcast problem recommend resourc right specific target topic unblock week",
+"anchors":"applicabl apply blocker book cours creator gap highest hit immediat immediately jit knowledg learn leverag payoff podcast problem recommend resourc right specific target topic unblock",
 "hangul":"강의 당장 도움 되는 리에 리프 목표 브리 스트 에이 용할 이터 적용 주제 캐스 크리 팟캐 학습",
 "hangul_anchors":"강의 당장 도움 되는 리에 리프 목표 브리 에이 용할 이터 적용 주제 캐스 크리 팟캐 학습",
 "label":"omh-jit-learn",
@@ -149,7 +149,7 @@
 }
 },
 {
-"anchors":"best citation cite current diversity documentation fresh gap guidanc internet latest library official onlin practic pric retrieval say scan search still today true upstream week",
+"anchors":"best citation cite current diversity documentation fresh gap guidanc internet latest library official onlin practic pric retrieval say scan search still today true upstream",
 "hangul":"검색 색해 서치 웹서 인터 자료 찾아 최신 출처 터넷",
 "hangul_anchors":"검색 색해 서치 웹서 인터 자료 찾아 최신 출처 터넷",
 "label":"omh-web-research",
@@ -200,7 +200,7 @@
 }
 },
 {
-"anchors":"business comparison competitiv competitor customer data feedback landscap market pric say scan search sizing trend vendor",
+"anchors":"business comparison competitiv competitor customer feedback landscap market pric say scan search sizing trend vendor",
 "hangul":"고객 근거 데이 드백 서치 이터 자료 조사 추세 피드",
 "hangul_anchors":"고객 근거 데이 드백 서치 이터 자료 조사 추세 피드",
 "label":"omh-research-brief",
@@ -364,7 +364,7 @@
 }
 },
 {
-"anchors":"assessment cours curriculum hire learn lesson objectiv program quizz six syllabus train week weekly workshop",
+"anchors":"assessment cours curriculum hire learn lesson objectiv program quizz six syllabus train weekly workshop",
 "hangul":"계획 리큘 목표 설계 커리 큘럼 평가 학습",
 "hangul_anchors":"계획 리큘 목표 설계 커리 큘럼 평가 학습",
 "label":"omh-curriculum-design",
@@ -428,7 +428,7 @@
 }
 },
 {
-"anchors":"blocker leadership operat ops priority queu week weekly",
+"anchors":"blocker leadership operat ops priority queu weekly",
 "hangul":"로커 리뷰 리스 리즈 릴리 블로 상태 선순 순위 스크 우선 운영 주간",
 "hangul_anchors":"로커 리스 리즈 릴리 블로 상태 선순 순위 스크 우선 운영 주간",
 "label":"omh-ops-review",
@@ -888,7 +888,7 @@
 }
 },
 {
-"anchors":"budget downtim followup incident last left mortem outag post postmortem recur reliability remediation sla slo sre stop target uptim week",
+"anchors":"budget downtim followup incident last left mortem outag post postmortem recur reliability remediation sla slo sre stop target uptim",
 "hangul":"검증 러버 뢰성 리뷰 모템 방지 버짓 분석 비스 사후 서비 스트 신뢰 에러 장애 재발 트모 포스 회고",
 "hangul_anchors":"검증 러버 뢰성 모템 방지 버짓 분석 비스 사후 서비 신뢰 에러 장애 재발 트모 포스 회고",
 "label":"omh-reliability-review",
@@ -1089,7 +1089,7 @@
 }
 },
 {
-"anchors":"budget clean cleanup codebas problem quick rank week win worst",
+"anchors":"budget clean cleanup codebas problem quick rank win worst",
 "hangul":"감사 기술 부채 사해 술부 원장 장부 점검",
 "hangul_anchors":"감사 기술 부채 사해 술부 원장 장부 점검",
 "label":"omh-tech-debt-audit",
@@ -1550,7 +1550,23 @@
 }
 },
 {
-"anchors":"bad five number percent restor semver send week yesterday",
+"anchors":"backfill behind break catch column count dag dagster dashboard doubl drop elt etl fell idempotency idempotent last lineag load nightly number rerun row stream twic warehous",
+"hangul":"",
+"hangul_anchors":"",
+"label":"omh-data-pipelines",
+"name":"data-pipelines",
+"situation":"Data pipeline work -- an ETL or streaming job, a backfill or replay, duplicate events, a schema change downstream, a lineage question, a data-quality regression",
+"terms":{
+"1":"contract impact miss observ output pass past plan read reader repair unknown work",
+"2":"after arriv behind bound break catch chang column count dag dagster dashboard dead doubl downstream drop evolution exactly fell gate last late letter model nightly number question queu regression report topic twic week without",
+"3":"airflow batch check dbt elt idempotency idempotent kafka rerun row run spark warehous",
+"4":"backfill consumer duplicat etl lineag load quality replay schema stream",
+"6":"event job",
+"7":"data pipelin"
+}
+},
+{
+"anchors":"bad five number percent restor semver send yesterday",
 "hangul":"",
 "hangul_anchors":"",
 "label":"omh-release-cut",
@@ -1953,7 +1969,7 @@
 }
 },
 {
-"anchors":"adopt adoption affordabl agentchat agy antigravity assistant audio auth auto awar backend barg behavior blockchain bridg chainlink chat clawsocial cli comparison composio control cost crustocean crypto cryptocurrency data demo devic discovery enough evaluat gateway genai generat generation graph handl home identity integration integrity keychain maco mailbox matrix messag microsoft minivers monero multimodal nextcloud oauth oci onequery oracl pair peer platform plugin privat real realtim receipt reliabl safety screenshot smart social solana spoken sql stack text transaction trial universal video voic weather websocket windy windymail wire workspac wxtrain xmr",
+"anchors":"adopt adoption affordabl agentchat agy antigravity assistant audio auth auto awar backend barg behavior blockchain bridg chainlink chat clawsocial cli comparison composio control cost crustocean crypto cryptocurrency demo devic discovery enough evaluat gateway genai generat generation graph handl home identity integration integrity keychain maco mailbox matrix messag microsoft minivers monero multimodal nextcloud oauth oci onequery oracl pair peer platform plugin privat real realtim receipt reliabl safety screenshot smart social solana spoken sql stack text transaction trial universal video voic weather websocket windy windymail wire workspac wxtrain xmr",
 "hangul":"그인 기기 기준 넥터 데모 도입 라우 러그 리스 마트 멀티 모달 비도 비용 생성 스마 스크 스턴 시스 어시 연동 영상 외부 우팅 인증 자동 제어 제품 준비 채택 커넥 턴트 트홈 티모 플러 홈어",
 "hangul_anchors":"그인 기기 기준 넥터 데모 도입 라우 러그 리스 마트 멀티 모달 비도 비용 생성 스마 스크 스턴 시스 어시 연동 영상 외부 우팅 인증 자동 제어 제품 채택 커넥 턴트 트홈 티모 플러 홈어",
 "label":"omh-external-connector-readiness",
@@ -2039,7 +2055,7 @@
 }
 },
 {
-"anchors":"analyz anomaly causal causality chart cohort column correlation csv data dataset delta executiv json log retention schema segment spreadsheet tabl trend",
+"anchors":"analyz anomaly causal causality chart cohort column correlation csv dataset delta executiv json log retention schema segment spreadsheet tabl trend",
 "hangul":"과관 관계 관관 데이 델타 로그 분석 상관 상치 오류 요약 이상 이터 인과 전환 차트 추세 컬럼 패턴 환율",
 "hangul_anchors":"과관 관계 관관 데이 델타 로그 분석 상관 상치 오류 이상 이터 인과 전환 차트 추세 컬럼 패턴 환율",
 "label":"omh-data-analysis",
@@ -2122,7 +2138,7 @@
 }
 },
 {
-"anchors":"ai blocker ce codex dashboard est good ist los manager ops productiv productivity progress qu qui se throughput view week",
+"anchors":"ai blocker ce codex dashboard est good ist los manager ops productiv productivity progress qu qui se throughput view",
 "hangul":"관리 까지 는지 덱스 됐는 됐어 되었 디까 리량 리뷰 리서 리자 리핑 무슨 뭐해 뭔일 브리 상황 서치 슨일 어디 업상 업이 었는 이노 이야 일이 일임 입장 작업 진행 처리 코덱 코딩 품질 행됐 행되 행상",
 "hangul_anchors":"관리 까지 는지 덱스 됐는 됐어 되었 디까 리량 리서 리자 리핑 무슨 뭐해 뭔일 브리 상황 서치 슨일 어디 업상 업이 었는 이노 이야 일이 일임 입장 작업 진행 처리 코덱 코딩 품질 행됐 행되 행상",
 "label":"omh-agent-ops-review",

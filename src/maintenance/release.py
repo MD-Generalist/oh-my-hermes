@@ -164,7 +164,9 @@ ROLE_CONTEXT_CHAR_LIMIT = 2600
 # name and the visible description window. Re-derived from the producer.
 # 12031 -> 12114: one index line for the new `iac-change` skill (#1566); the
 # name and the visible description window. Re-derived from the producer.
-SKILL_INDEX_CHAR_LIMIT = 12114
+# 12114 -> 12201: one index line for the new `data-pipelines` skill (#1565); the
+# name and the visible description window. Re-derived from the producer.
+SKILL_INDEX_CHAR_LIMIT = 12201
 # The longest single skill line in that index. Every description is already cut
 # to 60 characters, so what moves this is a longer skill name.
 SKILL_INDEX_LINE_CHAR_LIMIT = 100
@@ -538,7 +540,10 @@ PRE_LLM_CALL_CONTEXT_FALLBACK_CHAR_LIMIT = 6917
 # 467905 -> 471620: one capability row for the new `iac-change` skill
 # (#1566) plus its siblings' reciprocal boundary lines. Re-derived from the
 # producer.
-FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 471620
+# 471620 -> 475200: one capability row for the new `data-pipelines` skill
+# (#1565) plus its siblings' reciprocal boundary lines. Re-derived from the
+# producer.
+FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 475200
 FULL_CAPABILITY_SKILL_ITEM_CHAR_LIMIT = 9000
 # 100000 -> 102070: the same three domain workflows each add one standalone
 # capability row, again measured on the merged tree; warranted growth for three
@@ -612,7 +617,10 @@ FULL_CAPABILITY_SKILL_ITEM_CHAR_LIMIT = 9000
 # 129488 -> 130414: one standalone capability row for the new `iac-change`
 # skill (#1566) plus its siblings' reciprocal boundary lines; warranted
 # growth. Re-derived from the producer.
-STANDALONE_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 130414
+# 130414 -> 131352: one standalone capability row for the new `data-pipelines`
+# skill (#1565) plus its siblings' reciprocal boundary lines; warranted
+# growth. Re-derived from the producer.
+STANDALONE_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 131352
 STANDALONE_CAPABILITY_SKILL_ITEM_CHAR_LIMIT = 2200
 # ULW fold context ceiling (issue #954, PR D). The limit is the pre-D measured
 # value of the full profile's `skill_body` chars on `main` @ acb9a060, in the
@@ -1663,10 +1671,17 @@ STANDALONE_CAPABILITY_SKILL_ITEM_CHAR_LIMIT = 2200
 # morning-brief, parallel-tools, ultrawork, websearch-setup -- by ten chars
 # net. The floor moves with the producer so later growth is measured from
 # here rather than from a number the pack no longer reaches.
-FULL_PROFILE_SKILL_BODY_MEASURED_CHARS = 1044170
+# 1044170 -> 1129901 (measured; the ceiling 1150000 -> 1250000): the new
+# `security-event-response`, `release-cut`, `agent-instructions`,
+# `iac-change` and `data-pipelines` bodies (#1694, #1693, #1713, #1566,
+# #1565) and their lane siblings' member lists took the pack to 1,129,901,
+# where `test_one_more_ordinary_lane_member_fits_every_body_budget` found
+# that the largest lane-mate copy (`ultrawork`, +26,322) no longer fits.
+# 1,129,901 plus 10%, rounded up to the next 50,000, is 1,250,000.
+FULL_PROFILE_SKILL_BODY_MEASURED_CHARS = 1129901
 FULL_PROFILE_SKILL_BODY_HEADROOM_PERCENT = 10
 FULL_PROFILE_SKILL_BODY_CEILING_STEP_CHARS = 50000
-FULL_PROFILE_SKILL_BODY_CHAR_LIMIT = 1150000
+FULL_PROFILE_SKILL_BODY_CHAR_LIMIT = 1250000
 FULL_PROFILE_SKILL_BODY_REVIEWED_EXCEPTION_CHARS = 0
 # Repeated bytes: characters of full-profile SKILL.md `##` sections that are
 # byte-identical to the same section in another skill -- the second and later

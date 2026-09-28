@@ -29,7 +29,7 @@
     "omh-ask/SKILL.md": "30285742b9ccd95b3bca9617bef5ad5d6d1e17a135550d486d6bd3c7d405708c",
     "omh-award-bar-score/SKILL.md": "66cd3b39500f16e05ffcd45510602af5dd0af30b7e6e574a0f0384367971c35c",
     "omh-award-bar-score/references/award-judging-model.md": "3eb04c94402da5efaa2d3bc18bb66acd1121b234a8b82a47a878c5d01725be50",
-    "omh-backend/SKILL.md": "c12e6b0ed7484c9dbc2740f3a831dc28f7975acf647d0c8985c12a98564be4d0",
+    "omh-backend/SKILL.md": "6a0e7be4fe872212664357f87339bbf2f25d115b5deaf6be3c211af61f20c9e3",
     "omh-backend/references/consumer-impact.md": "843ec98391847e3de4e28057ab4aeb95d24a4d8e593b1c812e630723a4f006b9",
     "omh-backend/references/schema-migration.md": "e20aebd284f51d18962e28959b2e35702c9662e4d3d13fb1854c60f1279a6054",
     "omh-backend/references/service-contract.md": "984cd9cb634b88a505cbd76214e281b2e22edf3d75fc6a3b9a0a88fcc4a265f5",
@@ -52,6 +52,8 @@
     "omh-curriculum-design/SKILL.md": "9daf0d28a1748de9881ab9201c1c32b70c727c707d05f82376feed5d5254df65",
     "omh-curriculum-design/references/procedure.md": "5078d35c8cd9cae8257fd14fa8ab7466bff5287500f160787633ec2930d1da1b",
     "omh-data-analysis/SKILL.md": "7b0181567a8fb109006d896848fd09ad50b321daa5a004f0c041901579959946",
+    "omh-data-pipelines/SKILL.md": "ca3b74f8ff7315d94f36c03b10428870958ed984689dbd00cac47cb1cc680032",
+    "omh-data-pipelines/references/pipeline-method.md": "9f2dea6059c664a0c1ab4d989545825d3ecc567d22816af00975e79670ef36f0",
     "omh-decide/SKILL.md": "abec8065d6419e616b2fbaff21ca0a146e7508c66a1a0efa5b60e15fe92aa0f5",
     "omh-decide/references/capacity-planning.md": "5f017b357b0bfb37279918098b9992c3c793ac8ad4056969bf3e2c0e6d5bb9ae",
     "omh-decide/references/decision-records.md": "4da873d3351a8d7ab96d44860c62d7d18130147abb7aa390078eee6dbe2d4d2d",
@@ -218,6 +220,7 @@
     "omh-cto-loop",
     "omh-curriculum-design",
     "omh-data-analysis",
+    "omh-data-pipelines",
     "omh-decide",
     "omh-decision-prototype",
     "omh-decision-recall",
@@ -302,7 +305,7 @@
     "ulw-work"
   ],
   "source": "agent-skills",
-  "source_digest": "86cf55edb19c064a12b1f0aa1474db2cb0b36c4954e7d83512b95571a50fa79b",
+  "source_digest": "05f615c96ffdc793330d8df76170fcf493f91efc12526f8f9904d2b7532d6297",
   "targets": {
     "repo": ".agents/skills",
     "user": ".agents/skills"

@@ -282,6 +282,8 @@ VISIBLE_ACTIONS = (
     "show_command_verification",
     "prepare_iac_change_plan",
     "show_apply_gate",
+    "prepare_pipeline_plan",
+    "show_replay_plan",
     "prepare_release_plan",
     "show_release_readiness",
     "show_frontend_handoff",
@@ -1125,6 +1127,8 @@ _ACK_PRIMARY_ACTIONS_BY_NEXT_ACTION = {
     "show_command_verification": ("show_command_verification", "Show command verification"),
     "prepare_iac_change_plan": ("prepare_iac_change_plan", "Plan the infrastructure change"),
     "show_apply_gate": ("show_apply_gate", "Show the apply gates"),
+    "prepare_pipeline_plan": ("prepare_pipeline_plan", "Plan the pipeline work"),
+    "show_replay_plan": ("show_replay_plan", "Show the replay plan"),
     "prepare_release_plan": ("prepare_release_plan", "Plan the release"),
     "show_release_readiness": ("show_release_readiness", "Show release readiness"),
     "prepare_accessibility_audit": ("prepare_accessibility_audit", "Audit accessibility"),
@@ -2299,6 +2303,36 @@ _WORKFLOW_OPERATIONS_CHAT_CARDS: dict[str, dict[str, object]] = {
             "command run",
             "file written",
             "region replaced",
+        ],
+    },
+    "data-pipelines": {
+        "kind": "pipeline_plan",
+        "headline": "I can plan this pipeline work so a rerun changes nothing twice.",
+        "body": (
+            "I will find what makes a row unique at the sink, write the idempotency contract, map the lineage and the schema "
+            "change's downstream impact, bound any replay or backfill by window and target, and name the data-quality gate each "
+            "load must pass. I run no job and query no warehouse."
+        ),
+        "phase": "pipeline_plan_prepared",
+        "next_action": "prepare_pipeline_plan",
+        "artifact_schema": "replay_backfill_plan/v1",
+        "claim_boundary_suffix": "It is not a job run, a backfill, or a passed quality check until the output is observed.",
+        "actions": [
+            {"id": "prepare_pipeline_plan", "label": "Plan the pipeline work", "style": "primary"},
+            {"id": "show_replay_plan", "label": "Show the replay plan", "style": "secondary"},
+            {"id": "show_status", "label": "Show status", "style": "secondary"},
+        ],
+        "recommended_flow": [
+            "find_the_sink_key",
+            "write_the_idempotency_contract",
+            "map_lineage_and_schema_impact",
+            "bound_the_replay_or_backfill",
+            "gate_each_load_on_quality_checks",
+        ],
+        "evidence_not_observed": [
+            "job run",
+            "backfill performed",
+            "quality check passed",
         ],
     },
     "iac-change": {

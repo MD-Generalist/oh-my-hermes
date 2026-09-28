@@ -1345,6 +1345,7 @@ _WORKFLOW_CONTEXT_CARD_BY_WORKFLOW = {
     "security-event-response": "coding_handoff",
     "agent-instructions": "coding_handoff",
     "iac-change": "coding_handoff",
+    "data-pipelines": "coding_handoff",
     "release-cut": "coding_handoff",
     # ULW fold (issue #954, PR D): the four contracts folding into
     # `ulw-work` share its coding-handoff lane so their capability family is
@@ -1441,6 +1442,15 @@ _AWARENESS_MESSAGE_MARKERS = (
     "kubectl",
     "helm chart",
     "infrastructure as code",
+    # Data pipelines: "backfill", "lineage", "replay" and "pipeline" alone are
+    # everyday English, so only pipeline phrases arm awareness.
+    "data-pipelines",
+    "etl",
+    "airflow dag",
+    "dbt model",
+    "idempotent",
+    "data backfill",
+    "data lineage",
     # Releases: "release", "cut", "tag" and "canary" alone are everyday
     # English, so only release phrases arm awareness.
     "release-cut",
@@ -2764,6 +2774,42 @@ _ROUTE_HINT_RULES = (
             "release-cut",
             "inference-serving",
             "live-incident-response",
+        ),
+    },
+    {
+        "id": "data_pipelines",
+        "workflow": "data-pipelines",
+        "lane": "coding_handoff",
+        "next_action": "prepare_pipeline_plan",
+        "reason": "The user has batch or streaming pipeline work (ETL, Airflow, dbt, Spark, Kafka): a backfill or replay, duplicate events, a schema change downstream, lineage, or a data-quality regression; state the idempotency contract, bound the replay, and gate each load on observed checks.",
+        "fallback_action": "ask_for_the_sink_key_and_the_affected_window",
+        "not_evidence_yet": (
+            "job run",
+            "backfill performed",
+            "quality check passed",
+        ),
+        # Only phrases that name pipeline work. A bare "backfill", "lineage",
+        # "replay" or "pipeline" is absent: this table has no anchor, and a
+        # team backfills a position and a family has a lineage.
+        "phrases": (
+            "data-pipelines",
+            "data pipeline",
+            "etl pipeline",
+            "etl backfill",
+            "airflow dag",
+            "dbt model",
+            "spark job",
+            "kafka topic",
+            "data backfill",
+            "event replay",
+            "data lineage",
+        ),
+        "tokens": (),
+        "adjacent_workflows": (
+            "backend",
+            "data-analysis",
+            "relational-db",
+            "memory-sync",
         ),
     },
     {
@@ -6703,6 +6749,7 @@ def awareness_primer_payload() -> dict[str, object]:
                 "release-cut",
                 "agent-instructions",
                 "iac-change",
+                "data-pipelines",
                 "ai-slop-cleaner",
                 "frontend-refactor",
                 "tech-debt-audit",
@@ -7076,6 +7123,7 @@ _DIRECT_WORKFLOW_NEXT_ACTIONS = {
     "security-event-response": "prepare_security_event_response",
     "agent-instructions": "prepare_instruction_file_update",
     "iac-change": "prepare_iac_change_plan",
+    "data-pipelines": "prepare_pipeline_plan",
     "release-cut": "prepare_release_plan",
     "accessibility-audit": "prepare_accessibility_audit",
     "visual-qa": "prepare_visual_qa",

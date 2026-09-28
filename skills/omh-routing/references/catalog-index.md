@@ -40,6 +40,7 @@ Trigger phrases and the role registry live in `references/workflow-registry.md`;
 - `omh-cto-loop`: [omh] Engineering leadership over roadmap and risk: roadmap, PM, technical tradeoffs, risk, delivery, release, and follow-up operating cadence.
 - `omh-curriculum-design`: [omh] Team training or course that needs a syllabus: turn a learning goal into a teachable curriculum, assessment plan, and learner-ready sequence.
 - `omh-data-analysis`: [omh] Dataset or table to analyze: scope supplied data with provenance, causal-claim, and hallucination guards.
+- `omh-data-pipelines`: [omh] Data pipeline work -- an ETL or streaming job, a backfill or replay, duplicate events, a schema change downstream, a lineage question, a data-quality regression: make every rerun idempotent, bound every replay, and gate each load on observed checks.
 - `omh-decision-prototype`: [omh] Uncertain technical choice for a spike: bounded decision prototype workflow: resolve one uncertain interaction, API, performance, or integration choice with a disposable, isolated experiment whose observed result feeds planning.
 - `omh-decision-recall`: [omh] Previously rejected options to revisit: recall scoped reviewed rejected decisions without elevating them to approved memory.
 - `ulw-interview`: [omh] Vague, underspecified request: one-question-at-a-time clarification.

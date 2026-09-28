@@ -221,9 +221,12 @@ NON_SKILL_BACKTICKS = frozenset(
 # `iac-change` (#1566) defers to `deploy-and-monitor`, `release-cut`,
 # `inference-serving`, and `live-incident-response`, and `deploy-and-monitor`
 # gains the statement pointing back. Five cases, five pairs, one owner.
-EXPECTED_DEFERENCE_CASES = 306
-EXPECTED_DEFERENCE_PAIRS = 317
-EXPECTED_DEFERRING_OWNERS = 87
+# `data-pipelines` (#1565) defers to `backend`, `data-analysis`,
+# `relational-db`, and `memory-sync`, and `backend` gains the statement
+# pointing back. Five cases, five pairs, one owner.
+EXPECTED_DEFERENCE_CASES = 311
+EXPECTED_DEFERENCE_PAIRS = 322
+EXPECTED_DEFERRING_OWNERS = 88
 
 # The ratchet. Recording a new inversion must be a visible edit to this number,
 # not one more dict line with a plausible sentence attached.

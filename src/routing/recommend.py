@@ -419,6 +419,40 @@ _AGENT_INSTRUCTIONS_EXPLICIT_PHRASES = tuple(
     )
 )
 
+# `data-pipelines` holds back every everyday token its phrases are built from.
+# Listed are the phrases that name pipeline work. A bare "backfill",
+# "lineage" or "duplicate events" is not: a team backfills a position, a family
+# has a lineage, and a calendar has duplicate events; those phrases route here
+# only beside a word of data engineering (`EVERYDAY_SENSE_PHRASES`).
+_DATA_PIPELINES_EXPLICIT_PHRASES = tuple(
+    normalized_phrase(phrase)
+    for phrase in (
+        "data-pipelines",
+        "data pipeline",
+        "data pipelines",
+        "etl pipeline",
+        "etl job",
+        "etl backfill",
+        "airflow dag",
+        "airflow etl",
+        "airflow backfill",
+        "dbt model",
+        "spark job",
+        "kafka topic",
+        "kafka events",
+        "kafka consumer",
+        "data backfill",
+        "replay events",
+        "replay the events",
+        "event replay",
+        "exactly-once",
+        "data lineage",
+        "data quality check",
+        "schema evolution",
+        "late arriving data",
+    )
+)
+
 # `iac-change` holds back every everyday token its phrases are built from.
 # Listed are the phrases that name a tool's own operation on infrastructure.
 # A bare "terraform" is not: "what is terraform" is a concept question. "cost
@@ -1065,6 +1099,18 @@ _SKILL_POLICIES = {
             "Prepare instruction_file_inventory/v1 with every file and its reader; command_verification_record/v1 marking "
             "each command verified with its observed run or unverified; instruction_region_update/v1 replacing only the text "
             "between the omh:agent-instructions markers; and drift_refusal_note/v1 for any requested count or line number."
+        ),
+    ),
+    "data-pipelines": RecommendationPolicy(
+        next_action="prepare_pipeline_plan",
+        evidence_boundary=(
+            "A pipeline plan is not a job run, a backfill, a replay, or a passed quality check until observed; OMH never runs "
+            "a pipeline or queries a warehouse, and no replay is planned without an idempotency contract."
+        ),
+        wrapper_guidance=(
+            "Prepare lineage_map/v1 from the orchestrator's graph; schema_change_impact/v1 per downstream reader; "
+            "idempotency_contract/v1 naming the sink key; replay_backfill_plan/v1 bounded by window and target; and "
+            "data_quality_gate/v1 with the value that stops each load."
         ),
     ),
     "iac-change": RecommendationPolicy(
@@ -2838,6 +2884,50 @@ _WHOLE_PHRASE_ONLY_TRIGGER_TOKENS = {
             "write",
         }
     ),
+    # `data-pipelines` is built from "data", "pipeline", "backfill",
+    # "lineage", "replay", "events", "duplicate", "quality", "batch", "job",
+    # "schema", "spark", "kafka", "airflow" and "dbt" -- a sales pipeline, a
+    # hiring backfill, a family lineage, a spark of joy, Franz Kafka, a room's
+    # airflow and a therapy acronym all reached it as bare tokens. Only the
+    # complete phrases score, and "backfill", "lineage", "duplicate events",
+    # "batch job" and "data quality" also need a word of data engineering
+    # beside them (`EVERYDAY_SENSE_PHRASES`). "backfill" and "lineage" are not
+    # listed: each is a one-word trigger, which scores as a phrase, so only the
+    # everyday-sense row can withdraw it. Tokens that mean nothing else stay
+    # creditable: `etl`, `elt`, `dagster`, `idempotent`, `idempotency`.
+    "data-pipelines": frozenset(
+        {
+            "airflow",
+            "arriving",
+            "batch",
+            "check",
+            "consumer",
+            "data",
+            "dbt",
+            "dead",
+            "duplicate",
+            "evolution",
+            "events",
+            "exactly",
+            "job",
+            "kafka",
+            "key",
+            "late",
+            "letter",
+            "model",
+            "once",
+            "pipeline",
+            "pipelines",
+            "quality",
+            "queue",
+            "replay",
+            "run",
+            "schema",
+            "spark",
+            "the",
+            "topic",
+        }
+    ),
     # `iac-change` is built from "infrastructure", "code", "plan", "apply",
     # "state", "drift", "cost", "delta", "helm", "chart", "stage" and
     # "kubernetes" -- a sci-fi plan, a boat's helm, continental drift and a
@@ -3893,6 +3983,9 @@ def _score_definition(
     if definition.name == "release-cut" and _release_cut_explicit_match(normalized_query):
         score += 30
         matched.add("direct:release_cut")
+    if definition.name == "data-pipelines" and _data_pipelines_explicit_match(normalized_query):
+        score += 30
+        matched.add("direct:data_pipelines")
     if definition.name == "iac-change" and _iac_change_explicit_match(normalized_query):
         score += 30
         matched.add("direct:iac_change")
@@ -4708,6 +4801,10 @@ def _relational_db_explicit_match(normalized_query: str) -> bool:
 
 def _release_cut_explicit_match(normalized_query: str) -> bool:
     return any(_explicit_phrase_match(normalized_query, phrase) for phrase in _RELEASE_CUT_EXPLICIT_PHRASES)
+
+
+def _data_pipelines_explicit_match(normalized_query: str) -> bool:
+    return any(_explicit_phrase_match(normalized_query, phrase) for phrase in _DATA_PIPELINES_EXPLICIT_PHRASES)
 
 
 def _iac_change_explicit_match(normalized_query: str) -> bool:
