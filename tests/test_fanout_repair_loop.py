@@ -18,9 +18,11 @@ import re
 import shlex
 import subprocess
 import sys
+import threading
 from tempfile import TemporaryDirectory
 from typing import Any
 import unittest
+from unittest import mock
 
 from _local_package import load_local_package
 
@@ -34,7 +36,8 @@ from omh.commands.coding import (  # noqa: E402
 )
 from omh.coding import fanout_dispatch  # noqa: E402
 from omh.coding.fanout import build_fanout_contract  # noqa: E402
-from omh.coding.fanout_artifacts import write_fanout_contract  # noqa: E402
+from omh.coding.fanout_artifacts import fanout_run_journal_path, write_fanout_contract  # noqa: E402
+from omh.coding.fanout_journal import read_fanout_run_journal  # noqa: E402
 from omh.coding.fanout_contracts import FanoutContractError  # noqa: E402
 from omh.coding.fanout_dispatch import dispatch_fanout  # noqa: E402
 from omh.coding.fanout_repair import (  # noqa: E402
@@ -43,10 +46,15 @@ from omh.coding.fanout_repair import (  # noqa: E402
     REPAIR_ATTEMPT_OBSERVED_EVENT,
     REPAIR_ATTEMPT_STARTED_EVENT,
     REPAIR_BUDGET_EXHAUSTED,
+    REPAIR_IN_FLIGHT_STATUS,
+    REPAIR_WORKTREE_MISSING,
+    journal_repair_checks,
+    observed_check_failure,
     project_unit_repair,
     repair_trigger_checks,
 )
 from omh.system.paths import OmhPaths  # noqa: E402
+from omh.runtime.artifacts import append_journal_observation  # noqa: E402
 from omh.workflows.observation_journal import read_observation_events  # noqa: E402
 
 _GOAL = "make the value check pass"
@@ -176,6 +184,7 @@ class _Harness:
         )
 
     def dispatch(self, **kwargs: Any) -> dict[str, Any]:
+        kwargs.setdefault("readiness", _ready)
         return dispatch_fanout(
             self.paths,
             self.contract,
@@ -183,10 +192,25 @@ class _Harness:
             repo_root=self.repo,
             base_sha=self.base,
             runner=self.runner,
-            readiness=_ready,
             run_verification=True,
             **kwargs,
         )
+
+    def resume_journal(self) -> dict[str, Any]:
+        return read_fanout_run_journal(fanout_run_journal_path(self.paths, self.contract["fanout_id"]))
+
+    def left_pending(self, test: unittest.TestCase) -> dict[str, Any]:
+        """Dispatch once with the interrupt raised mid-spawn: checks fail, no repair runs."""
+        def interrupt(spawn: int) -> None:
+            if spawn == 1:
+                fanout_dispatch._INTERRUPT_FLAG.set()
+
+        self.on_spawn = interrupt
+        first = _unit(self.dispatch())
+        fanout_dispatch._INTERRUPT_FLAG.clear()
+        self.on_spawn = None
+        test.assertEqual(first["repair"]["state"], "pending")
+        return first
 
     def events(self, name: str, unit_id: str = "core") -> list[dict[str, Any]]:
         return [
@@ -391,28 +415,269 @@ class RepairResumeTests(unittest.TestCase):
             [event["repair_attempt"] for event in harness.events(REPAIR_ATTEMPT_STARTED_EVENT)], [1, 2]
         )
 
-    def test_an_interrupted_attempt_is_counted_against_the_budget(self) -> None:
+    def test_a_repair_spawn_killed_by_the_interrupt_stays_counted_and_pending(self) -> None:
+        harness = _Harness(self, plan=["broken", "fixed"], max_repair_attempts=3)
+        original = harness.runner
+
+        def runner(argv, **kwargs):
+            if argv[0] == "codex" and len(harness.prompts) == 1:
+                # The first repair spawn, terminated by the group signal.
+                harness.prompts.append(argv[-1])
+                fanout_dispatch._INTERRUPT_FLAG.set()
+                return subprocess.CompletedProcess(argv, -15, "", "")
+            return original(argv, **kwargs)
+
+        harness.runner = runner  # type: ignore[method-assign]
+        first = _unit(harness.dispatch())
+        fanout_dispatch._INTERRUPT_FLAG.clear()
+        harness.runner = original  # type: ignore[method-assign]
+
+        self.assertEqual(first["repair"]["state"], "pending")
+        self.assertEqual(first["repair"]["attempts_used"], 1)
+        # No verdict for the killed attempt: its started event keeps it counted.
+        self.assertEqual([event["repair_attempt"] for event in harness.events(REPAIR_ATTEMPT_OBSERVED_EVENT)], [0])
+
+        second = _unit(harness.dispatch(resume_journal=harness.resume_journal()))
+
+        self.assertEqual(len(harness.prompts), 3)
+        self.assertEqual(json.loads(harness.prompts[2].partition("\n[Repair attempt]\n")[2])["repair_attempt"], 2)
+        self.assertEqual(second["unit_state"], "verified")
+        self.assertEqual(second["repair"]["attempts_used"], 2)
+        # The resume plan held this exit-0 unit; the repair loop, not the plan,
+        # decided this run, so no stale resume note is attached.
+        self.assertNotIn("resume", second)
+        self.assertEqual([event["repair_attempt"] for event in harness.events(REPAIR_ATTEMPT_STARTED_EVENT)], [1, 2])
+
+    def test_a_repair_refused_before_its_spawn_leaves_the_loop_pending(self) -> None:
+        harness = _Harness(self, plan=["broken", "fixed"], max_repair_attempts=2)
+        calls: list[int] = []
+
+        def ready_once(paths, profile, **kwargs):
+            calls.append(1)
+            return {"status": "ready" if len(calls) == 1 else "missing", "profile": profile}
+
+        first = _unit(harness.dispatch(readiness=ready_once))
+
+        self.assertEqual(len(harness.prompts), 1)
+        self.assertEqual(first["status"], "executor_not_ready")
+        self.assertEqual(first["repair"]["state"], "pending")
+        self.assertEqual(first["repair"]["attempts_used"], 0)
+
+        second = _unit(harness.dispatch())
+
+        self.assertEqual(second["unit_state"], "verified")
+        self.assertEqual(second["repair"]["attempts_used"], 1)
+
+    def test_duplicate_attempt_numbers_are_each_counted(self) -> None:
+        checks = [{"command": "c", "exit_code": 1, "failure_kind": "nonzero"}]
         events = [
             {"run_id": "r", "event": REPAIR_ATTEMPT_OBSERVED_EVENT, "status": "failed", "repair_attempt": 0,
-             "observed_at": "t0", "repair_checks": [{"command": "c", "exit_code": 1, "failure_kind": "nonzero"}]},
-            {"run_id": "r", "event": REPAIR_ATTEMPT_STARTED_EVENT, "status": "observed", "repair_attempt": 1,
-             "observed_at": "t1", "repair_checks": [{"command": "c", "exit_code": 1, "failure_kind": "nonzero"}]},
+             "observed_at": "t0", "repair_checks": checks},
+            {"run_id": "r", "event": REPAIR_ATTEMPT_STARTED_EVENT, "repair_attempt": 1, "observed_at": "t1",
+             "repair_checks": checks},
+            {"run_id": "r", "event": REPAIR_ATTEMPT_STARTED_EVENT, "repair_attempt": 1, "observed_at": "t2",
+             "repair_checks": checks},
         ]
 
-        self.assertEqual(project_unit_repair(events, run_id="r", max_repair_attempts=2)["state"], "pending")
-        exhausted = project_unit_repair(events, run_id="r", max_repair_attempts=1)
-        self.assertEqual(exhausted["state"], "exhausted")
-        self.assertEqual(exhausted["attempts"][0]["check"], {"command": "c", "exit_code": 1, "observed_at": "t0"})
+        projection = project_unit_repair(events, run_id="r", max_repair_attempts=2)
+
+        self.assertEqual(projection["attempts_used"], 2)
+        self.assertEqual(projection["state"], "blocked")
+        self.assertEqual(projection["attempts"][0]["check"], {"command": "c", "exit_code": 1, "observed_at": "t0"})
+
+
+class RepairConcurrencyTests(unittest.TestCase):
+    def tearDown(self) -> None:
+        fanout_dispatch._INTERRUPT_FLAG.clear()
+
+    def test_a_second_dispatch_skips_a_unit_whose_repair_is_in_flight(self) -> None:
+        # A budget of 2, so the in-flight attempt leaves the loop pending to a
+        # second reader and only the lock stands between it and a second spawn.
+        harness = _Harness(self, plan=["broken", "fixed"], max_repair_attempts=2)
+        harness.left_pending(self)
+        in_spawn, release = threading.Event(), threading.Event()
+
+        def hold_the_repair(spawn: int) -> None:
+            in_spawn.set()
+            release.wait(timeout=30)
+
+        harness.on_spawn = hold_the_repair
+        outcome: dict[str, Any] = {}
+        first = threading.Thread(target=lambda: outcome.update(first=_unit(harness.dispatch())))
+        first.start()
+        self.assertTrue(in_spawn.wait(timeout=60))
+        try:
+            second_summary = harness.dispatch()
+        finally:
+            release.set()
+            first.join(timeout=120)
+
+        second = _unit(second_summary)
+        self.assertEqual(second["status"], REPAIR_IN_FLIGHT_STATUS)
+        self.assertEqual(_fanout_dispatch_exit_code(second_summary), 0)
+        self.assertEqual(sum("[Repair attempt]" in prompt for prompt in harness.prompts), 1)
+        self.assertEqual([event["repair_attempt"] for event in harness.events(REPAIR_ATTEMPT_STARTED_EVENT)], [1])
+        self.assertEqual(outcome["first"]["unit_state"], "verified")
+
+
+class RepairWorktreeMissingTests(unittest.TestCase):
+    def tearDown(self) -> None:
+        fanout_dispatch._INTERRUPT_FLAG.clear()
+
+    def test_a_vanished_worktree_blocks_the_loop_and_exits_nonzero_without_spawning(self) -> None:
+        harness = _Harness(self, plan=["broken"], max_repair_attempts=2)
+        harness.left_pending(self)
+        subprocess.run(
+            ["git", "worktree", "remove", "--force", harness.spawn_worktrees[0]],
+            cwd=str(harness.repo), check=True, capture_output=True,
+        )
+
+        for _ in range(2):
+            summary = harness.dispatch()
+            core = _unit(summary)
+            self.assertEqual(len(harness.prompts), 1)
+            self.assertEqual(core["repair"]["status"], "blocked")
+            self.assertEqual(core["repair"]["blocked_reason"], REPAIR_WORKTREE_MISSING)
+            self.assertEqual(core["repair"]["last_failing_check"]["command"], _CHECK)
+            self.assertEqual(core["unit_state_reason"], REPAIR_WORKTREE_MISSING)
+            self.assertEqual(_fanout_dispatch_exit_code(summary), 1)
+        self.assertEqual(harness.events(REPAIR_ATTEMPT_STARTED_EVENT), [])
+
+
+class RepairExitScopeTests(unittest.TestCase):
+    def test_an_unselected_units_blocked_history_does_not_set_the_exit_code(self) -> None:
+        units = [
+            {"unit_id": "core", "title": "Core", "owner": "codex", "file_scope": ["pkg/"],
+             "verification_commands": [_CHECK], "max_repair_attempts": 1},
+            {"unit_id": "docs", "title": "Docs", "owner": "codex", "file_scope": ["docs/"],
+             "verification_commands": [_PASSING]},
+        ]
+        harness = _Harness(self, plan=["broken", "broken"], units=units)
+        self.assertEqual(_fanout_dispatch_exit_code(harness.dispatch()), 1)
+
+        summary = harness.dispatch(only_units=["docs"])
+
+        core = _unit(summary)
+        # Skipped as completed (exit 0), and outside this dispatch's selection.
+        self.assertEqual(core["status"], "already_completed")
+        # Still reported, so show/brief see it; not this batch's failure.
+        self.assertEqual(core["repair"]["status"], "blocked")
+        self.assertNotIn("unit_state_reason", core)
+        self.assertEqual(_fanout_dispatch_exit_code(summary), 0)
+
+
+class RepairPairingTests(unittest.TestCase):
+    def test_a_task_linked_command_longer_than_the_journal_bound_still_triggers(self) -> None:
+        command = "python -m unittest " + " ".join(f"tests/test_module_number_{i:03d}.py" for i in range(20))
+        self.assertGreater(len(command), 512)
+        result = {
+            "status": "completed", "process_succeeded": True, "result_schema_valid": True,
+            "verification_status": "failed",
+            "verification_observed_failures": [observed_check_failure(command, "nonzero", 1, "process")],
+            "verification_checks": [{"command": command, "status": "failed", "observed_by": "dispatcher"}],
+        }
+
+        failing = repair_trigger_checks(result)
+
+        self.assertEqual(failing, [{"command": command, "exit_code": 1, "failure_kind": "nonzero"}])
+        with TemporaryDirectory() as tmp:
+            paths = OmhPaths(omh_home=Path(tmp) / ".omh", hermes_home=Path(tmp) / ".hermes")
+            append_journal_observation(paths, {
+                "target_type": "run", "target_id": "r", "run_id": "r", "event": REPAIR_ATTEMPT_OBSERVED_EVENT,
+                "status": "failed", "summary": "s", "repair_attempt": 0, "repair_checks": journal_repair_checks(failing),
+            })
+            projection = project_unit_repair(read_observation_events(paths, run_id="r"), run_id="r", max_repair_attempts=1)
+        self.assertEqual(projection["state"], "pending")
+        self.assertEqual(projection["failing_checks"][0]["command"], command[:512])
+
+    def test_a_dependency_skipped_planned_check_does_not_block_the_repair(self) -> None:
+        units = [{
+            "unit_id": "core", "title": "Core", "owner": "codex", "file_scope": ["pkg/"],
+            "verification_checks": [
+                {"id": "value", "command": _CHECK},
+                {"id": "after", "command": _PASSING, "depends_on": ["value"]},
+            ],
+            "max_repair_attempts": 2,
+        }]
+        harness = _Harness(self, plan=["broken", "fixed"], units=units)
+
+        core = _unit(harness.dispatch())
+
+        self.assertEqual(len(harness.prompts), 2)
+        self.assertEqual(core["unit_state"], "verified")
+        self.assertEqual(core["repair"]["attempts_used"], 1)
+
+    def test_a_repair_dispatch_never_reads_a_parent_clarification(self) -> None:
+        harness = _Harness(self, plan=["broken", "fixed"], max_repair_attempts=2)
+        calls: list[object] = []
+        original = fanout_dispatch.read_clarification
+
+        def counting(path):
+            calls.append(path)
+            return original(path)
+
+        with mock.patch.object(fanout_dispatch, "read_clarification", counting):
+            core = _unit(harness.dispatch())
+
+        self.assertEqual(core["unit_state"], "verified")
+        self.assertEqual(len(harness.prompts), 2)
+        self.assertEqual(len(calls), 1)
+
+
+class RepairJournalFieldTests(unittest.TestCase):
+    def _append(self, **fields: object) -> dict[str, Any]:
+        tmp = TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        paths = OmhPaths(omh_home=Path(tmp.name) / ".omh", hermes_home=Path(tmp.name) / ".hermes")
+        event = {"target_type": "run", "target_id": "r", "run_id": "r", "event": REPAIR_ATTEMPT_OBSERVED_EVENT,
+                 "status": "failed", "summary": "s", "repair_attempt": 1,
+                 "repair_checks": [{"command": "c", "exit_code": 1, "failure_kind": "nonzero"}], **fields}
+        return append_journal_observation(paths, event)
+
+    def test_valid_repair_fields_round_trip(self) -> None:
+        record = self._append(status="blocked", repair_stop_reason=REPAIR_WORKTREE_MISSING)
+
+        self.assertEqual(record["repair_attempt"], 1)
+        self.assertEqual(record["repair_checks"][0]["command"], "c")
+        self.assertEqual(record["repair_stop_reason"], REPAIR_WORKTREE_MISSING)
+
+    def test_malformed_repair_fields_are_refused(self) -> None:
+        for label, fields in (
+            ("attempt above the ceiling", {"repair_attempt": 99}),
+            ("attempt missing", {"repair_attempt": None}),
+            ("unknown failure kind", {"repair_checks": [{"command": "c", "exit_code": 1, "failure_kind": "oops"}]}),
+            ("command over the bound", {"repair_checks": [{"command": "c" * 513, "exit_code": 1, "failure_kind": "nonzero"}]}),
+            ("unknown stop reason", {"repair_stop_reason": "tired"}),
+        ):
+            with self.subTest(label), self.assertRaises(ValueError):
+                self._append(**fields)
 
 
 class RepairTriggerNegativeTests(unittest.TestCase):
-    def test_a_contract_without_the_field_freezes_and_dispatches_unchanged(self) -> None:
-        unit = {"unit_id": "core", "title": "Core", "owner": "codex", "file_scope": ["pkg/"],
-                "verification_commands": [_CHECK]}
-        undeclared = build_fanout_contract(_GOAL, [unit])
-        declared_zero = build_fanout_contract(_GOAL, [{**unit, "max_repair_attempts": 0}])
-        self.assertNotIn("max_repair_attempts", undeclared["units"][0])
-        self.assertEqual(json.dumps(undeclared, sort_keys=True), json.dumps(declared_zero, sort_keys=True))
+    def test_a_contract_without_the_field_freezes_byte_identically_to_before_the_field(self) -> None:
+        # Frozen by origin/main 02442af92, before this field existed, with the
+        # same units; `safety_profile_revision` tracks the live safety profile
+        # and is left out on both sides.
+        fixture = Path(__file__).with_name("fixtures") / "fanout_contract_without_repair_budget.json"
+        units = [
+            {"unit_id": "core", "title": "Core", "owner": "codex", "file_scope": ["pkg/"],
+             "verification_commands": ["python -c pass"]},
+            {"unit_id": "b", "title": "B", "owner": "claude-code", "file_scope": ["b/"], "depends_on": ["core"],
+             "verification_checks": [{"id": "x", "command": "python -c pass", "tier": "unit"}],
+             "task_linked_test_runner": "python -m unittest"},
+        ]
+        for label, frozen_units in (
+            ("undeclared", units),
+            ("declared zero", [{**unit, "max_repair_attempts": 0} for unit in units]),
+        ):
+            with self.subTest(label):
+                contract = build_fanout_contract("goal text", frozen_units)
+                contract.pop("safety_profile_revision", None)
+                self.assertEqual(
+                    json.dumps(contract, sort_keys=True, indent=1) + "\n", fixture.read_text(encoding="utf-8")
+                )
+
+    def test_a_unit_without_a_budget_is_never_repaired(self) -> None:
 
         harness = _Harness(self, plan=["broken", "fixed"], max_repair_attempts=None)
         summary = harness.dispatch()
@@ -514,6 +779,8 @@ class RepairTriggerNegativeTests(unittest.TestCase):
             ("verification passed", {"verification_status": "passed"}),
             ("row not dispatcher-observed", {"verification_checks": [{"command": "c", "status": "failed", "observed_by": None}]}),
             ("failure not captured", {"verification_observed_failures": []}),
+            ("exit not observed from a process", {"verification_observed_failures": [{**failing, "exit_code_source": "not_observed"}]}),
+            ("a timed-out check", {"verification_observed_failures": [{**failing, "failure_kind": "deadline"}]}),
         ):
             with self.subTest(label):
                 self.assertEqual(repair_trigger_checks({**base, **override}), [])

@@ -14,6 +14,7 @@ from ..coding.fanout_capacity import read_capacity_fields
 from ..coding.fanout_repair import (
     REPAIR_ATTEMPT_OBSERVED_EVENT,
     REPAIR_ATTEMPT_STARTED_EVENT,
+    REPAIR_BLOCKED_REASONS,
     bounded_repair_attempt,
     bounded_repair_checks,
 )
@@ -300,6 +301,11 @@ def build_observation_event(event: dict[str, Any]) -> dict[str, Any]:
             raise ValueError(f"observation_event {canonical} requires a bounded repair_attempt and repair_checks")
         record["repair_attempt"] = attempt
         record["repair_checks"] = checks
+        stop_reason = event.get("repair_stop_reason")
+        if stop_reason is not None:
+            if stop_reason not in REPAIR_BLOCKED_REASONS or canonical != REPAIR_ATTEMPT_OBSERVED_EVENT:
+                raise ValueError(f"observation_event {canonical} carries an unsupported repair_stop_reason")
+            record["repair_stop_reason"] = stop_reason
     errors = validate_observation_event(record)
     if errors:
         raise ValueError(errors[0])

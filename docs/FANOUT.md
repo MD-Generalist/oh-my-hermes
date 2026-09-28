@@ -500,22 +500,38 @@ Rules, all applied at freeze time:
   the budget spent, which records the unit `blocked` with `blocked_reason:
   repair_budget_exhausted` and the last failing check as `{command,
   exit_code, observed_at}`; `unit_state` stays `failed` with `unit_state_reason:
-  repair_budget_exhausted`, and the batch exits 1. Anything else is not a
-  trigger and stops the loop as `not_repairable`, leaving the unit's existing
-  state to speak: a check that timed out or could not start, an unresolved
-  task-linked postcondition, a process failure, an invalid result, an
-  executor's own claim that its checks passed (only `observed_by: dispatcher`
-  rows count), and a reproduction unit's expected nonzero exit (it rides its
-  receipt, never a check row). Each repair spawn journals
+  repair_budget_exhausted`, and the batch exits 1. A repair whose worktree
+  has vanished stops the same way with `repair_worktree_missing` (nothing is
+  rebuilt from base, nothing spawns). Anything else is not a trigger and stops
+  the loop as `not_repairable`, leaving the unit's existing state to speak: a
+  check that timed out or could not start, an unresolved task-linked
+  postcondition, a process failure, an invalid result, an executor's own claim
+  that its checks passed (only `observed_by: dispatcher` rows count), and a
+  reproduction unit's expected nonzero exit (it rides its receipt, never a
+  check row). Plan rows recorded `skipped` — blocked behind a failed
+  dependency or deferred behind the fan-in — never ran and neither trigger nor
+  block a repair. Failing checks pair to their captured exits on the full
+  command; only the journal and brief copies are cut to 512 chars, so a long
+  task-linked command still triggers. Each repair spawn journals
   `repair_attempt_started` before it starts and each observed verdict
   `repair_attempt_observed` (`observed` passed, `failed` still failing,
-  `blocked` budget spent), both carrying `repair_attempt` and the failing
-  checks. The count is read back from the journal, so a later dispatch
-  continues it and never resets it: a unit an earlier dispatch left pending
-  (checks failing, budget left — for example an interrupted batch) is
-  dispatched again as its next repair rather than skipped as
-  `already_completed`, and one already exhausted spawns nothing and still
-  reports `blocked`. The unit record carries `repair`
+  `blocked` stopped, with `repair_stop_reason`), both carrying
+  `repair_attempt` and the failing checks. A refusal before the spawn and a
+  spawn the dispatcher's interrupt killed record no verdict, so the attempt
+  that started stays counted and the loop stays pending. The count is read
+  back from the journal, so a later dispatch continues it and never resets it:
+  a unit an earlier dispatch left pending (checks failing, budget left — for
+  example an interrupted batch) is dispatched again as its next repair rather
+  than skipped as `already_completed`, and one already blocked spawns nothing
+  and still reports `blocked`. The whole loop of one unit runs under an OS
+  lock on that unit, taken without waiting, so a second concurrent dispatch
+  skips it as `repair_in_flight` instead of numbering the same attempt or
+  running a second executor in the worktree; a dispatcher that dies releases
+  the lock. The exit code reflects only the units this dispatch selected: a
+  selected unit that ends blocked (including one skipped because an earlier
+  dispatch blocked it) exits 1, while an unselected unit's blocked history is
+  still carried on its record for `show` and `brief` and does not set the
+  code. The unit record carries `repair`
   (`fanout_unit_repair/v1`: `attempts_used`, `max_repair_attempts`,
   `attempts` as `{attempt, started_at, check}`, `status`, `stop_reason`);
   `omh coding fanout show` projects the same block from the journal and

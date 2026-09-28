@@ -71,6 +71,7 @@ from .fanout_failure_diagnostics import is_object_list, is_string_map
 from .fanout_executor_sessions import bound_session_fields
 from .fanout_capacity import CAPACITY_STATUSES, read_capacity_fields
 from .fanout_environment import CHILD_ENVIRONMENT_POLICY_CLAIM_BOUNDARY
+from .fanout_repair import REPAIR_IN_FLIGHT_STATUS
 from .fanout_retry import (
     REPLAY_SAFE,
     REPLAY_UNSAFE_SIDE_EFFECTS,
@@ -181,6 +182,9 @@ _NEVER_SPAWNED_STATUSES = frozenset(
         # it like any other unit that never ran.
         "executor_limit_cooldown",
         "executor_auth_invalid",
+        # Another dispatch held the unit's repair loop, so this one spawned
+        # nothing; a resume re-asks, and the lock decides again.
+        REPAIR_IN_FLIGHT_STATUS,
     }
 )
 _SUCCEEDED_STATUSES = frozenset({"completed", "already_completed", "dry_run_planned"})
