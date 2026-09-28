@@ -667,6 +667,14 @@ class ReplyLanguageTests(unittest.TestCase):
     def test_hangul_wins_over_kana(self) -> None:
         # A Korean reply quoting a Japanese product name stays Korean.
         self.assertEqual(reply_language("설정 화면에서 「プッシュ通知」를 켰습니다."), "ko")
+        # Unquoted kana is still counted, so only the precedence keeps this
+        # Korean; the quoted case above is decided by the quotation drop.
+        self.assertEqual(reply_language("일본 앱의 プッシュ 알림을 켰습니다."), "ko")
+
+    def test_camel_case_identifiers_do_not_outvote_a_korean_reply(self) -> None:
+        # Four camel-case hook names against two Hangul characters: counted
+        # as words they would make this reply English.
+        self.assertEqual(reply_language("useEffect useState useMemo useCallback 정리"), "ko")
 
     def test_kana_wins_over_han(self) -> None:
         # Kanji-heavy Japanese: Han characters outnumber kana four to one,
