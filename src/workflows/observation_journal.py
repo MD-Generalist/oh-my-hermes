@@ -11,6 +11,12 @@ import unicodedata
 from ..coding.fanout_failure_diagnostics import FailureDiagnostic, read_failure_diagnostic
 from ..coding.fanout_executor_sessions import bound_session_fields
 from ..coding.fanout_capacity import read_capacity_fields
+from ..coding.fanout_repair import (
+    REPAIR_ATTEMPT_OBSERVED_EVENT,
+    REPAIR_ATTEMPT_STARTED_EVENT,
+    bounded_repair_attempt,
+    bounded_repair_checks,
+)
 
 from ..system.local_store import append_jsonl_locked, read_json_object, read_jsonl_objects, utc_now
 from ..system.paths import OmhPaths
@@ -51,6 +57,13 @@ CANONICAL_OBSERVATION_EVENTS = (
     # (`not_observed`: the failure was not observed).
     # It releases the fanout reproduction hold and advances nothing here.
     "reproduction_failure_observed",
+    # Receipts, not lifecycle rungs: the fanout repair loop's per-attempt
+    # records (`coding/fanout_repair.py`). `started` counts a repair spawn;
+    # `observed` carries the verdict of the unit's checks after an attempt
+    # (`observed` passed, `failed` still failing, `blocked` budget spent).
+    # The attempt count a later dispatch continues from is read off these.
+    "repair_attempt_started",
+    "repair_attempt_observed",
     "verification_result_observed",
     "review_result_observed",
     "ci_result_observed",
@@ -280,6 +293,13 @@ def build_observation_event(event: dict[str, Any]) -> dict[str, Any]:
             record.update(bound_session_fields(event, fanout_id=match[1], unit_id=match[2], run_ref=record['run_id']))
     if canonical == 'capacity_admission_observed':
         record.update(read_capacity_fields(event))
+    if canonical in (REPAIR_ATTEMPT_STARTED_EVENT, REPAIR_ATTEMPT_OBSERVED_EVENT):
+        attempt = bounded_repair_attempt(event.get("repair_attempt"))
+        checks = bounded_repair_checks(event.get("repair_checks"))
+        if attempt is None or checks is None:
+            raise ValueError(f"observation_event {canonical} requires a bounded repair_attempt and repair_checks")
+        record["repair_attempt"] = attempt
+        record["repair_checks"] = checks
     errors = validate_observation_event(record)
     if errors:
         raise ValueError(errors[0])

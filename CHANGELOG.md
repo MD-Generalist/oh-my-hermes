@@ -4,6 +4,22 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **`omh coding fanout dispatch` keeps a unit going until its checks pass
+  or its repair budget is spent.** A unit may declare `max_repair_attempts`
+  (0 to 3, off by default). When the dispatcher runs the unit's declared checks
+  and sees one exit nonzero, it re-dispatches the same executor in the same
+  worktree, keeping the prior commits, with a repair brief. The brief names the
+  failing commands and their exit codes; no output text is included. The loop
+  stops only when every check is observed passing, or when the budget is spent.
+  A spent budget records the unit `blocked` with `repair_budget_exhausted` and
+  the last failing check, and the batch exits 1. A timed-out check, a
+  reproduction unit's expected failure and an executor's own "checks passed"
+  never trigger a repair. Attempts are journaled as `repair_attempt_started` /
+  `repair_attempt_observed`, so a later dispatch continues the count instead
+  of resetting it, and `fanout show` / `fanout brief` report the count and the
+  stop reason. A contract without the field freezes and dispatches exactly as
+  before.
+
 - **Data pipeline work has an owner: `omh-data-pipelines`.** "our airflow etl
   backfill is producing duplicate events", "replay the last three days of
   kafka events into the warehouse without double counting", "the dbt model

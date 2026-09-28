@@ -151,6 +151,19 @@ from .inflight import (
     write_inflight_marker,
 )
 from .parallelism_policy import FANOUT_MAX_DEPTH_DEFAULT, FANOUT_RUN_SPAWN_CEILING_DEFAULT
+from .fanout_repair import (
+    REPAIR_ATTEMPT_OBSERVED_EVENT,
+    REPAIR_ATTEMPT_STARTED_EVENT,
+    REPAIR_STATE_NONE,
+    REPAIR_STATE_PENDING,
+    REPAIR_BUDGET_EXHAUSTED,
+    declared_max_repair_attempts,
+    observed_check_failure,
+    project_unit_repair,
+    repair_brief_prompt,
+    repair_record,
+    repair_trigger_checks,
+)
 from .fanout_retry import (
     FANOUT_MAX_RETRIES,
     RETRY_CLAIM_BOUNDARY,
@@ -1578,6 +1591,28 @@ def _run_verification_command(
     return failed('nonzero', exit_code, 'process', f'exit {exit_code}: {detail}')
 
 
+def _failure_naming_command(
+    command: str,
+    on_failure: Callable[[FanoutOutput, str, int | None, str], None] | None,
+    on_check_failure: Callable[[str, str, int | None, str], None] | None,
+) -> Callable[[FanoutOutput, str, int | None, str], None] | None:
+    """The failure callback for one check, also told WHICH check failed.
+
+    `on_failure` never learns the command: checks can run in parallel, so
+    order cannot tell it. The repair loop needs the pairing, so it gets its own
+    callback; with none, the original callback is returned unchanged.
+    """
+    if on_check_failure is None:
+        return on_failure
+
+    def failed(capture: FanoutOutput, reason: str, code: int | None, source: str) -> None:
+        on_check_failure(command, reason, code, source)
+        if on_failure is not None:
+            on_failure(capture, reason, code, source)
+
+    return failed
+
+
 def _run_planned_verification(
     paths: OmhPaths,
     unit: Mapping[str, Any],
@@ -1599,6 +1634,7 @@ def _run_planned_verification(
     environment_policy: Mapping[str, object] | None = None,
     on_failure: Callable[[FanoutOutput, str, int | None, str], None] | None = None,
     known_secrets: tuple[str, ...] = (),
+    on_check_failure: Callable[[str, str, int | None, str], None] | None = None,
 ) -> dict[str, Any]:
     """Run a metadata-carrying unit's checks through the revision-bound plan engine.
 
@@ -1645,7 +1681,8 @@ def _run_planned_verification(
             timeout=node.timeout,
             confinement=confinement,
             environment_policy=environment_policy,
-            on_failure=on_failure, known_secrets=known_secrets,
+            on_failure=_failure_naming_command(node.command, on_failure, on_check_failure),
+            known_secrets=known_secrets,
         )
 
     result = (
@@ -1927,6 +1964,7 @@ def _run_unit_verification(
     environment_policy: Mapping[str, object] | None = None,
     on_failure: Callable[[FanoutOutput, str, int | None, str], None] | None = None,
     known_secrets: tuple[str, ...] = (),
+    on_check_failure: Callable[[str, str, int | None, str], None] | None = None,
 ) -> dict[str, Any]:
     """Run one unit's declared verification commands and record what was observed.
 
@@ -1961,6 +1999,7 @@ def _run_unit_verification(
             confinement=confinement,
             environment_policy=environment_policy,
             on_failure=on_failure, known_secrets=known_secrets,
+            on_check_failure=on_check_failure,
         )
     rows: list[dict[str, object]] = []
     failures: list[str] = []
@@ -1974,7 +2013,8 @@ def _run_unit_verification(
                 child_env,
                 confinement=confinement,
                 environment_policy=environment_policy,
-                on_failure=on_failure, known_secrets=known_secrets,
+                on_failure=_failure_naming_command(command, on_failure, on_check_failure),
+                known_secrets=known_secrets,
             )
 
         outcome = (
@@ -2259,8 +2299,26 @@ def dispatch_fanout(
                     "reason": invalid_reason,
                 }
 
+    # A unit whose repair loop an earlier dispatch left pending -- its checks
+    # observed failing with budget left -- is dispatched again as a repair,
+    # ahead of the hold and completion probes that would otherwise skip it as
+    # the exit-0 unit it was. The count continues from the journal.
+    repair_resume: dict[str, dict[str, Any]] = {}
+    repair_journal: dict[str, dict[str, Any]] = {}
+    if run_verification and not dry_run and not selected_capability_invalid:
+        for unit_id in order:
+            if declared_max_repair_attempts(units[unit_id]):
+                repair_journal[unit_id] = _journaled_unit_repair(paths, units[unit_id])
+                if unit_id in selected and repair_journal[unit_id]["state"] == REPAIR_STATE_PENDING:
+                    repair_resume[unit_id] = repair_journal[unit_id]
+                    # Its resume-plan verdict (typically `hold_succeeded` for
+                    # an exit-0 unit) no longer describes what this run does.
+                    resume_decisions.pop(unit_id, None)
+
     for unit_id in order if not selected_capability_invalid else ():
         unit = units[unit_id]
+        if unit_id in repair_resume:
+            continue
         # The resume verdict is read BEFORE the completion probe on purpose: a
         # unit the journal held as replay-unsafe must stay held even where the
         # run journal it would be probed against has since been pruned.
@@ -2286,6 +2344,10 @@ def dispatch_fanout(
                 results[unit_id]["reproduction"] = _journaled_reproduction(paths, unit)
         elif unit_id not in selected:
             results[unit_id] = _skipped(unit, "not_selected")
+        # A skipped unit whose loop an earlier dispatch ran still reports it:
+        # a budget spent then is still spent, and the batch must say so.
+        if unit_id in results and repair_journal.get(unit_id, {}).get("state", REPAIR_STATE_NONE) != REPAIR_STATE_NONE:
+            _with_repair_record(paths, unit, results[unit_id])
 
     pending = [unit_id for unit_id in order if unit_id not in results]
 
@@ -2378,16 +2440,17 @@ def dispatch_fanout(
         if _INTERRUPT_FLAG.is_set():
             return _skipped(unit, UNIT_STATUS_NOT_STARTED_CANCELLED)
         gate = owner_gates.get(str(unit.get("owner") or "choose"))
+        resume = repair_resume.get(str(unit["unit_id"]))
         if gate is None:
             if health_events is not None:
                 health_events.started(str(unit["unit_id"]))
-            return _dispatch_unit(paths, unit, **kwargs)
+            return _dispatch_unit_until_repaired(paths, unit, resume=resume, **kwargs)
         with gate:
             if _INTERRUPT_FLAG.is_set():
                 return _skipped(unit, UNIT_STATUS_NOT_STARTED_CANCELLED)
             if health_events is not None:
                 health_events.started(str(unit["unit_id"]))
-            return _dispatch_unit(paths, unit, **kwargs)
+            return _dispatch_unit_until_repaired(paths, unit, resume=resume, **kwargs)
 
     # SIGTERM must not orphan the spawned agent CLIs (OMO's launcher
     # incident): the handler terminates every live unit group and raises so
@@ -3862,6 +3925,125 @@ def _capacity_lineage(unit: Mapping[str, object], binding: AdmissionBinding, con
             'incarnation_id': workspace.incarnation.incarnation_id if workspace is not None else None}
 
 
+def _journaled_unit_repair(paths: OmhPaths, unit: Mapping[str, Any]) -> dict[str, Any]:
+    """The repair loop's state for one unit, read from its whole journal."""
+    run_ref = str(unit.get("run_ref", ""))
+    try:
+        events = read_observation_events(paths, run_id=run_ref, limit=None)
+    except (OSError, ValueError, KeyError):
+        events = []
+    return project_unit_repair(events, run_id=run_ref, max_repair_attempts=declared_max_repair_attempts(unit))
+
+
+def _record_repair_verdict(
+    paths: OmhPaths, unit: Mapping[str, Any], result: Mapping[str, Any], *, attempt: int, max_repair_attempts: int
+) -> list[dict[str, Any]]:
+    """Journal what the dispatcher observed after one attempt; return what still fails.
+
+    Only a result whose process the dispatcher saw run carries a verdict: a
+    refusal before the spawn (spawn ceiling, readiness, missing worktree)
+    changed nothing, so it appends nothing and the journal state stands.
+    """
+    if "exit_code" not in result:
+        return []
+    failing = repair_trigger_checks(result)
+    if result.get("unit_state") == UNIT_STATE_VERIFIED:
+        status = "observed"
+    elif failing and attempt >= max_repair_attempts:
+        status = "blocked"
+    else:
+        status = "failed"
+    unit_id = str(unit["unit_id"])
+    run_ref = str(unit.get("run_ref", unit_id))
+    append_journal_observation(paths, {
+        "target_type": "run", "target_id": run_ref, "run_id": run_ref,
+        "event": REPAIR_ATTEMPT_OBSERVED_EVENT, "status": status,
+        "summary": (
+            f"dispatcher observed unit {unit_id} after repair attempt {attempt}: "
+            f"{len(failing)} repairable failing check(s)"
+        ),
+        "worker_ref": unit_id, "runtime_profile": str(result.get("owner", "")),
+        "attempt_id": str(result.get("attempt_id", "") or ""),
+        "repair_attempt": attempt, "repair_checks": failing,
+    })
+    return failing
+
+
+def repair_unit(
+    paths: OmhPaths,
+    unit: Mapping[str, Any],
+    failing_checks: Sequence[Mapping[str, Any]],
+    *,
+    attempt: int,
+    max_repair_attempts: int,
+    **dispatch_kwargs: Any,
+) -> dict[str, Any]:
+    """Re-dispatch one unit's executor in its existing worktree with a repair brief.
+
+    The one entry point for a repair: it takes the unit and the check set the
+    dispatcher observed failing, and runs the same `_dispatch_unit` path --
+    readiness, spawn budget, confinement, sidecar intake, declared
+    verification -- with the worktree and branch continued rather than
+    rebuilt. The caller owns the attempt number and the budget.
+    """
+    return _dispatch_unit(
+        paths,
+        unit,
+        repair={
+            "attempt": attempt,
+            "max_repair_attempts": max_repair_attempts,
+            "failing_checks": [dict(check) for check in failing_checks],
+        },
+        **dispatch_kwargs,
+    )
+
+
+def _dispatch_unit_until_repaired(
+    paths: OmhPaths, unit: Mapping[str, Any], *, resume: Mapping[str, Any] | None = None, **dispatch_kwargs: Any
+) -> dict[str, Any]:
+    """Dispatch one unit and repair it until an explicit stop criterion holds.
+
+    A unit without a repair budget, a dry run, and a run that does not verify
+    go straight to `_dispatch_unit`, byte-identical to before. Otherwise the
+    loop stops when the checks are observed passing, when the budget is spent
+    (recorded `blocked`), or when the latest result offers no observed
+    repairable failure. The count comes from the journal, so a `resume` state
+    from an earlier dispatch continues it; nothing here resets it.
+    """
+    limit = declared_max_repair_attempts(unit)
+    if not limit or dispatch_kwargs.get("dry_run") or not dispatch_kwargs.get("run_verification"):
+        return _dispatch_unit(paths, unit, **dispatch_kwargs)
+    result: dict[str, Any] | None = None
+    if resume is None:
+        attempt = int(_journaled_unit_repair(paths, unit)["attempts_used"])
+        result = _dispatch_unit(paths, unit, **dispatch_kwargs)
+        failing = _record_repair_verdict(paths, unit, result, attempt=attempt, max_repair_attempts=limit)
+    else:
+        attempt = int(resume["attempts_used"])
+        failing = [dict(check) for check in resume["failing_checks"]]
+    while failing and attempt < limit and not _INTERRUPT_FLAG.is_set():
+        attempt += 1
+        result = repair_unit(
+            paths, unit, failing, attempt=attempt, max_repair_attempts=limit, **dispatch_kwargs
+        )
+        failing = _record_repair_verdict(paths, unit, result, attempt=attempt, max_repair_attempts=limit)
+    if result is None:
+        # Interrupted before a resumed repair could start: nothing ran.
+        result = _skipped(unit, UNIT_STATUS_NOT_STARTED_CANCELLED)
+    return _with_repair_record(paths, unit, result)
+
+
+def _with_repair_record(paths: OmhPaths, unit: Mapping[str, Any], result: dict[str, Any]) -> dict[str, Any]:
+    """Attach the journal-derived repair block, so every surface reads one answer."""
+    record = repair_record(
+        _journaled_unit_repair(paths, unit), max_repair_attempts=declared_max_repair_attempts(unit)
+    )
+    result["repair"] = record
+    if record["status"] == "blocked":
+        result["unit_state_reason"] = REPAIR_BUDGET_EXHAUSTED
+    return result
+
+
 def _dispatch_unit(
     paths: OmhPaths,
     unit: Mapping[str, Any],
@@ -3899,6 +4081,7 @@ def _dispatch_unit(
     launch_gate: OwnerLaunchGate | None = None,
     capacity_sources: Sequence[CodexAdmissionSource] | None = None,
     capacity_resume_rows: Mapping[str, Mapping[str, object]] | None = None,
+    repair: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     if intake_root is None:
         # One owner for all return inputs, including exceptions and refusals.
@@ -3921,7 +4104,7 @@ def _dispatch_unit(
                 invocation_id=invocation_id or str(uuid4()), intake_root=Path(directory),
                 session_contract_digest=session_contract_digest,
                 launch_gate=launch_gate, capacity_sources=capacity_sources,
-                capacity_resume_rows=capacity_resume_rows)
+                capacity_resume_rows=capacity_resume_rows, repair=repair)
     from .model_inventory import catalog_fingerprint_note
 
     unit_id = str(unit["unit_id"])
@@ -4035,6 +4218,14 @@ def _dispatch_unit(
             else None
         ),
     )
+    if repair is not None:
+        # Appended after the unchanged unit prompt, so the goal, scope, and
+        # criteria the executor reads are the ones it was first given.
+        prompt += repair_brief_prompt(
+            attempt=int(repair["attempt"]),
+            max_repair_attempts=int(repair["max_repair_attempts"]),
+            failing_checks=list(repair["failing_checks"]),
+        )
     # The unit's prepared handoff routes a model whenever the contract
     # resolved one; when it did not (no route at all, or a route that
     # resolved with no model), the operator's dispatch-model preference fills
@@ -4049,7 +4240,7 @@ def _dispatch_unit(
             effective_model_route = {**(model_route or {}), "selected_model": preference}
     worktree = _worktree_path(repo_root, unit_id)
     clarification = None
-    if not dry_run and fanout_id:
+    if not dry_run and fanout_id and repair is None:
         clarification = read_clarification(clarification_path(paths, fanout_id, unit_id))
     argv = build_dispatch_argv(owner, prompt, effective_model_route)
     child_environment = fanout_child_environment(
@@ -4136,6 +4327,20 @@ def _dispatch_unit(
         if unit.get("kind") == REPRODUCTION_UNIT_KIND:
             planned["reproduction"] = _reproduction_receipt(unit, "not_observed", reason="dry_run")
         return planned
+    if repair is not None and not worktree.is_dir():
+        # A repair continues the unit's own worktree or does not run, and this
+        # is checked before any budget is claimed: building a fresh worktree
+        # from base would discard the commits being repaired.
+        return {
+            "unit_id": unit_id,
+            "run_ref": run_ref,
+            "owner": owner,
+            "status": "worktree_failed",
+            "attempt_id": attempt_id,
+            "reason_code": "repair_worktree_missing",
+            "reason": f"the unit worktree no longer exists, so repair attempt {repair['attempt']} cannot continue it",
+            **_dispatch_status_ladder(),
+        }
     # Claimed here, after the dry-run return and BEFORE either durable review
     # accounting or worktree creation. A ceiling refusal therefore leaves both
     # durable state and the filesystem untouched. If the review reservation
@@ -4210,7 +4415,7 @@ def _dispatch_unit(
         if any(marker in key.upper() for marker in ('TOKEN', 'SECRET', 'PASSWORD', 'API_KEY'))
     )[:126])
     worktree_record = ({"created": False, "reused": True, "worktree_path": str(worktree)}
-        if clarification is not None else ensure_fanout_unit_worktree(
+        if clarification is not None or repair is not None else ensure_fanout_unit_worktree(
         paths,
         repo_root=repo_root,
         unit_id=unit_id,
@@ -4330,6 +4535,17 @@ def _dispatch_unit(
         ensure_dir(sidecar_path.parent, private=True)
         sidecar_path.unlink(missing_ok=True)
     _ensure_unit_run(paths, unit, owner)
+    if repair is not None:
+        # Before the spawn, so an interrupted attempt is still counted and a
+        # later dispatch continues past it rather than re-spending it.
+        append_journal_observation(paths, {
+            "target_type": "run", "target_id": run_ref, "run_id": run_ref,
+            "event": REPAIR_ATTEMPT_STARTED_EVENT, "status": "observed",
+            "summary": f"dispatcher started repair attempt {repair['attempt']} for unit {unit_id}",
+            "worker_ref": unit_id, "worktree_ref": str(worktree), "runtime_profile": owner,
+            "attempt_id": attempt_id, "repair_attempt": int(repair["attempt"]),
+            "repair_checks": list(repair["failing_checks"]),
+        })
     dispatch_summary = f"local dispatch of unit {unit_id} to {owner}"
     if shared_artifacts.get("linked"):
         # Named in the journal, not just the eventual result dict, so a run
@@ -4819,6 +5035,14 @@ def _dispatch_unit(
         # dispatcher-run command, so its exit status moves the same ladder.
         # One the dispatcher could not resolve fails closed: nothing runs and
         # no observation is appended.
+        # Which check failed and how, captured only for a unit that declared a
+        # repair budget: the repair loop's trigger reads it, nothing else does.
+        observed_check_failures: list[dict[str, Any]] = []
+
+        def check_failed(command: str, reason: str, code: int | None, source: str) -> None:
+            observed_check_failures.append(observed_check_failure(command, reason, code, source))
+
+        repair_enabled = declared_max_repair_attempts(unit) > 0
         verification_unit: Mapping[str, Any] = unit
         task_linked: dict[str, Any] | None = None
         test_runner = str(unit.get("task_linked_test_runner") or "")
@@ -4854,9 +5078,12 @@ def _dispatch_unit(
                 confinement=confinement,
                 environment_policy=environment_policy,
                 on_failure=verification_failed, known_secrets=known_secrets,
+                on_check_failure=check_failed if repair_enabled else None,
             )
         if task_linked is not None:
             verification["task_linked_postcondition"] = task_linked
+        if observed_check_failures:
+            verification["verification_observed_failures"] = observed_check_failures
         if health_events is not None:
             health_events.finished(
                 verification_task,

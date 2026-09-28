@@ -1979,6 +1979,7 @@ def cmd_coding_fanout_show(args: argparse.Namespace) -> int:
             "run_ref": run_ref,
             "journal_event_counts": history,
             **({"failure_diagnostic": diagnostic} if diagnostic is not None else {}),
+            **_fanout_show_repair(paths, unit),
         }
     board = {
         "schema_version": "fanout_board/v1",
@@ -2015,6 +2016,40 @@ def cmd_coding_fanout_show(args: argparse.Namespace) -> int:
     _print_json(payload)
     _record_fanout_board_emission(paths, watched_runs, payload, fingerprint)
     return 0
+
+
+def _fanout_show_repair(paths, unit: dict) -> dict[str, object]:
+    """The repair loop's journal state for a unit that declared a budget, else nothing.
+
+    Read from the full journal, not the bounded history tail, so the attempt
+    count cannot fall off the end; a unit without a budget adds no key.
+    """
+    from ..coding.fanout_repair import declared_max_repair_attempts, project_unit_repair, repair_record
+    from ..workflows.observation_journal import read_observation_events
+
+    limit = declared_max_repair_attempts(unit)
+    if not limit:
+        return {}
+    run_ref = str(unit.get("run_ref", ""))
+    try:
+        events = read_observation_events(paths, run_id=run_ref, limit=None)
+    except (OSError, ValueError, KeyError):
+        events = []
+    projection = project_unit_repair(events, run_id=run_ref, max_repair_attempts=limit)
+    return {"repair": repair_record(projection, max_repair_attempts=limit)}
+
+
+def _brief_repair(dispatched: dict) -> dict[str, object]:
+    """The attempt count and stop reason a dispatched unit's repair block carries, or nothing."""
+    record = dispatched.get("repair")
+    if not isinstance(record, dict):
+        return {}
+    brief = {
+        key: record[key]
+        for key in ("attempts_used", "max_repair_attempts", "status", "stop_reason", "blocked_reason", "last_failing_check")
+        if key in record
+    }
+    return {"repair": brief}
 
 
 _FANOUT_BRIEF_SUMMARY_LIMIT = 200
@@ -2219,6 +2254,7 @@ def cmd_coding_fanout_brief(args: argparse.Namespace) -> int:
                 "summary": failure_diagnostic_text(diagnostic)[:_FANOUT_BRIEF_SUMMARY_LIMIT] if diagnostic is not None else latest_summary,
                 **({"failure_diagnostic": diagnostic} if diagnostic is not None else {}),
                 **read_capacity_fields(dispatched),
+                **_brief_repair(dispatched),
             }
         )
     payload = {
@@ -2347,6 +2383,14 @@ def _fanout_brief_unit_line(unit: dict) -> str:
     capacity = read_capacity_fields(unit).get('capacity')
     if isinstance(capacity, dict):
         line += f" — capacity: {capacity['status']}; {capacity['next_action']}"
+    repair = unit.get("repair")
+    if isinstance(repair, dict):
+        line += f" — repair {repair.get('attempts_used')}/{repair.get('max_repair_attempts')} {repair.get('status')}"
+        if repair.get("stop_reason"):
+            line += f" ({repair['stop_reason']})"
+        check = repair.get("last_failing_check")
+        if repair.get("status") == "blocked" and isinstance(check, dict):
+            line += f": `{check.get('command')}` exit {check.get('exit_code')}"
     return line
 
 
@@ -2526,6 +2570,14 @@ def _fanout_dispatch_exit_code(summary: dict) -> int:
     units = summary.get("units")
     if isinstance(units, list) and any(
         isinstance(unit, dict) and unit.get("failure_kind") for unit in units
+    ):
+        return 1
+    # A unit whose process exited 0 carries no `failure_kind`, yet one the
+    # repair loop stopped blocked -- its budget spent with a declared check
+    # still observed failing -- is work that did not get done.
+    if isinstance(units, list) and any(
+        isinstance(unit, dict) and isinstance(unit.get("repair"), dict) and unit["repair"].get("status") == "blocked"
+        for unit in units
     ):
         return 1
     return 0
