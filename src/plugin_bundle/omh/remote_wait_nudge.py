@@ -385,24 +385,33 @@ HONEST_STOP_TEXT: Final = HONEST_STOP_TEXTS["en"]
 # When a reply outside code is written in a non-Latin script rather than
 # quoting one. A script counts only through a run of at least
 # `REPLY_SCRIPT_MIN_RUN` of its characters in a row, so "CI 대기 중" is Korean
-# and one stray syllable is nothing. The script's characters must then carry
-# at least as much of the prose as the Latin letters beside them, weighing one
-# CJK character as `REPLY_SCRIPT_LATIN_WEIGHT` Latin letters (a syllable or a
-# character is roughly that much of a word): "the file 설정파일.md is updated"
-# and an English sentence quoting a Korean one stay English, and a Korean
-# reply naming `CI` and a PR number stays Korean.
+# and one stray syllable is nothing. Then its characters have to number at
+# least the Latin words beside them -- words, not letters, so "Kubernetes
+# deployment rollout status 확인 완료" is not outweighed by the letters of four
+# product words. Two kinds of token are dropped whole before either side is
+# counted, because neither says what language the reply is written in:
+# path- and identifier-shaped tokens (`src/x.py`, `reply_language`,
+# `REPLY_SCRIPT_MIN_RUN`, `GitHub`, `설정파일.md`), which a coding reply is full
+# of, and quotations ("...", “...”, 「...」, 『...』), which are someone else's
+# words: an English reply quoting a Korean sentence stays English, and a
+# Korean reply quoting an English error message stays Korean.
 REPLY_SCRIPT_MIN_RUN: Final = 2
-REPLY_SCRIPT_LATIN_WEIGHT: Final = 2
 
 # A fence closes only on a line of the same character at least as long as the
 # opening one, so a ```` block that shows a ``` block is removed whole.
 _FENCED_CODE = re.compile(r"(?ms)^[ \t]*((`|~)\2{2,})[^\n]*$.*?(?:^[ \t]*\1\2*[ \t]*$|\Z)")
 _INLINE_CODE = re.compile(r"`[^`\n]*`")
-_LATIN_LETTERS = re.compile(r"[A-Za-z]")
+_LATIN_WORDS = re.compile(r"[A-Za-z]+")
+# A token with `/`, `.` or `_` between two word characters, or a lowercase
+# letter directly before an uppercase one, is a path, a file name, an
+# identifier or a camel-cased name. A sentence-ending period has no word
+# character after it, so "완료." and "done." stay prose.
+_NAME_TOKEN = re.compile(r"\S*(?:\w[/._]\w|[a-z][A-Z])\S*")
 _HANGUL = "ᄀ-ᇿ㄰-㆏가-힣"
 _KANA = "぀-ゟ゠-ヿㇰ-ㇿｦ-ﾟ"
 _HAN = "㐀-䶿一-鿿豈-﫿"
 _CJK_CHARS = re.compile(f"[{_HANGUL}{_KANA}{_HAN}]")
+_QUOTATION = re.compile(r'"[^"\n]*"|“[^”\n]*”|「[^」\n]*」|『[^』\n]*』')
 _SCRIPT_RUNS: Final = tuple(
     (language, re.compile(f"[{chars}]{{{REPLY_SCRIPT_MIN_RUN},}}"))
     for language, chars in (("ko", _HANGUL), ("ja", _KANA), ("zh", _HAN))
@@ -413,12 +422,13 @@ def reply_language(text: object) -> str:
     """The language of *text*: ``ko``, ``ja``, ``zh`` or ``en``.
 
     Fenced and inline code are removed first, because a Korean string in a
-    code block says nothing about the language the reply is written in. Then
-    the reply is English unless its CJK characters, weighed as above, carry at
-    least as much as its Latin letters. A non-Latin reply takes the first
-    script in precedence order -- Hangul, then kana, then Han -- that has a
-    run long enough to count, not the majority script: a Japanese reply is
-    often mostly kanji, so a majority rule would call it Chinese.
+    code block says nothing about the language the reply is written in, and
+    so are quotations and path- or identifier-shaped tokens. Then the reply
+    is English unless its CJK characters number at least its Latin words. A
+    non-Latin reply takes the first script in precedence order -- Hangul,
+    then kana, then Han -- that has a run long enough to count, not the
+    majority script: a Japanese reply is often mostly kanji, so a majority
+    rule would call it Chinese.
 
     The stated limit: a Japanese reply with no run of two kana (all kanji, or
     kanji with single-kana particles) reads as Chinese. Nothing in the text
@@ -426,8 +436,8 @@ def reply_language(text: object) -> str:
     script with no copy here, is English.
     """
     prose = _INLINE_CODE.sub("", _FENCED_CODE.sub("", str(text or "")))
-    cjk = len(_CJK_CHARS.findall(prose))
-    if cjk * REPLY_SCRIPT_LATIN_WEIGHT < len(_LATIN_LETTERS.findall(prose)):
+    prose = _NAME_TOKEN.sub(" ", _QUOTATION.sub(" ", prose))
+    if len(_CJK_CHARS.findall(prose)) < len(_LATIN_WORDS.findall(prose)):
         return "en"
     for language, run in _SCRIPT_RUNS:
         if run.search(prose):

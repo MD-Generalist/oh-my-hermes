@@ -98,8 +98,9 @@ _ENGLISH_RECORD_TERMS: tuple[str, ...] = (
 # in-flight status (`omh.coding.fanout_repair`). Scope rule: an id that is an
 # ordinary English word or phrase is held back in `_ORDINARY_CATEGORY_IDS`,
 # because "a quick fix" or "a deep-work block" is not a leak; every other id
-# is OMH's coinage. Matched case-sensitively and whole, hyphen included, so
-# `unspecified-high` never fires inside `unspecified-higher`.
+# is OMH's coinage. Matched case-sensitively and whole: a letter or digit
+# after it (`unspecified-higher`) or a hyphen continuing it
+# (`unspecified-high-tier`, `no_evidence-free`) makes it a different word.
 # `tests/test_reply_lint.py` re-derives both sets from those producers and
 # fails with the id to add or remove.
 _RECORD_ID_TERMS: tuple[str, ...] = (

@@ -58,7 +58,6 @@ from omh.plugin_bundle.omh.remote_wait_nudge import (
     APPROVAL_GATE_TEXT,
     HONEST_STOP_TEXT,
     HONEST_STOP_TEXTS,
-    REPLY_SCRIPT_LATIN_WEIGHT,
     REPLY_SCRIPT_MIN_RUN,
     PROCESS_RECORD_FILENAME,
     REMOTE_WAIT_NUDGE_KEY,
@@ -708,11 +707,31 @@ class ReplyLanguageTests(unittest.TestCase):
         self.assertEqual(reply_language("완료."), "ko")
         self.assertEqual(reply_language("PR #1930 올렸고 CI 대기 중입니다."), "ko")
 
+    def test_a_reply_naming_paths_and_identifiers_keeps_its_language(self) -> None:
+        # The CI-wait coding turn the honest stop ends: bare paths,
+        # identifiers and product words around a Korean or Chinese sentence.
+        for reply, language in (
+            ("src/quality/reply_lint.py 와 tests/test_reply_lint.py 를 수정했습니다.", "ko"),
+            ("reply_language 함수에서 REPLY_SCRIPT_MIN_RUN 기준을 적용했습니다", "ko"),
+            ("GitHub Actions workflow 가 실패했습니다", "ko"),
+            ("Kubernetes deployment rollout status 확인 완료", "ko"),
+            (
+                "테스트 결과 tests/test_reply_lint.py tests/test_orchestration_say.py "
+                "tests/test_remote_wait_nudge.py 모두 통과했습니다. 다음은 merge 입니다.",
+                "ko",
+            ),
+            ("修改了 src/quality/reply_lint.py 文件", "zh"),
+            ('빌드가 "error: could not resolve the module path for the test runner" 로 실패했습니다.', "ko"),
+        ):
+            with self.subTest(reply=reply):
+                self.assertEqual(reply_language(reply), language)
+
     def test_an_english_reply_quoting_korean_stays_english(self) -> None:
         for reply in (
             "You asked about 설정 on the settings page.",
             "I updated 설정파일.md with the new timeout and pushed the branch.",
             'The user wrote "배포가 끝나면 알려주세요" so I set up a notification for it.',
+            "The user wrote “배포가 끝나면 알려주세요” so I set it up.",
             "The screen now reads 「プッシュ通知」 after the rename.",
         ):
             with self.subTest(reply=reply):
@@ -727,11 +746,18 @@ class ReplyLanguageTests(unittest.TestCase):
         self.assertEqual(reply_language("で す"), "en")
 
     def test_the_share_threshold_is_exact(self) -> None:
-        self.assertEqual(REPLY_SCRIPT_LATIN_WEIGHT, 2)
-        # Two Hangul weigh four Latin letters: four ties and is Korean, five
-        # outweigh them.
-        self.assertEqual(reply_language("대기 abcd"), "ko")
-        self.assertEqual(reply_language("대기 abcde"), "en")
+        # Two Hangul against two Latin words ties and is Korean; a third word
+        # outweighs them. Words, not letters: long words weigh the same.
+        self.assertEqual(reply_language("대기 ab cd"), "ko")
+        self.assertEqual(reply_language("대기 deployment rollout"), "ko")
+        self.assertEqual(reply_language("대기 ab cd ef"), "en")
+
+    def test_a_name_token_is_dropped_whole_and_a_period_is_not_one(self) -> None:
+        # Its Hangul goes with it, so the file name cannot make a reply Korean.
+        self.assertEqual(reply_language("설정파일.md"), "en")
+        # A sentence-ending period has no word character after it.
+        self.assertEqual(reply_language("대기 ab cd."), "ko")
+        self.assertEqual(reply_language("대기 ab cd ef."), "en")
 
     def test_an_unsupported_script_falls_back_to_english(self) -> None:
         self.assertEqual(reply_language("Готово, изменения отправлены."), "en")

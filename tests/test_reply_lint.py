@@ -434,6 +434,8 @@ class RecordIdTests(unittest.TestCase):
     def test_an_id_is_exact(self) -> None:
         for text in (
             "unspecified-higher tiers",
+            "the unspecified-high-tier model",
+            "a no_evidence-free run",
             "pre-unspecified-high",
             "no_evidence_yet",
             "UNSPECIFIED-HIGH",
