@@ -72,6 +72,8 @@ from ..coding.product_family_templates import validate_product_family_template
 from ..coding.product_quality_harnesses import validate_product_quality_harness
 from ..coding.project_governance import validate_project_governance_blocked, validate_project_governance_profile
 from ..routing.route_plan import compact_workflow_route_plan
+from ..routing.route_question import ROUTE_QUESTION_DECLINE_REASONS
+from ..plugin_bundle.omh.route_question_mode import route_question_mode_fields
 from ..routing.decision_contract import ROUTE_DECISION_SCHEMA_VERSION
 from ..skills.catalog_types import REASONING_DEMAND_VALUES
 from ..workflows.approval_receipts import (
@@ -930,7 +932,26 @@ def build_routing_record(routing: dict[str, Any]) -> dict[str, Any]:
     workflow_route_plan = compact_workflow_route_plan(routing.get("workflow_route_plan"))
     if workflow_route_plan:
         record["workflow_route_plan"] = workflow_route_plan
+    route_question = routing.get("route_question")
+    if isinstance(route_question, dict):
+        record["route_question"] = _compact_route_question_record(route_question)
     return record
+
+
+def _compact_route_question_record(value: dict[str, Any]) -> dict[str, Any]:
+    """The closed route-question summary a routing record may store.
+
+    Metadata only: two booleans, one reason from a closed vocabulary, and the
+    mode with where it was read from. Anything else a caller put there is
+    dropped rather than persisted.
+    """
+    reason = value.get("decline_reason")
+    return {
+        "built": bool(value.get("built")),
+        "asked": bool(value.get("asked")),
+        "decline_reason": reason if reason in ROUTE_QUESTION_DECLINE_REASONS else "",
+        **route_question_mode_fields(value),
+    }
 
 
 def build_coding_delegation_record(delegation: dict[str, Any]) -> dict[str, Any]:

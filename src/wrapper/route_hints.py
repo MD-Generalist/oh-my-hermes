@@ -8,6 +8,7 @@ from ..plugin_bundle.omh.awareness import (
 )
 from ..plugin_bundle.omh.degradation import degradation_chat_note
 from ..plugin_bundle.omh.route_answerers import answerer_ladder
+from ..plugin_bundle.omh.route_question_mode import ROUTE_QUESTION_MODE_OFF, read_route_question_mode
 from ..routing.catalog_questions import is_skill_catalog_question
 from ..routing.action_copy import next_action_label
 from ..routing.chat import route_chat_message
@@ -62,6 +63,11 @@ def build_chat_route_hint_payload(
     route_decision = route["route_decision"]
     route_question = route.get("route_question")
     route_question = route_question if isinstance(route_question, dict) else None
+    # Only with an OMH home is there a config to read; `off` withholds the
+    # question here exactly as it does on the interaction payload.
+    omh_home = getattr(paths, "omh_home", None) if paths is not None else None
+    if omh_home and read_route_question_mode(omh_home)["mode"] == ROUTE_QUESTION_MODE_OFF:
+        route_question = None
     generic_tool_checkpoint = _generic_tool_checkpoint()
     hints = [hint for hint in route_hint.get("hints", []) if isinstance(hint, dict)]
     primary_hint = hints[0] if hints else {}

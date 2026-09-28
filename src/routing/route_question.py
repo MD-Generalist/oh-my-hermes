@@ -30,6 +30,8 @@ import hashlib
 import json
 from typing import Any, Iterable, Mapping
 
+from ..plugin_bundle.omh.route_question_mode import ROUTE_QUESTION_MODE_OFF
+
 ROUTE_QUESTION_SCHEMA_VERSION = "route_question/v1"
 
 # The question ids. `ROUTE_CHOICE_KEY` is the single relative choice;
@@ -67,6 +69,52 @@ _CLAIM_BOUNDARY = (
     "decision, an execution, or evidence that any workflow ran. An unanswered "
     "question changes nothing: the deterministic route stays in force."
 )
+
+
+# Why a built question has nothing to decide, in the order they are tested.
+# `route_question_decline_reason` in `omh.routing.chat` is the one producer;
+# these are the only values it returns besides "".
+DECLINE_ACKNOWLEDGEMENT = "acknowledgement"
+DECLINE_ONE_WORD_REPLY = "one_word_reply"
+DECLINE_NO_CANDIDATE = "no_candidate"
+DECLINE_SINGLE_CANDIDATE = "single_candidate"
+ROUTE_QUESTION_DECLINE_REASONS = (
+    DECLINE_ACKNOWLEDGEMENT,
+    DECLINE_ONE_WORD_REPLY,
+    DECLINE_NO_CANDIDATE,
+    DECLINE_SINGLE_CANDIDATE,
+)
+
+
+def route_question_candidate_count(question: Mapping[str, Any] | None) -> int:
+    """How many workflows a question's Choice offers, `none` not counted.
+
+    Read from the question block itself, because that block is what an
+    answerer is shown: a count taken from anywhere else could describe a
+    shortlist the question does not carry.
+    """
+    questions = question.get("questions") if isinstance(question, Mapping) else None
+    choice = questions.get(ROUTE_CHOICE_KEY) if isinstance(questions, Mapping) else None
+    options = choice.get("options") if isinstance(choice, Mapping) else None
+    if not isinstance(options, Mapping):
+        return 0
+    return sum(1 for option in options if option != NO_WORKFLOW_OPTION)
+
+
+def apply_route_question_mode(route: dict[str, Any], mode: str) -> dict[str, Any]:
+    """The route a surface hands out, given the configured mode.
+
+    `off` withholds the question; every other mode leaves the route exactly
+    as the router built it. `shadow` is today's behaviour, and `unknown` -- a
+    mode the process could not read -- is deliberately not treated as `off`:
+    an unreadable switch changes nothing the surface does, and the record
+    that carries `unknown` is where the operator finds out it was unreadable.
+    The route is modified in place and returned, so a caller that owns a
+    fresh payload does not pay for a copy.
+    """
+    if mode == ROUTE_QUESTION_MODE_OFF:
+        route.pop("route_question", None)
+    return route
 
 
 def clean_skill_description(value: object) -> str:
@@ -255,6 +303,13 @@ def build_route_question_for_candidate_handoff(
 
 
 __all__ = [
+    "DECLINE_ACKNOWLEDGEMENT",
+    "DECLINE_NO_CANDIDATE",
+    "DECLINE_ONE_WORD_REPLY",
+    "DECLINE_SINGLE_CANDIDATE",
+    "ROUTE_QUESTION_DECLINE_REASONS",
+    "apply_route_question_mode",
+    "route_question_candidate_count",
     "FITS_CLARIFY_THRESHOLD",
     "FITS_DISPATCH_THRESHOLD",
     "FIT_QUESTION_PREFIX",

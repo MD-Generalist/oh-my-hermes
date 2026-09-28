@@ -613,6 +613,47 @@ both with different values is refused, since the two name different requests.
 Send neither and the record identifies no request, recorded as an empty string
 rather than a hash of nothing.
 
+### Mode, decline, invalid answers, and the shadow report
+
+The route question runs in one of two modes, read from the operator's own OMH
+config at `<omh_home>/routing/route-question.json`, never from the model:
+
+```json
+{"mode": "off"}
+```
+
+- `shadow` (the default, and the behaviour before the mode existed): the
+  question is attached to every undecidable route and answers are recorded
+  without changing it. The payload is byte for byte what it was.
+- `off`: no surface hands the question out.
+
+Every answer record and every `omh chat route --record` routing record carries
+`mode` and `mode_source`: `omh_config` when the file set it, `default` when there
+is no file. A file that exists and cannot be read, parsed, or understood gives
+`mode: unknown` with a `mode_error`, never the default, and the surface then
+behaves as `shadow`. `{"mode": "on"}` -- a mode in which an answer would decide
+the route -- is not available and reads as `unknown` with `on_not_available`.
+
+The routing record also carries the decline predicate's verdict as
+`route_question.decline_reason`: `acknowledgement`, `one_word_reply`,
+`no_candidate` (the Choice offers only `none`), or `single_candidate`. In
+`shadow` a declinable question is still asked; the reason is recorded so the
+share of turns with nothing to decide is readable before anything acts on it.
+
+An answer whose Choice probabilities omit an option the question offered, do
+not sum to one within 0.01, or do not peak at the chosen option is recorded
+with `answer_verdict: invalid_answer` and the tool returns
+`status: invalid_answer`. It counts as no opinion: the route is unchanged and
+the turn continues. The corpus scorer applies the same rule to offline rows.
+
+`omh chat route-questions report` joins the recorded answers to the recorded
+routes by `message_sha256` and reports the decline rate, the invalid-answer
+rate, and the agreement with the deterministic route, each as a reported rate
+that names its numerator, denominator, and exclusions. `--model <alias>`
+prices a declared turn shape (192,000 input and 5,600 output tokens) at that
+model's list price. The shape is another project's self-reported median and is
+not an OMH measurement; the report says so wherever it prints the cost.
+
 ## Missed OMH Route Capture
 
 If Hermes or the user says a response did not use the expected OMH workflow, the

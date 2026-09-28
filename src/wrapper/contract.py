@@ -32,6 +32,8 @@ from ..routing.chat import public_chat_route_payload, route_explanation_payload
 from ..routing.coding_route_actions import coding_route_decision_payload, resolve_coding_route_decision
 from ..routing.localization import normalized_phrase
 from ..routing.route_plan import public_workflow_identifier, with_public_skill_names
+from ..routing.route_question import apply_route_question_mode
+from ..plugin_bundle.omh.route_question_mode import read_route_question_mode
 from ..routing.policy import POINT_IN_TIME_WEB_GUARD
 from ..workflows.realtime_voice_trial_receipts import build_prepared_realtime_voice_chat_state
 from ..workflows.temporal_source_receipts import (
@@ -4751,6 +4753,13 @@ def build_chat_interaction_payload(
     if paths is not None:
         _record_accepted_owner_choice(payload, paths)
         _record_in_message_named_owner(payload, paths)
+        # The one seam every chat surface with an OMH home passes through, so
+        # `off` withholds the question on the plugin tool, the CLI, and a
+        # wrapper session alike. `shadow` and `unknown` leave the payload as
+        # the router built it.
+        route = payload.get("route")
+        if isinstance(route, dict):
+            apply_route_question_mode(route, read_route_question_mode(paths.omh_home)["mode"])
     # Attached at the one point every chat surface passes through -- the plugin
     # tool's session and no-session paths both land here -- so Slack, Telegram,
     # Discord, CLI, and desktop all carry the notice from a single seam. The

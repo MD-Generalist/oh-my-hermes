@@ -22,7 +22,14 @@ from .action_copy import next_action_label as _route_next_action_label
 from .candidate_handoff import SHORTLIST_LEXICAL, WEAK_DISPATCH_EVIDENCE, build_candidate_handoff, shortlist_clarification
 from .dispatch_evidence import EVIDENCE_WEAK, GUARD_TRUSTED, dispatch_evidence
 from .decision_contract import build_route_decision_contract
-from .route_question import build_route_question_for_candidate_handoff
+from .route_question import (
+    DECLINE_ACKNOWLEDGEMENT,
+    DECLINE_NO_CANDIDATE,
+    DECLINE_ONE_WORD_REPLY,
+    DECLINE_SINGLE_CANDIDATE,
+    build_route_question_for_candidate_handoff,
+    route_question_candidate_count,
+)
 from .domain_signals import (
     DomainRouteSignal,
     classify_clarification_relevance,
@@ -32,6 +39,7 @@ from .domain_signals import (
 )
 from .display_names import canonical_display_mentions
 from .input_language import routing_input_language
+from ..plugin_bundle.omh.route_question_mode import ROUTE_QUESTION_MODE_OFF, route_question_mode_fields
 from .intent import classify_workflow_intent, scrub_diagnostic_status_text
 from .reference_regions import executable_routing_text, reference_regions
 from .localization import normalized_phrase, prepare_routing_text, routing_tokens
@@ -1686,6 +1694,13 @@ def _enriched_route(
         # rather than `matching_message`, because the value has to agree with
         # what every wrapper surface reports and `routing_record_payload`
         # reports the raw message's hash.
+        #
+        # Attached even when `route_question_decline_reason` would decline it.
+        # Declining here would move the payload of most negative-control
+        # cases, and the question's default mode, `shadow`, is defined as
+        # today's payload byte for byte. The verdict is recorded beside the
+        # route instead (`routing_record_payload`) so its rate is readable
+        # before anything acts on it.
         route["route_question"] = build_route_question_for_candidate_handoff(
             candidate_handoff, message=message
         )
@@ -1722,6 +1737,45 @@ def _enriched_route(
             )
     route["route_decision"] = build_route_decision_contract(route)
     return _apply_skill_governance(route, skill_policy)
+
+
+def route_question_decline_reason(route: Mapping[str, object], message: str) -> str:
+    """Why a route's question has nothing to decide, or "" when it does.
+
+    Answered from what OMH already holds and nothing else: the question block
+    the route carries and the message's own shape. "" also covers a route that
+    carries no question at all -- there is nothing to decline.
+
+    The checks, in order:
+
+    - `acknowledgement`: the direct-answer lane's own conversational-turn
+      classifier says the message is a thank-you or an okay. Its answer is
+      always "no workflow", and asking costs an answerer a turn to say so.
+    - `one_word_reply`: one whitespace-delimited word in a script that
+      delimits words with spaces. Han and kana are excluded because a whole
+      Japanese sentence is one "word" by that count.
+    - `no_candidate`: the Choice offers only `none`.
+    - `single_candidate`: the Choice offers one workflow and `none`.
+    """
+    question = route.get("route_question")
+    if not isinstance(question, Mapping):
+        return ""
+    executable = executable_routing_text(message)
+    lowered = executable.strip().lower()
+    if lowered and _is_plain_conversational_turn(_strip_direct_answer_soft_prefix(lowered)):
+        return DECLINE_ACKNOWLEDGEMENT
+    script = routing_input_language(message).get("script")
+    if script in _SPACE_DELIMITED_SCRIPTS and len(normalized_phrase(executable).split()) == 1:
+        return DECLINE_ONE_WORD_REPLY
+    candidate_count = route_question_candidate_count(question)
+    if candidate_count == 0:
+        return DECLINE_NO_CANDIDATE
+    if candidate_count == 1:
+        return DECLINE_SINGLE_CANDIDATE
+    return ""
+
+
+_SPACE_DELIMITED_SCRIPTS = frozenset({"latin", "hangul"})
 
 
 def _contextual_design_direction_iteration_route(
@@ -6963,6 +7017,7 @@ def routing_record_payload(
     source_event_id: str = "",
     channel_ref: str = "",
     user_ref: str = "",
+    route_question_mode: Mapping[str, str] | None = None,
 ) -> dict[str, object]:
     payload = {
         "route_decision": build_route_decision_contract(decision),
@@ -6994,7 +7049,34 @@ def routing_record_payload(
     learning_candidate_card = decision.get("learning_candidate_card")
     if isinstance(learning_candidate_card, dict) and learning_candidate_card:
         payload["learning_candidate_card"] = learning_candidate_card
+    if route_question_mode is not None:
+        payload["route_question"] = route_question_record(decision, message, route_question_mode)
     return payload
+
+
+def route_question_record(
+    decision: Mapping[str, object],
+    message: str,
+    route_question_mode: Mapping[str, str],
+) -> dict[str, object]:
+    """What the route question did on this route, for a metadata-only record.
+
+    `built` says the router produced a question, `asked` that the surface
+    handed it out under the mode it read, and `decline_reason` what the
+    decline predicate says about it whether or not anything acted on it. In
+    `shadow` a declinable question is still asked; the reason is recorded so
+    the rate of turns with nothing to decide is readable before a mode acts
+    on it. `decision` is the route as the router built it, before any mode
+    was applied.
+    """
+    fields = route_question_mode_fields(dict(route_question_mode))
+    built = isinstance(decision.get("route_question"), Mapping)
+    return {
+        "built": built,
+        "asked": built and fields["mode"] != ROUTE_QUESTION_MODE_OFF,
+        "decline_reason": route_question_decline_reason(decision, message),
+        **fields,
+    }
 
 
 def _is_ambiguous(recommendations: list[dict[str, object]]) -> bool:

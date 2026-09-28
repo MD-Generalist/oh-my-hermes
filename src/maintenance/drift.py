@@ -333,6 +333,9 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # obligation, belief), which stay narration.
             # The #1893 re-review adds five: a modal inside a subordinate or
             # reported clause, which does not make the main clause a request.
+            # #1817 adds three: two turns the route question's decline
+            # predicate declines (a one-word approval, a thank-you) and one
+            # four-candidate non-request it must keep asking.
             expected=412,
             sites=(
                 "tests/test_cli.py",
@@ -409,6 +412,8 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # The achievements and wiki chat cards add two: a badge-progress
             # request and a wiki-from-notes request, each answered by its own
             # card instead of the generic acknowledgement.
+            # #1817 adds two: a single-candidate clarify the route question's
+            # decline predicate declines and a four-candidate clarify it keeps.
             expected=619,
             sites=(
                 "tests/test_cli.py",

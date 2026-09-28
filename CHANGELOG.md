@@ -4,6 +4,26 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **The route question says which mode recorded it, what it would have
+  declined, which answers contradict themselves, and how it reads against your
+  own traffic.** The mode is read from `<omh_home>/routing/route-question.json`
+  (`off` or `shadow`, default `shadow`). Every answer record and every
+  `omh chat route --record` routing record carries `mode` and `mode_source`. A
+  config that exists but cannot be read, parsed, or understood reports `unknown`
+  with its reason, never the default; `on` is not available yet and reads the
+  same way. `shadow` is today's payload byte for byte, pinned against every
+  negative-control payload captured on `main`; `off` withholds the question on
+  every surface. The routing record now carries the decline predicate's verdict
+  (`acknowledgement`, `one_word_reply`, `no_candidate`, `single_candidate`). In
+  `shadow` the question is still asked; the verdict is recorded so its rate is
+  readable. An answer whose Choice probabilities omit an offered option, do not
+  sum to one, or do not peak at the chosen option is recorded as
+  `invalid_answer` and counts as no opinion, in `omh_route_answer` and in the
+  corpus scorer. `omh chat route-questions report` joins recorded answers to
+  recorded routes by `message_sha256`. It reports decline, invalid-answer and
+  agreement rates as reported rates, plus a per-turn cost over a declared turn
+  shape that the report names as not measured by OMH.
+
 - **Internal-control testing has an owner: `omh-internal-audit`.** "is this a
   significant deficiency or a material weakness", "reperform the bank
   reconciliation control for march" and "how many samples do we need to test
