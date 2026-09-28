@@ -1237,8 +1237,18 @@ class RouteAnswerProvenanceTests(_ConsentedCase):
             with patch.dict(os.environ, home.env):
                 matching = json.loads(omh_route_answer_handler(
                     {**record_args, "ask_id": asked["ask_id"],
-                     "choice_probabilities": {options[0]: 1.0 / len(options)}}, session_id=SESSION))
+                     "choice_probabilities": {option: 1.0 / len(options) for option in options}},
+                    session_id=SESSION))
             self.assertEqual(matching["status"], "recorded")
+            # A subset of Jev's own numbers passes the provenance check, and is
+            # then refused as no opinion (#1817): a distribution that omits
+            # offered options does not sum to one over the question.
+            with patch.dict(os.environ, home.env):
+                partial = json.loads(omh_route_answer_handler(
+                    {**record_args, "ask_id": asked["ask_id"],
+                     "choice_probabilities": {options[0]: 1.0 / len(options)}}, session_id=SESSION))
+            self.assertEqual(partial["status"], "invalid_answer")
+            self.assertEqual(partial["record"]["invalid_answer_reasons"], ["coverage", "mass"])
 
     def test_omh_jev_ask_provenance_is_bound_to_the_question_the_digest_names(self) -> None:
         # R5-2: omh_jev_ask echoes whatever digest the block carries, so a
