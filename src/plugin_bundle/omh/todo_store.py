@@ -25,7 +25,7 @@ import secrets
 import stat
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any, Callable, Iterator
 
 # The bundle's one sanctioned lock, the same object `tool_bursts`,
 # `approval_bypass` and `memory_open_reminders` take. It carries both backends
@@ -33,6 +33,7 @@ from typing import Any, Iterator
 # import omh core; a copy here would be the third, and the policy gate in
 # `tests/test_journal_lock_portability.py` exists to stop exactly that.
 from .awareness_delivery import _awareness_delivery_lock
+from .todo_evidence import EVIDENCE_KINDS, valid_evidence
 from .todo_templates import (
     TODO_TEMPLATES,
     template_coverage_error,
@@ -161,7 +162,7 @@ TODO_DEFERRED_DIGEST_CHARS = 32
 # The item fields the digest covers: every field an item declares. Any edit to
 # any of them is the plan moving, `blocked_reason` included -- writing down
 # that an item is stuck is a plan advancing, not a plan standing still.
-_DIGESTED_ITEM_KEYS = ("text", "state", "phase", "depth", "blocked_reason")
+_DIGESTED_ITEM_KEYS = ("text", "state", "phase", "depth", "blocked_reason", "evidence")
 # Optional nesting depth per item: 0 is a top-level task, 1..3 are subtask
 # levels rendered indented beneath it (e.g. "검증작업하기" with usability /
 # UI / load-verification children). Three levels is the owner's declared
@@ -232,6 +233,7 @@ def validate_todo_items(items: object) -> list[dict[str, Any]]:
         depth = item.get("depth", 0)
         if isinstance(depth, bool) or not isinstance(depth, int) or not 0 <= depth <= MAX_TODO_DEPTH:
             raise TodoValidationError(f"todo item depth must be an integer from 0 to {MAX_TODO_DEPTH}")
+        evidence = _validated_evidence(item.get("evidence"), state)
         entry: dict[str, Any] = {"text": text, "state": state}
         if phase:
             entry["phase"] = phase
@@ -239,8 +241,76 @@ def validate_todo_items(items: object) -> list[dict[str, Any]]:
             entry["depth"] = depth
         if blocked_reason:
             entry["blocked_reason"] = blocked_reason
+        if evidence:
+            entry["evidence"] = evidence
         validated.append(entry)
     return validated
+
+
+def _validated_evidence(evidence: object, state: str) -> dict[str, str] | None:
+    """The item's evidence reference as it will be stored, or ``None``.
+
+    A typed ``{"kind", "ref"}`` naming the recorded fact that closes a done
+    item (`todo_evidence` says which kinds resolve and how). It is refused on
+    an item that is not done, because it answers "what closed this item" and
+    an open item has nothing closed to answer for; and refused when it is not
+    one of the known kinds in its kind's shape, since a reader that cannot
+    look it up would have to treat it as text.
+
+    Absence is the common case and costs nothing: a record whose items carry
+    no reference is byte-identical to one written before the field existed.
+    """
+    if evidence is None or evidence == "" or evidence == {}:
+        return None
+    checked = valid_evidence(evidence)
+    if checked is None:
+        kinds = ", ".join(EVIDENCE_KINDS)
+        raise TodoValidationError(
+            f"todo item evidence must be {{kind, ref}} with kind one of: {kinds}"
+        )
+    if state != "done":
+        raise TodoValidationError("todo item evidence is recorded only on a done item")
+    return checked
+
+
+def attach_done_evidence(
+    items: object, *, prior_items: object, observed: dict[str, str] | None
+) -> object:
+    """``items`` with an evidence reference on each item this write marks done.
+
+    For a whole-list `set`. Three sources, in order, and nothing else:
+
+    * a reference the item already carries is kept as sent;
+    * an item that was already done WITH a reference under the same text keeps
+      that reference, so re-declaring the list does not un-verify it;
+    * an item that was NOT done under that text before gets ``observed``, the
+      latest command the session recorded since the plan was last written.
+
+    An item that was already done WITHOUT a reference is left as it was: a
+    `set` re-sending it is the list standing still, not a new done claim, and
+    attaching whatever command happened to run since would close it by time
+    alone. `advance` is how such an item is claimed again.
+
+    Pure and tolerant: anything that is not a dict item passes through for
+    ``validate_todo_items`` to refuse with its own message.
+    """
+    if not isinstance(items, list):
+        return items
+    prior_done: dict[str, dict[str, str] | None] = {}
+    for prior in prior_items if isinstance(prior_items, list) else []:
+        if isinstance(prior, dict) and prior.get("state") == "done":
+            text = strip_control_characters(prior.get("text", ""))
+            prior_done.setdefault(text, valid_evidence(prior.get("evidence")))
+    fresh = valid_evidence(observed)
+    attached: list[Any] = []
+    for item in items:
+        if not isinstance(item, dict) or item.get("state") != "done" or item.get("evidence"):
+            attached.append(item)
+            continue
+        text = strip_control_characters(item.get("text", ""))
+        evidence = prior_done[text] if text in prior_done else fresh
+        attached.append({**item, "evidence": evidence} if evidence else item)
+    return attached
 
 
 def todo_items_digest(items: object) -> str:
@@ -632,6 +702,7 @@ def advance_todo_item(
     session_ref: object = "",
     blocked_reason: object = "",
     deferred_reason: object = "",
+    observed_evidence: Callable[[str], dict[str, str] | None] | None = None,
 ) -> dict[str, Any]:
     """Change ONE item's state on an existing record, and return the new record.
 
@@ -680,6 +751,16 @@ def advance_todo_item(
     The whole read-modify-write runs inside the record's lock, so a `set` from
     another turn or another process cannot land between the read and the
     write and be overwritten by a list this call read before it.
+
+    ``observed_evidence`` is how a done write learns what closed the item. It
+    is called, inside the lock, with the stored record's ``updated_at`` and
+    returns the latest command the session recorded since then as evidence, or
+    ``None``. The store reads no session records itself -- the CLI shares this
+    module and has none -- so the caller that can read them supplies the
+    reader. A non-empty answer replaces the item's reference; an empty one
+    keeps a reference the item already had, since nothing new ran to judge.
+    Moving the item out of done drops its reference, the way `set` refuses one
+    on an open item.
     """
     destination = todo_path(omh_home, session_ref)
     _reject_symlink_ancestry(destination, root=omh_home)
@@ -703,7 +784,11 @@ def advance_todo_item(
             raise TodoValidationError(
                 "the stored todo record has no items; declare one with action=set"
             )
-        if all(
+        # A finished plan still takes a done write: a done mark with no
+        # command behind it leaves the item open for the stop criterion
+        # (`todo_evidence`), and marking it done again after the command ran
+        # is how it closes. Every other move on a finished plan is refused.
+        if state != "done" and all(
             isinstance(entry, dict) and entry.get("state") == "done" for entry in stored
         ):
             raise TodoValidationError(
@@ -725,6 +810,13 @@ def advance_todo_item(
             updated["blocked_reason"] = blocked_reason
         else:
             updated.pop("blocked_reason", None)
+        if state != "done":
+            updated.pop("evidence", None)
+        elif observed_evidence is not None:
+            stamp = record.get("updated_at", "")
+            observed = observed_evidence(stamp if isinstance(stamp, str) else "")
+            if observed:
+                updated["evidence"] = observed
         items = list(stored)
         items[position] = updated
         stored_template = record.get("template", "")
@@ -860,6 +952,11 @@ def _read_todo_record(path: Path) -> dict[str, Any] | None:
     finally:
         os.close(descriptor)
     return record if isinstance(record, dict) else None
+
+
+def read_todo_record(omh_home: Path, session_ref: object = "") -> dict[str, Any] | None:
+    """The raw record ``session_ref`` selects, or ``None``; see `_read_todo_record`."""
+    return _read_todo_record(todo_path(omh_home, session_ref))
 
 
 def clear_todo(omh_home: Path, session_ref: object = "") -> bool:

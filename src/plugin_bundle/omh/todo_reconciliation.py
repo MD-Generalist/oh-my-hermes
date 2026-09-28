@@ -83,6 +83,15 @@ from __future__ import annotations
 from typing import Any
 
 from .dispatch_outcomes import unacknowledged_outcomes
+from .todo_evidence import (
+    EVIDENCE_CLOSED,
+    EVIDENCE_FAILED,
+    STORE_READ,
+    STORE_UNREADABLE,
+    evidence_key,
+    evidence_reading,
+    valid_evidence,
+)
 # The per-session turn counter the reconciliation rule's budget spends lives
 # with the other bounded per-session maps rather than in a second one here:
 # one eviction policy, one key derivation, one reset seam a new test has to
@@ -174,6 +183,40 @@ TODO_CONTINUATION_RULE = (
 PLAN_CONTINUATION_BOUNDARY = (
     "This directive reports what the plan record says; it is not evidence that "
     "any item ran, passed, or was verified."
+)
+
+# The derived state of an item marked done that no recorded fact closes. It is
+# never stored -- the record keeps three states -- because it is a verdict
+# over the session's records at read time, and a stored verdict would outlive
+# the records it was read from. The name is shared with the fanout repair loop
+# and the teammate lane so every surface says one word for it.
+DONE_UNVERIFIED = "done_unverified"
+
+# Why a done item is still open, each read off a record (`todo_evidence`):
+# no evidence reference on an item in a session that recorded commands; a
+# reference whose recorded result failed; one the store has no result for (an
+# unknown id, or an outcome Hermes recorded as unknown); or a store that could
+# not be read, which is said rather than taken as evidence.
+EVIDENCE_REASON_NONE = "no_evidence"
+EVIDENCE_REASON_FAILED = "evidence_failed"
+EVIDENCE_REASON_UNRESOLVED = "evidence_unresolved"
+EVIDENCE_REASON_UNREADABLE = "evidence_unreadable"
+EVIDENCE_REASONS = (
+    EVIDENCE_REASON_NONE,
+    EVIDENCE_REASON_FAILED,
+    EVIDENCE_REASON_UNRESOLVED,
+    EVIDENCE_REASON_UNREADABLE,
+)
+
+# What the plan line adds while an item is done in words only. It names the
+# two record moves that close the item and nothing else: the command whose
+# recorded result closes it, or a blocked_reason, which is the stop
+# criterion's own escape -- a done item carrying one is closed as skipped.
+# Rendered only while such an item exists, so a plan without one pays nothing.
+TODO_EVIDENCE_RULE = (
+    "A done mark closes an item only with a recorded command result behind "
+    "it: run the check that shows it, then advance it to done again, or give "
+    "it a blocked_reason saying why no command can show it."
 )
 
 # What the plan line says INSTEAD of the continuation rule while the record
@@ -439,11 +482,15 @@ def answer_first_turn(
         todo = read_omh_todo(omh_home or None, hermes_home or None, session_ref=session_ref)
     except _READ_FAILURES:
         return False
-    return _answer_first_variant(todo, user_message, turn_display_kind)
+    unverified = unverified_done_items(todo, hermes_home=hermes_home, session_ref=session_ref)
+    return _answer_first_variant(todo, user_message, turn_display_kind, unverified)
 
 
 def _answer_first_variant(
-    todo: dict[str, Any], user_message: str, turn_display_kind: object = ""
+    todo: dict[str, Any],
+    user_message: str,
+    turn_display_kind: object = "",
+    unverified: list[dict[str, Any]] | None = None,
 ) -> bool:
     """The branch test `_open_plan_line` applies, factored out so both read it.
 
@@ -451,9 +498,9 @@ def _answer_first_variant(
     plan line at all, a live deferral outranks the message, and a blocked next
     item vetoes the deferral and hands the turn back to the message branch.
     """
-    if not isinstance(todo, dict) or open_plan_position(todo) is None:
+    if not isinstance(todo, dict) or open_plan_position(todo, unverified) is None:
         return False
-    if plan_deferral_reason(todo) and not recorded_blocked_reason(next_open_item(todo)):
+    if plan_deferral_reason(todo) and not recorded_blocked_reason(next_open_item(todo, unverified)):
         return False
     return turn_opened_by_person(user_message, turn_display_kind)
 
@@ -487,33 +534,137 @@ def plan_is_declared(todo: dict[str, Any]) -> bool:
     return str(todo.get("status", "")) in DECLARED_TODO_STATUSES
 
 
-def open_plan_position(todo: dict[str, Any]) -> tuple[int, int] | None:
-    """``(done, total)`` while this plan has open work, else ``None``.
+def open_plan_position(
+    todo: dict[str, Any], unverified: list[dict[str, Any]] | None = None
+) -> tuple[int, int] | None:
+    """``(closed, total)`` while this plan has open work, else ``None``.
 
     The single place the question "does this plan have open work" is decided.
     The per-turn context line and the turn-end continuation directive are the
     same policy read at two moments -- the line rides a turn that is already
     happening, the directive starts the next one -- so a second copy of this
     condition would let the two disagree about the same plan.
+
+    ``unverified`` is `unverified_done_items`' answer for this plan: done
+    items no recorded command closes. They count as open, including on a plan
+    the projection calls ``all_done`` because every item says done -- which is
+    exactly the plan this exists to keep going. Omitted, every done item
+    closes, the answer this gave before evidence existed.
     """
-    if not plan_is_established(todo):
+    pending_evidence = len(unverified or [])
+    if not plan_is_established(todo) and not (
+        todo.get("status") == "all_done" and pending_evidence
+    ):
         return None
     counts = todo.get("counts") if isinstance(todo.get("counts"), dict) else {}
     done = counts.get("done")
     total = counts.get("total")
-    if not isinstance(done, int) or not isinstance(total, int) or total <= 0 or done >= total:
+    if not isinstance(done, int) or not isinstance(total, int) or total <= 0:
         return None
-    return done, total
+    closed = max(0, done - pending_evidence)
+    if closed >= total:
+        return None
+    return closed, total
 
 
-def next_open_item(todo: dict[str, Any]) -> dict[str, Any]:
+def next_open_item(
+    todo: dict[str, Any], unverified: list[dict[str, Any]] | None = None
+) -> dict[str, Any]:
     """The item record a continuation would advance: the active one, else the first pending.
 
     The record, not its text: the stop criterion below reads a field, and
-    text is only ever needed for rendering.
+    text is only ever needed for rendering. A plan with nothing active or
+    pending whose done marks are not all closed advances the first of those.
     """
     items = todo.get("items") if isinstance(todo.get("items"), list) else []
-    return _first_item(items, "active") or _first_item(items, "pending") or {}
+    found = _first_item(items, "active") or _first_item(items, "pending")
+    if found:
+        return found
+    first = (unverified or [{}])[0].get("item")
+    if isinstance(first, int) and 1 <= first <= len(items) and isinstance(items[first - 1], dict):
+        return items[first - 1]
+    return {}
+
+
+def unverified_done_items(
+    todo: dict[str, Any], *, hermes_home: str = "", session_ref: str = ""
+) -> list[dict[str, Any]]:
+    """The done items no recorded command closes, each with its 1-based index and reason.
+
+    Asked only of a plan the stop criterion could end -- established, or all
+    done -- and only about done items without a ``blocked_reason``: a done
+    item carrying one is closed as skipped, the escape the stop criterion
+    already names. Everything is read from records:
+
+    * an item with an ``evidence`` reference closes when its recorded result
+      is a success (`todo_evidence`), and otherwise stays open as
+      ``evidence_failed`` or ``evidence_unresolved``;
+    * an item without one stays open as ``no_evidence`` only in a session
+      that recorded evidence-capable calls. A session with none -- a
+      conversational plan, a host with no session store, a caller with no
+      session -- keeps the done mark as it always did. That is the backward
+      compatibility, and the bound on nagging a plan no command could close;
+    * a store that exists and cannot be read makes every such item
+      ``evidence_unreadable``: said, never taken as evidence.
+
+    Never raises; a failure to read is the ``unreadable`` reading.
+    """
+    if not isinstance(todo, dict) or todo.get("status") not in {"established", "all_done"}:
+        return []
+    items = todo.get("items") if isinstance(todo.get("items"), list) else []
+    candidates = [
+        (index, item)
+        for index, item in enumerate(items, start=1)
+        if isinstance(item, dict)
+        and item.get("state") == "done"
+        and not recorded_blocked_reason(item)
+    ]
+    if not candidates:
+        return []
+    refs = [valid_evidence(item.get("evidence")) for _, item in candidates]
+    try:
+        reading = evidence_reading(hermes_home or None, session_ref, [ref for ref in refs if ref])
+    except _READ_FAILURES:
+        reading = {"store": STORE_UNREADABLE, "observable_lane": False, "verdicts": {}}
+    store = reading.get("store")
+    verdicts = reading.get("verdicts") if isinstance(reading.get("verdicts"), dict) else {}
+    unverified: list[dict[str, Any]] = []
+    for (index, item), ref in zip(candidates, refs, strict=True):
+        if ref:
+            if store == STORE_UNREADABLE:
+                reason = EVIDENCE_REASON_UNREADABLE
+            elif store != STORE_READ:
+                # No store at all: a reference nothing can look up is not one
+                # that closes, whatever wrote it.
+                reason = EVIDENCE_REASON_UNRESOLVED
+            else:
+                verdict = verdicts.get(evidence_key(ref))
+                if verdict == EVIDENCE_CLOSED:
+                    continue
+                reason = (
+                    EVIDENCE_REASON_FAILED if verdict == EVIDENCE_FAILED else EVIDENCE_REASON_UNRESOLVED
+                )
+        elif store == STORE_UNREADABLE:
+            reason = EVIDENCE_REASON_UNREADABLE
+        elif store == STORE_READ and reading.get("observable_lane") is True:
+            reason = EVIDENCE_REASON_NONE
+        else:
+            continue
+        unverified.append(
+            {"item": index, "state": DONE_UNVERIFIED, "text": item_display_text(item), "reason": reason}
+        )
+    return unverified
+
+
+def _unverified_clause(unverified: list[dict[str, Any]]) -> str:
+    """`` · done_unverified: item N (reason)[ +K more]``, or ``""``."""
+    if not unverified:
+        return ""
+    first = unverified[0]
+    clause = f" · {DONE_UNVERIFIED}: item {first['item']} ({first['reason']})"
+    if len(unverified) > 1:
+        clause += f" +{len(unverified) - 1} more"
+    return clause
 
 
 def _first_item(items: list[Any], state: str) -> dict[str, Any] | None:
@@ -648,8 +799,9 @@ def plan_continuation_reading(
     # changes `done/total`.
     stamp = todo.get("updated_at", "")
     stamp = stamp if isinstance(stamp, str) else ""
-    position = open_plan_position(todo)
-    item = next_open_item(todo) if position is not None else {}
+    unverified = unverified_done_items(todo, hermes_home=hermes_home, session_ref=session_ref)
+    position = open_plan_position(todo, unverified)
+    item = next_open_item(todo, unverified) if position is not None else {}
     lines: list[str] = []
     # The blocked item stops the PLAN line and nothing else. A finished
     # dispatch nobody wrote down is a separate obligation -- it is frequently
@@ -673,7 +825,9 @@ def plan_continuation_reading(
         text = item_display_text(item)
         if text:
             head = f"{head} · next: {text}"
-        lines.append(f"{head}. {TODO_CONTINUATION_RULE}")
+        head += _unverified_clause(unverified)
+        rule = f"{TODO_CONTINUATION_RULE} {TODO_EVIDENCE_RULE}" if unverified else TODO_CONTINUATION_RULE
+        lines.append(f"{head}. {rule}")
     # Read in its own guard, not folded into the one above: the two lines are
     # independent obligations, so a failed outcome read must not take the plan
     # line with it. `unacknowledged_outcomes` says it never raises and swallows
@@ -706,7 +860,8 @@ def _open_plan_line(
     copy of the branch test would let the two disagree about the same turn.
     """
     todo = read_omh_todo(omh_home or None, hermes_home or None, session_ref=session_ref)
-    position = open_plan_position(todo)
+    unverified = unverified_done_items(todo, hermes_home=hermes_home, session_ref=session_ref)
+    position = open_plan_position(todo, unverified)
     if position is None:
         return "", False
     reconciliation = _reconciliation_rule(
@@ -722,12 +877,17 @@ def _open_plan_line(
     head = f"[OMH plan todo] {done}/{total} done"
     if active:
         head = f"{head} · active: {active}"
+    head += _unverified_clause(unverified)
+    # Rides the drive, so it is carried wherever TODO_CONTINUATION_RULE is and
+    # nowhere it is not: a deferred plan or an answer-first turn is not asking
+    # for the next item, so it is not asking for this item's command either.
+    drive = f"{TODO_CONTINUATION_RULE} {TODO_EVIDENCE_RULE}" if unverified else TODO_CONTINUATION_RULE
     # A blocked next item wins over a deferral, so the line it produces is
     # unchanged here: the block is the stronger statement about why the plan is
     # not moving, and reporting a redirection over it would hide the thing the
     # reader has to act on. Only an unblocked plan reads as deferred.
     deferred = plan_deferral_reason(todo)
-    if deferred and not recorded_blocked_reason(next_open_item(todo)):
+    if deferred and not recorded_blocked_reason(next_open_item(todo, unverified)):
         # The reason is rendered whole, not truncated to the item display
         # window: it is the entire content of this variant of the line and is
         # already bounded twice, by the write cap and by the reader's
@@ -746,7 +906,7 @@ def _open_plan_line(
         return f"{head}. {TODO_ANSWER_FIRST_RULE} {reconciliation}", True
     unchanged = todo_unchanged_text(todo)
     if not unchanged:
-        return f"{head}. {TODO_CONTINUATION_RULE} {reconciliation}", False
+        return f"{head}. {drive} {reconciliation}", False
     stall = todo.get("stall") if isinstance(todo.get("stall"), dict) else {}
     # "no tool call in flight" is only true of the quiet finding. The busy one
     # is the more interesting reading and saying the wrong one would make the
@@ -758,7 +918,7 @@ def _open_plan_line(
     )
     return (
         f"{head} · {observed}. "
-        f"{TODO_CONTINUATION_RULE} {reconciliation} {TODO_UNCHANGED_RULE}"
+        f"{drive} {reconciliation} {TODO_UNCHANGED_RULE}"
     ), False
 
 

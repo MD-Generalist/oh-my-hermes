@@ -23,6 +23,30 @@ All notable changes will be documented here.
   exits 1 even without a repair budget; it used to exit 0 because the
   unit's process had exited 0.
 
+- **A plan item marked done now closes only on a recorded result.** The
+  continuation rule stopped a plan once every item said done, so a run that
+  marked its items done in words ended its own loop with nothing run. When
+  `omh_todo` marks an item done, OMH now records what closed it: the latest
+  `terminal`, `write_file` or `patch` call the session's own Hermes
+  `state.db` shows since the plan was last written, stored on the item as a
+  typed `evidence` reference (`{kind, ref}`, kinds `tool_call`, `file_write`,
+  `pr`, `ci_run`, `team_check`). The stop criterion reads that record, never
+  the item's text: `tool_call` closes on a recorded `exit_code` of 0 and
+  `file_write` on a landed write or a successful patch, per #1922's outcome
+  rules. An item done with no reference, a failed or unknown one, or one
+  whose store cannot be read is `done_unverified`, still open, and the
+  turn-end directive and the per-turn plan line name it with its reason
+  (`no_evidence`, `evidence_failed`, `evidence_unresolved`,
+  `evidence_unreadable`). Marking it done again after a passing command, or
+  giving it a `blocked_reason`, closes it. `pr`, `ci_run` and `team_check`
+  are accepted and resolve nothing yet, since OMH makes no network call; a PR
+  or CI run closes an item through the `gh` call that observed it. A session
+  that recorded no command at all -- a conversational plan, a host with no
+  session store -- keeps the done mark as before, so no existing record, CLI
+  write or chat-only checklist changes behaviour, and the host's nudge budget
+  still bounds how often a turn is continued. The `omh_todo` schema and the
+  per-turn budgets are unchanged.
+
 - **Data pipeline work has an owner: `omh-data-pipelines`.** "our airflow etl
   backfill is producing duplicate events", "replay the last three days of
   kafka events into the warehouse without double counting", "the dbt model

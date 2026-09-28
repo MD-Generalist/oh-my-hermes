@@ -11,7 +11,10 @@ from ..host_observation import (
     host_session_id,
     observe_plugin_tool_call,
 )
+from ..dispatch_outcomes import _parse_timestamp
 from ..runtime_reader import default_omh_home, read_omh_todo
+from ..todo_evidence import latest_observed_evidence
+from ..todo_reconciliation import unverified_done_items
 from ..todo_store import (
     TODO_CLAIM_BOUNDARY,
     TODO_ITEM_STATES,
@@ -20,8 +23,10 @@ from ..todo_store import (
     TodoStoreError,
     TodoValidationError,
     advance_todo_item,
+    attach_done_evidence,
     build_todo_record,
     clear_todo,
+    read_todo_record,
     write_todo,
 )
 from ..todo_templates import CODE_STORY_TEMPLATE
@@ -238,9 +243,17 @@ def omh_todo_handler(args: dict[str, Any], **kwargs) -> str:
         return json.dumps(attach_public_observation(payload, observation), sort_keys=True)
     if action == "set":
         try:
+            items = args.get("items")
+            if _declares_done(items):
+                prior = read_todo_record(default_omh_home(), session_ref) or {}
+                items = attach_done_evidence(
+                    items,
+                    prior_items=prior.get("items"),
+                    observed=_observed_since(session_ref, prior.get("updated_at") if prior else None),
+                )
             record = build_todo_record(
                 args.get("title", ""),
-                args.get("items"),
+                items,
                 source="omh_todo",
                 session_ref=session_ref,
                 deferred_reason=args.get("deferred_reason", ""),
@@ -274,6 +287,7 @@ def omh_todo_handler(args: dict[str, Any], **kwargs) -> str:
                 session_ref=session_ref,
                 blocked_reason=args.get("blocked_reason", ""),
                 deferred_reason=args.get("deferred_reason", ""),
+                observed_evidence=lambda stamp: _observed_since(session_ref, stamp),
             )
             payload["status"] = "written"
         except TodoContendedError as error:
@@ -296,4 +310,47 @@ def omh_todo_handler(args: dict[str, Any], **kwargs) -> str:
         payload["status"] = "invalid_action"
         payload["error"] = 'action must be set, advance, clear, show, checkpoint, record, or recall'
     payload["todo"] = read_omh_todo(runtime_paths.plugin_home(home_arg), session_ref=session_ref)
+    # What the stop criterion reads for this plan, returned where the writer
+    # can act on it: each done item no recorded fact closes, with the reason.
+    # Omitted when there is none, so a plan without one reads as it did.
+    unverified = _unverified(payload["todo"], session_ref)
+    if unverified:
+        payload["done_unverified"] = unverified
     return json.dumps(attach_public_observation(payload, observation), sort_keys=True)
+
+
+def _declares_done(items: object) -> bool:
+    return isinstance(items, list) and any(
+        isinstance(item, dict) and item.get("state") == "done" for item in items
+    )
+
+
+def _observed_since(session_ref: str, stamp: object) -> dict[str, str] | None:
+    """The latest command this session recorded after ``stamp``, as evidence.
+
+    ``stamp`` is the plan record's previous ``updated_at``; an absent or
+    unparseable one is no window, which reads the latest call of the session.
+    A host that cannot bind its home has no records to name, and that is the
+    same answer as a session that ran nothing.
+    """
+    parsed = _parse_timestamp(stamp) if stamp else None
+    try:
+        hermes_home = runtime_paths.plugin_home(None, hermes=True)
+    except (runtime_paths.RuntimeBindingError, OSError, RuntimeError):
+        return None
+    return latest_observed_evidence(
+        hermes_home, session_ref, since_epoch=parsed.timestamp() if parsed else None
+    )
+
+
+def _unverified(todo: object, session_ref: str) -> list[dict[str, Any]]:
+    try:
+        hermes_home = str(runtime_paths.plugin_home(None, hermes=True))
+    except (runtime_paths.RuntimeBindingError, OSError, RuntimeError):
+        hermes_home = ""
+    if not isinstance(todo, dict):
+        return []
+    return [
+        {key: entry[key] for key in ("item", "state", "reason")}
+        for entry in unverified_done_items(todo, hermes_home=hermes_home, session_ref=session_ref)
+    ]

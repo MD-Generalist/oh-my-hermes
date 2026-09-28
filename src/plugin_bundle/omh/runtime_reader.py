@@ -40,6 +40,7 @@ from .metadata import (
     TOOL_FILE_STEMS,
     TOOLS_REQUIRING_ROLE_CATALOG,
 )
+from .todo_evidence import valid_evidence
 from .todo_store import (
     MAX_TODO_BLOCKED_REASON_CHARS,
     MAX_TODO_DEFERRED_REASON_CHARS,
@@ -2178,6 +2179,14 @@ def _todo_summary(
                 entry["depth"] = depth
             if blocked_reason:
                 entry["blocked_reason"] = blocked_reason
+            # Projected only on a done item and only in a known kind's shape,
+            # the two rules the writer enforces, so a hand-edited value cannot reach a
+            # reader as something to look up. Whether it CLOSES the item is not
+            # decided here: that reads the session store, which the HUD poll
+            # does not open (`todo_reconciliation.unverified_done_items`).
+            evidence = valid_evidence(raw.get("evidence")) if state == "done" else None
+            if evidence:
+                entry["evidence"] = evidence
             items.append(entry)
         if len(items) >= MAX_TODO_ITEMS:
             break
