@@ -2142,6 +2142,21 @@ EVERYDAY_SENSE_PHRASES: dict[str, tuple[tuple[str, ...], frozenset[str]]] = {
             }
         ),
     ),
+    # "the play store on my phone will not open", "my google play gift card did
+    # not work" and "the app store keeps asking for my password" are a phone's
+    # store app, not a release; each phrase keeps this route only beside a word
+    # of release work.
+    "mobile-release": (
+        ("play store", "google play"),
+        frozenset(
+            {
+                "aab", "anr", "apk", "beta", "build", "builds", "bundle", "console", "crash", "crashes", "fastlane",
+                "hotfix", "listing", "phased", "provisioning", "rejected", "rejection", "release", "releases",
+                "publish", "publishing", "resubmit", "rollout", "sdk", "sdks", "ship", "shipping", "signing", "staged",
+                "submission", "submit", "testers", "testflight", "track", "upload", "version", "versioncode", "xcode",
+            }
+        ),
+    ),
     # "fine-tune the wording of this email", "my workout needs some
     # fine-tuning", "our dpo needs a report" (a data protection officer) and "a
     # lora gateway for the soil sensors" (a radio) are not model training; each
@@ -2918,6 +2933,16 @@ _SECURITY_EVENT_OVER_GITHUB_EVENT_PHRASES = (
     "leaked secret",
     "leaked credential",
     "committed a secret",
+)
+# A build waiting in TestFlight or a store's review is a store release owned by
+# `mobile-release` (#1568), not a CI build or a pull-request review: the store,
+# not GitHub, decides what happens next.
+_MOBILE_RELEASE_OVER_GITHUB_EVENT_PHRASES = (
+    "testflight",
+    "app store",
+    "play store",
+    "google play",
+    "play console",
 )
 
 _GITHUB_EVENT_OPS_PHRASES = (
@@ -8600,6 +8625,8 @@ def _github_event_ops_guard_applies(normalized_query: str, query_tokens: set[str
     if _github_issue_intake_guard_applies(normalized_query, query_tokens):
         return False
     if _contains_phrase(normalized_query, _SECURITY_EVENT_OVER_GITHUB_EVENT_PHRASES):
+        return False
+    if _contains_phrase(normalized_query, _MOBILE_RELEASE_OVER_GITHUB_EVENT_PHRASES):
         return False
     if _contains_phrase(normalized_query, _GITHUB_EVENT_OPS_PHRASES):
         return True

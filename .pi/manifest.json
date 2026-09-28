@@ -117,6 +117,8 @@
     "omh-media-input/SKILL.md": "209bc122247681cc8219ec571fa7073e51479a9bff11eced33b7dd8e86cd4312",
     "omh-meeting-brief/SKILL.md": "fefee4ac21b0aee86f37c82421571296c0588cb123cc6fd1289770fe02207ccf",
     "omh-memory-new/SKILL.md": "65e609a4f9009e78db0eee138f137112e59b2c5430ea15753f5ca330f2049e94",
+    "omh-mobile-release/SKILL.md": "04783ea2e9c8f1d87f4d6d9016b67926032e2438d38352cd7b1572f0e342863b",
+    "omh-mobile-release/references/mobile-release-method.md": "c28b6bec1569b8971c42b412e054daa8d9efa23a4fad698cd72ce2acc349de82",
     "omh-model-finetuning/SKILL.md": "bdddf920ea23a916976c35ba5c07b6b389cdde61ff98de926c5115bf7c13566e",
     "omh-model-finetuning/references/finetuning-method.md": "10a677fdc07303b3b2b3b0d7759f9b5956e9f00fac94ccad0bac9bdef3d8d797",
     "omh-native-debugging/SKILL.md": "97820a1a3394088515416e63b77560be371900986ff13a16e10d72cfbb709dde",
@@ -139,7 +141,7 @@
     "omh-refactor-plan/references/refactor-phases.md": "492cfcd81b1b44ffb54bcb16b6dc319549a7ee868d95b21176fa9cc0fa06f035",
     "omh-relational-db/SKILL.md": "7362d2fae8e47976c70e0174044d813a8a9f4a276b4f0d1d30ecdd5c3dcbc710",
     "omh-relational-db/references/engine-lock-tables.md": "c5a495fec865b028c18882f3a4102d491610945edd23a109fac49b8f914fb6b4",
-    "omh-release-cut/SKILL.md": "dfaf17dd77966f63e9f9724e873ea7bf38545c506842c8de550c795f0a2a711d",
+    "omh-release-cut/SKILL.md": "306ed544488e887856a01b38b266ca079b4d9c0c9e94e37eaada8a0848c6c335",
     "omh-release-cut/references/release-and-rollback-method.md": "e97a49d65d6b943fa5bbacc4f8083fcd94e52d864cea97301c9b945180e57cc9",
     "omh-reliability-review/SKILL.md": "540a7a047731302e62247e73344623c94d637b4c6c6ebd48c2b45dae21800aa8",
     "omh-report-package/SKILL.md": "30961aadf27e70b3f1965b479095eec0c4c271aa45d27647aaf5fa9a870f2b85",
@@ -258,6 +260,7 @@
     "omh-media-input",
     "omh-meeting-brief",
     "omh-memory-new",
+    "omh-mobile-release",
     "omh-model-finetuning",
     "omh-native-debugging",
     "omh-operating-rhythm",
@@ -308,7 +311,7 @@
     "ulw-work"
   ],
   "source": "agent-skills",
-  "source_digest": "b6aa0f44b278fff3869338f4b3ea82259569ceeb1c223c7a6a20f005c69350d3",
+  "source_digest": "7c2d5e542ab5a55c1a4d234ec3afa3c5afb3d6b919cb3171488f54902bbcf3d3",
   "targets": {
     "repo": ".agents/skills",
     "user": ".agents/skills"

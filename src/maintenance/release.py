@@ -168,7 +168,9 @@ ROLE_CONTEXT_CHAR_LIMIT = 2600
 # name and the visible description window. Re-derived from the producer.
 # 12201 -> 12290: one index line for the new `model-finetuning` skill (#1567); the
 # name and the visible description window. Re-derived from the producer.
-SKILL_INDEX_CHAR_LIMIT = 12290
+# 12290 -> 12377: one index line for the new `mobile-release` skill (#1568); the
+# name and the visible description window. Re-derived from the producer.
+SKILL_INDEX_CHAR_LIMIT = 12377
 # The longest single skill line in that index. Every description is already cut
 # to 60 characters, so what moves this is a longer skill name.
 SKILL_INDEX_LINE_CHAR_LIMIT = 100
@@ -553,7 +555,10 @@ PRE_LLM_CALL_CONTEXT_FALLBACK_CHAR_LIMIT = 6917
 # 475200 -> 478926: one capability row for the new `model-finetuning` skill
 # (#1567) plus its siblings' reciprocal boundary lines. Re-derived from the
 # producer.
-FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 478926
+# 478926 -> 482613: one capability row for the new `mobile-release` skill
+# (#1568) plus its siblings' reciprocal boundary lines. Re-derived from the
+# producer.
+FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 482613
 FULL_CAPABILITY_SKILL_ITEM_CHAR_LIMIT = 9000
 # 100000 -> 102070: the same three domain workflows each add one standalone
 # capability row, again measured on the merged tree; warranted growth for three
@@ -633,7 +638,10 @@ FULL_CAPABILITY_SKILL_ITEM_CHAR_LIMIT = 9000
 # 131352 -> 132296: one standalone capability row for the new `model-finetuning`
 # skill (#1567) plus its siblings' reciprocal boundary lines; warranted
 # growth. Re-derived from the producer.
-STANDALONE_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 132296
+# 132296 -> 133234: one standalone capability row for the new `mobile-release`
+# skill (#1568) plus its siblings' reciprocal boundary lines; warranted
+# growth. Re-derived from the producer.
+STANDALONE_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 133234
 STANDALONE_CAPABILITY_SKILL_ITEM_CHAR_LIMIT = 2200
 # ULW fold context ceiling (issue #954, PR D). The limit is the pre-D measured
 # value of the full profile's `skill_body` chars on `main` @ acb9a060, in the

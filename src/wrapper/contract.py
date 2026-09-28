@@ -286,6 +286,8 @@ VISIBLE_ACTIONS = (
     "show_replay_plan",
     "prepare_finetune_decision",
     "show_promotion_gate",
+    "prepare_mobile_release_plan",
+    "show_rollout_halt",
     "prepare_release_plan",
     "show_release_readiness",
     "show_frontend_handoff",
@@ -1133,6 +1135,8 @@ _ACK_PRIMARY_ACTIONS_BY_NEXT_ACTION = {
     "show_replay_plan": ("show_replay_plan", "Show the replay plan"),
     "prepare_finetune_decision": ("prepare_finetune_decision", "Decide on fine-tuning"),
     "show_promotion_gate": ("show_promotion_gate", "Show the promotion gate"),
+    "prepare_mobile_release_plan": ("prepare_mobile_release_plan", "Plan the store release"),
+    "show_rollout_halt": ("show_rollout_halt", "Show the halt thresholds"),
     "prepare_release_plan": ("prepare_release_plan", "Plan the release"),
     "show_release_readiness": ("show_release_readiness", "Show release readiness"),
     "prepare_accessibility_audit": ("prepare_accessibility_audit", "Audit accessibility"),
@@ -2367,6 +2371,36 @@ _WORKFLOW_OPERATIONS_CHAT_CARDS: dict[str, dict[str, object]] = {
             "training run",
             "eval score",
             "checkpoint promoted",
+        ],
+    },
+    "mobile-release": {
+        "kind": "mobile_release_plan",
+        "headline": "I can plan this store release, with its halt planned before the rollout.",
+        "body": (
+            "I will check the signing assets and their expiry, compare the privacy manifest and the data safety form "
+            "against the SDKs the build ships, plan the TestFlight or Play beta, stage the rollout behind crash-free and ANR "
+            "halt thresholds, and reserve the hotfix build number. I build, sign, and submit nothing."
+        ),
+        "phase": "mobile_release_plan_prepared",
+        "next_action": "prepare_mobile_release_plan",
+        "artifact_schema": "staged_rollout_plan/v1",
+        "claim_boundary_suffix": "It is not an uploaded build, an approved review, or an advanced rollout until the store console shows it.",
+        "actions": [
+            {"id": "prepare_mobile_release_plan", "label": "Plan the store release", "style": "primary"},
+            {"id": "show_rollout_halt", "label": "Show the halt thresholds", "style": "secondary"},
+            {"id": "show_status", "label": "Show status", "style": "secondary"},
+        ],
+        "recommended_flow": [
+            "check_signing_assets_and_expiry",
+            "compare_privacy_declarations_with_shipped_sdks",
+            "run_the_beta_channel",
+            "stage_the_rollout_behind_halt_thresholds",
+            "reserve_the_hotfix_build",
+        ],
+        "evidence_not_observed": [
+            "build uploaded",
+            "review approved",
+            "rollout advanced",
         ],
     },
     "iac-change": {

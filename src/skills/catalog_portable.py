@@ -125,6 +125,8 @@ _PORTABILITY: dict[str, str] = {
     'omh-data-pipelines': PORTABILITY_PORTABLE,
     # required_inputs: the failing task and held-out examples, what cheaper fixes scored, the data's shape, the base model; expected_outputs: a fine-tune decision, method, data plan, baseline comparison and promotion gate prepared for an operator, so no Hermes runtime is needed.
     'omh-model-finetuning': PORTABILITY_PORTABLE,
+    # required_inputs: platforms and build numbers, how signing is held, the shipped SDKs, the beta and its testers, observed crash figures; expected_outputs: signing, privacy, beta, rollout and hotfix plans prepared for an operator, so no Hermes runtime is needed.
+    'omh-mobile-release': PORTABILITY_PORTABLE,
     # required_inputs: changes, release mechanism, health signals, rollback mechanism; expected_outputs: a release plan with a rollback trigger and a readiness verdict; the host or CI executes, so no Hermes runtime is needed.
     'omh-release-cut': PORTABILITY_PORTABLE,
     # required_inputs: target app, page, route, component, or design system; expected_outputs: accessibility_audit_plan/v1; final_checklist requires evidence/approval, not a native runtime.
@@ -953,6 +955,7 @@ PORTABLE_REFERENCE_PATHS = frozenset({
     'iac-change/references/iac-change-method.md',
     'data-pipelines/references/pipeline-method.md',
     'model-finetuning/references/finetuning-method.md',
+    'mobile-release/references/mobile-release-method.md',
     'release-cut/references/release-and-rollback-method.md',
     'application-threat-model/references/threat-model-method.md',
     'live-incident-response/references/incident-command-method.md',

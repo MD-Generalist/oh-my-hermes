@@ -455,6 +455,46 @@ _MODEL_FINETUNING_EXPLICIT_PHRASES = tuple(
     )
 )
 
+# `mobile-release` holds back every everyday token its phrases are built from.
+# Listed are the phrases that name releasing through a store. A bare "play
+# store", "app store" or "google play" is not: a phone's store app, a gift card
+# and a password prompt all say them; those route here only beside a word of
+# release work (`EVERYDAY_SENSE_PHRASES`). "app store review" is not boosted:
+# a user leaves an app store review.
+_MOBILE_RELEASE_EXPLICIT_PHRASES = tuple(
+    normalized_phrase(phrase)
+    for phrase in (
+        "mobile-release",
+        "mobile release",
+        "mobile app release",
+        "ios release",
+        "android release",
+        "app store release",
+        "app store submission",
+        "submit to the app store",
+        "app store connect",
+        "testflight",
+        "play store release",
+        "play store rollout",
+        "play store staged rollout",
+        "google play rollout",
+        "play console",
+        "internal testing track",
+        "closed testing track",
+        "phased release",
+        "provisioning profile",
+        "provisioning profiles",
+        "distribution certificate",
+        "play app signing",
+        "android keystore",
+        "upload keystore",
+        "privacy manifest",
+        "data safety form",
+        "required reason api",
+        "required reason apis",
+    )
+)
+
 # `data-pipelines` holds back every everyday token its phrases are built from.
 # Listed are the phrases that name pipeline work. A bare "backfill",
 # "lineage" or "duplicate events" is not: a team backfills a position, a family
@@ -1147,6 +1187,18 @@ _SKILL_POLICIES = {
             "Prepare finetune_decision/v1 first, returning do_not_finetune when prompting or retrieval closes the gap; "
             "training_method_choice/v1 from the data's shape; training_data_plan/v1 with a held-out split; "
             "baseline_comparison/v1 on the same eval; and checkpoint_promotion_gate/v1 with its margin and tolerance."
+        ),
+    ),
+    "mobile-release": RecommendationPolicy(
+        next_action="prepare_mobile_release_plan",
+        evidence_boundary=(
+            "A store release plan is not an uploaded build, an approved review, or an advanced rollout until the store console "
+            "shows it; OMH never builds, signs, uploads, or submits, and no rollout starts without a halt and a hotfix build planned."
+        ),
+        wrapper_guidance=(
+            "Prepare signing_plan/v1 with each asset's expiry and holder and no secret; privacy_declaration_check/v1 against "
+            "the shipped SDKs; beta_channel_plan/v1 with its exit checks; staged_rollout_plan/v1 with crash-free and ANR halt "
+            "thresholds; and hotfix_plan/v1 with the reserved higher build number."
         ),
     ),
     "data-pipelines": RecommendationPolicy(
@@ -2969,6 +3021,56 @@ _WHOLE_PHRASE_ONLY_TRIGGER_TOKENS = {
             "verifiable",
         }
     ),
+    # `mobile-release` is built from "app", "store", "play", "google",
+    # "release", "code", "signing", "privacy", "data", "safety", "form",
+    # "review", "track" and "android" -- a phone's store app, a gift card, a
+    # safety form at school and a running track all reached it as bare tokens.
+    # Only the complete phrases score, and "play store", "app store" and
+    # "google play" also need a word of release work beside them
+    # (`EVERYDAY_SENSE_PHRASES`). Tokens that mean nothing else stay
+    # creditable: `privacyinfo`, `xcprivacy`; `testflight` and `fastlane` are
+    # one-word triggers.
+    "mobile-release": frozenset(
+        {
+            "android",
+            "api",
+            "apis",
+            "app",
+            "certificate",
+            "closed",
+            "code",
+            "connect",
+            "console",
+            "data",
+            "distribution",
+            "expedited",
+            "form",
+            "google",
+            "internal",
+            "ios",
+            "key",
+            "keystore",
+            "manifest",
+            "mobile",
+            "phased",
+            "play",
+            "privacy",
+            "profile",
+            "provisioning",
+            "reason",
+            "release",
+            "required",
+            "review",
+            "safety",
+            "signing",
+            "store",
+            "submission",
+            "submit",
+            "testing",
+            "track",
+            "upload",
+        }
+    ),
     # `data-pipelines` is built from "data", "pipeline", "backfill",
     # "lineage", "replay", "events", "duplicate", "quality", "batch", "job",
     # "schema", "spark", "kafka", "airflow" and "dbt" -- a sales pipeline, a
@@ -4068,6 +4170,9 @@ def _score_definition(
     if definition.name == "release-cut" and _release_cut_explicit_match(normalized_query):
         score += 30
         matched.add("direct:release_cut")
+    if definition.name == "mobile-release" and _mobile_release_explicit_match(normalized_query):
+        score += 30
+        matched.add("direct:mobile_release")
     if definition.name == "model-finetuning" and _model_finetuning_explicit_match(normalized_query):
         score += 30
         matched.add("direct:model_finetuning")
@@ -4889,6 +4994,10 @@ def _relational_db_explicit_match(normalized_query: str) -> bool:
 
 def _release_cut_explicit_match(normalized_query: str) -> bool:
     return any(_explicit_phrase_match(normalized_query, phrase) for phrase in _RELEASE_CUT_EXPLICIT_PHRASES)
+
+
+def _mobile_release_explicit_match(normalized_query: str) -> bool:
+    return any(_explicit_phrase_match(normalized_query, phrase) for phrase in _MOBILE_RELEASE_EXPLICIT_PHRASES)
 
 
 def _model_finetuning_explicit_match(normalized_query: str) -> bool:

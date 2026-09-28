@@ -1348,6 +1348,7 @@ _WORKFLOW_CONTEXT_CARD_BY_WORKFLOW = {
     "iac-change": "coding_handoff",
     "data-pipelines": "coding_handoff",
     "release-cut": "coding_handoff",
+    "mobile-release": "coding_handoff",
     # ULW fold (issue #954, PR D): the four contracts folding into
     # `ulw-work` share its coding-handoff lane so their capability family is
     # lane-derived (`delegate_coding_and_ship`) like their fold target.
@@ -1460,6 +1461,14 @@ _AWARENESS_MESSAGE_MARKERS = (
     "set up a canary",
     "canary release",
     "staged rollout",
+    # Store releases: "play store", "app store" and "signing" alone are
+    # everyday words, so only store-release phrases arm awareness.
+    "mobile-release",
+    "testflight",
+    "privacy manifest",
+    "provisioning profile",
+    "play console",
+    "data safety form",
     "codebase onboarding",
     "performance bottleneck",
     "\uba54\ubaa8\ub9ac \ub204\uc218",
@@ -2671,6 +2680,50 @@ _ROUTE_HINT_RULES = (
         ),
         "tokens": (),
         "adjacent_workflows": ("backend", "ultraperf", "data-analysis", "deploy-and-monitor"),
+    },
+    {
+        "id": "mobile_release",
+        "workflow": "mobile-release",
+        "lane": "coding_handoff",
+        "next_action": "prepare_mobile_release_plan",
+        "reason": "The user is releasing an iOS or Android app through the App Store or Google Play: signing, the privacy manifest or data safety form, a TestFlight or Play testing-track beta, a phased or staged rollout, or a hotfix; plan the halt and the next build before the rollout, because a store release cannot be rolled back.",
+        "fallback_action": "ask_for_the_platforms_the_build_number_and_how_signing_is_held",
+        "not_evidence_yet": (
+            "build uploaded",
+            "review approved",
+            "rollout advanced",
+        ),
+        # Only store-release phrases, ahead of `release_cut` so a store's staged
+        # rollout reaches the store rules. A bare "play store", "app store" or
+        # "google play" is absent: this table has no anchor, and a phone's
+        # store app is not a release.
+        "phrases": (
+            "mobile-release",
+            "mobile release",
+            "ios release",
+            "android release",
+            "app store submission",
+            "submit to the app store",
+            "app store connect",
+            "play console",
+            "play store release",
+            "internal testing track",
+            "closed testing track",
+            "phased release",
+            "provisioning profile",
+            "distribution certificate",
+            "play app signing",
+            "privacy manifest",
+            "data safety form",
+            "required reason api",
+        ),
+        "tokens": ("testflight",),
+        "adjacent_workflows": (
+            "release-cut",
+            "deploy-and-monitor",
+            "production-audit",
+            "app-debugging",
+        ),
     },
     {
         "id": "release_cut",
@@ -6792,6 +6845,7 @@ def awareness_primer_payload() -> dict[str, object]:
                 "relational-db",
                 "security-event-response",
                 "release-cut",
+                "mobile-release",
                 "agent-instructions",
                 "iac-change",
                 "data-pipelines",
@@ -7170,6 +7224,7 @@ _DIRECT_WORKFLOW_NEXT_ACTIONS = {
     "iac-change": "prepare_iac_change_plan",
     "data-pipelines": "prepare_pipeline_plan",
     "release-cut": "prepare_release_plan",
+    "mobile-release": "prepare_mobile_release_plan",
     "accessibility-audit": "prepare_accessibility_audit",
     "visual-qa": "prepare_visual_qa",
     "workspace-file-operator": "prepare_workspace_file_operator_card",

@@ -4,6 +4,27 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **Store releases have an owner: `omh-mobile-release`.** "we are shipping
+  3.2 to the app store and google play next week", "our testflight build is
+  stuck in beta review" and "set up code signing and provisioning profiles for
+  the ios release" used to ask a question led by `connector-operator` or
+  `code-review`, or dispatched to `github-event-ops`. They now dispatch to a
+  skill whose outputs are the gates the stores enforce:
+  - `signing_plan/v1` names every certificate, profile and key with its expiry
+    and holder, never the secret;
+  - `privacy_declaration_check/v1` compares the privacy manifest and the
+    Play data safety form against the SDKs the build ships;
+  - `beta_channel_plan/v1`, `staged_rollout_plan/v1` and `hotfix_plan/v1`
+    plan the TestFlight or Play beta, the halt thresholds for each rollout
+    step, and the higher build number that replaces a bad one, because a
+    store release cannot be rolled back.
+
+  The per-platform gates, the halt thresholds and the hotfix steps load on
+  demand from `references/mobile-release-method.md`. A phone's store app, a
+  gift card and a Kafka broker keystore stay away; a staged rollout of an API
+  stays on `release-cut` and watching a deploy stays on `deploy-and-monitor`.
+  OMH builds, signs and submits nothing (#1568).
+
 - **Fine-tuning a model has an owner: `omh-model-finetuning`.** "sft vs dpo
   for our summarization model", "should we fine-tune a model or is prompting
   enough" and "train a lora adapter on our internal docs" used to ask a

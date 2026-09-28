@@ -1582,6 +1582,23 @@
 }
 },
 {
+"anchors":"appl bad beta boot cert creat devic everyon expir fastlan fifty know launch misbehav month nobody older privacyinfo reach reject replacement resubmit stop tester testflight today xcprivacy",
+"hangul":"",
+"hangul_anchors":"",
+"label":"omh-mobile-release",
+"name":"mobile-release",
+"situation":"Releasing an iOS or Android app through the stores -- signing, the privacy manifest, a TestFlight or Play beta, a staged rollout, a hotfix",
+"terms":{
+"1":"already back becaus cannot check declaration enforc gate noth output prepar roll start threshold",
+"2":"api appl ask bad boot cert certificat clos connect consol creat devic everyon expedit expir external fastlan fifty halt hotfix internal key keystor know launch misbehav month new nobody older plan privacyinfo profil reach read reason reject replacement requir resubmit review rollout ship stag stop submission tester through time today version week xcprivacy",
+"3":"befor code data form googl hand next phas provision safety submit test track upload user",
+"4":"android beta build distribution ios manifest play privacy sign stor testflight",
+"5":"mobil",
+"6":"app",
+"7":"releas"
+}
+},
+{
 "anchors":"bad five number percent restor semver send yesterday",
 "hangul":"",
 "hangul_anchors":"",
@@ -2220,7 +2237,7 @@
 }
 },
 {
-"anchors":"adopt adoption agentskill already community creat discovery don extend famous fork github io marketplac plugin popular reinvent scout search top useful worth",
+"anchors":"adopt adoption agentskill community creat discovery don extend famous fork github io marketplac plugin popular reinvent scout search top useful worth",
 "hangul":"검색 그인 기존 들기 러그 명한 비교 설치 스카 스킬 없는 용한 우트 유명 유용 찾기 찾아 치할 카우 플러 할지 후보",
 "hangul_anchors":"검색 그인 기존 들기 러그 명한 비교 설치 스카 스킬 없는 용한 우트 유명 유용 찾기 찾아 치할 카우 플러 할지 후보",
 "label":"omh-skill-scout",
@@ -2268,7 +2285,7 @@
 }
 },
 {
-"anchors":"already alternativ approach dismiss drop idea option previously recall reject rule",
+"anchors":"alternativ approach dismiss drop idea option previously recall reject rule",
 "hangul":"각된 거절 결정 기각 대안 절된",
 "hangul_anchors":"각된 거절 결정 기각 대안 절된",
 "label":"omh-decision-recall",
