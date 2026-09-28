@@ -888,12 +888,12 @@ def advance_todo_item(
         elif observed_calls is not None:
             stamp = record.get("updated_at", "")
             stamp = stamp if isinstance(stamp, str) else ""
+            # Every reference the plan holds, this item's own included: a call
+            # it was already bound to is not a new command to bind again.
             held = {
                 evidence_key(checked)
-                for index, entry in enumerate(stored)
-                if index != position
-                and isinstance(entry, dict)
-                and (checked := valid_evidence(entry.get("evidence")))
+                for entry in stored
+                if isinstance(entry, dict) and (checked := valid_evidence(entry.get("evidence")))
             }
             calls = observed_calls(stamp, held)
             if calls:
