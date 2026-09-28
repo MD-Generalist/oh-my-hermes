@@ -3013,6 +3013,32 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
         "",
         "security-event-response",
     ),
+    # `agent-instructions` words outside a repository: a travel agent's
+    # instructions, a spy game, and a mouse cursor.
+    RoutingPrecisionCase(
+        "travel-agent-instructions-is-not-agent-instructions",
+        "A travel agent's instructions are not an agent instruction file",
+        "my travel agent sent instructions for the trip",
+        "answer_clarification",
+        "",
+        "agent-instructions",
+    ),
+    RoutingPrecisionCase(
+        "spy-game-agent-is-not-agent-instructions",
+        "Instructions for a game's secret agent are not an agent instruction file",
+        "write the instructions for the secret agent in our board game",
+        "answer_clarification",
+        "",
+        "agent-instructions",
+    ),
+    RoutingPrecisionCase(
+        "mouse-cursor-rules-is-not-agent-instructions",
+        "A mouse cursor is not a Cursor rule",
+        "the mouse cursor rules the screen in this game",
+        "answer_clarification",
+        "",
+        "agent-instructions",
+    ),
     # `release-cut` phrases outside shipping software: a band's release, a pet
     # canary, a political candidate, and a carpet. Watching a deploy that is
     # already out stays with `deploy-and-monitor`.
@@ -8655,6 +8681,55 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "security-event-response",
         "prepare_security_event_response",
         "security_event_response",
+    ),
+    # #1713: writing or keeping the repo's agent instruction file dispatches
+    # here. The first two are the issue's rows. Distilling lessons into
+    # AGENTS.md rule candidates stays with `rules-distill` (pinned elsewhere).
+    RoutingInterventionCase(
+        "set-up-agents-md-reaches-agent-instructions",
+        "Setting up AGENTS.md reaches the instruction file lane",
+        "set up AGENTS.md",
+        "dispatch",
+        "agent-instructions",
+        "prepare_instruction_file_update",
+        "instruction_file_update",
+    ),
+    RoutingInterventionCase(
+        "update-claude-md-reaches-agent-instructions",
+        "Updating CLAUDE.md reaches the instruction file lane",
+        "update our CLAUDE.md",
+        "dispatch",
+        "agent-instructions",
+        "prepare_instruction_file_update",
+        "instruction_file_update",
+    ),
+    RoutingInterventionCase(
+        "write-agents-md-for-repo-reaches-agent-instructions",
+        "Writing an AGENTS.md for a repo reaches the instruction file lane",
+        "write an AGENTS.md for this repo",
+        "dispatch",
+        "agent-instructions",
+        "prepare_instruction_file_update",
+        "instruction_file_update",
+    ),
+    RoutingInterventionCase(
+        "cursor-rules-for-repo-reaches-agent-instructions",
+        "Cursor rules for a repo reach the instruction file lane",
+        "create .cursorrules for this repo with our build and test commands",
+        "dispatch",
+        "agent-instructions",
+        "prepare_instruction_file_update",
+        "instruction_file_update",
+    ),
+    # Pins the boost: without it this sentence dispatches to verification-gate.
+    RoutingInterventionCase(
+        "agents-md-generated-files-reaches-agent-instructions",
+        "Updating AGENTS.md about generated files reaches the instruction file lane",
+        "update AGENTS.md so the agent stops editing the generated docs",
+        "dispatch",
+        "agent-instructions",
+        "prepare_instruction_file_update",
+        "instruction_file_update",
     ),
     # #1693: deciding or undoing a release dispatches to the release lane. The
     # first three are the issue's rows.

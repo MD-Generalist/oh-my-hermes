@@ -1343,6 +1343,7 @@ _WORKFLOW_CONTEXT_CARD_BY_WORKFLOW = {
     "git-workflow": "coding_handoff",
     "relational-db": "coding_handoff",
     "security-event-response": "coding_handoff",
+    "agent-instructions": "coding_handoff",
     "release-cut": "coding_handoff",
     # ULW fold (issue #954, PR D): the four contracts folding into
     # `ulw-work` share its coding-handoff lane so their capability family is
@@ -1424,6 +1425,11 @@ _AWARENESS_MESSAGE_MARKERS = (
     "leaked credential",
     "security advisory",
     "dependabot alert",
+    # Agent instruction files are named by their file names.
+    "agent-instructions",
+    "agents.md",
+    "claude.md",
+    ".cursorrules",
     # Releases: "release", "cut", "tag" and "canary" alone are everyday
     # English, so only release phrases arm awareness.
     "release-cut",
@@ -2671,6 +2677,44 @@ _ROUTE_HINT_RULES = (
             "live-incident-response",
             "production-audit",
             "commit-pr-authoring",
+        ),
+    },
+    {
+        "id": "agent_instructions",
+        "workflow": "agent-instructions",
+        "lane": "coding_handoff",
+        "next_action": "prepare_instruction_file_update",
+        "reason": "The user is writing or maintaining the repo's agent instruction file (AGENTS.md, CLAUDE.md, a Cursor rule); update only the marked region, mark every command verified or unverified, and record no counts or line numbers.",
+        "fallback_action": "ask_which_instruction_files_exist_and_which_commands_were_run",
+        "not_evidence_yet": (
+            "command run",
+            "file written",
+            "region replaced",
+        ),
+        # Only requests to write or keep the file. A bare "agents.md" or
+        # "claude.md" is absent: distilling lessons into AGENTS.md rule
+        # candidates is `rules-distill`, and a question about the file's
+        # content is not a request to write it.
+        "phrases": (
+            "agent-instructions",
+            "set up agents.md",
+            "set up claude.md",
+            "update our claude.md",
+            "update our agents.md",
+            "update the claude.md",
+            "update the agents.md",
+            "write an agents.md",
+            "write a claude.md",
+            "create an agents.md",
+            "create a claude.md",
+            "agent instruction file",
+        ),
+        "tokens": (),
+        "adjacent_workflows": (
+            "rules-distill",
+            "codebase-onboarding",
+            "context",
+            "product-docs",
         ),
     },
     {
@@ -6608,6 +6652,7 @@ def awareness_primer_payload() -> dict[str, object]:
                 "relational-db",
                 "security-event-response",
                 "release-cut",
+                "agent-instructions",
                 "ai-slop-cleaner",
                 "frontend-refactor",
                 "tech-debt-audit",
@@ -6979,6 +7024,7 @@ _DIRECT_WORKFLOW_NEXT_ACTIONS = {
     "git-workflow": "prepare_git_repair_plan",
     "relational-db": "prepare_db_change_plan",
     "security-event-response": "prepare_security_event_response",
+    "agent-instructions": "prepare_instruction_file_update",
     "release-cut": "prepare_release_plan",
     "accessibility-audit": "prepare_accessibility_audit",
     "visual-qa": "prepare_visual_qa",

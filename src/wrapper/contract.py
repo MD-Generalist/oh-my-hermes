@@ -278,6 +278,8 @@ VISIBLE_ACTIONS = (
     "show_migration_readiness",
     "prepare_security_event_response",
     "show_event_closure",
+    "prepare_instruction_file_update",
+    "show_command_verification",
     "prepare_release_plan",
     "show_release_readiness",
     "show_frontend_handoff",
@@ -1117,6 +1119,8 @@ _ACK_PRIMARY_ACTIONS_BY_NEXT_ACTION = {
     "show_migration_readiness": ("show_migration_readiness", "Show migration readiness"),
     "prepare_security_event_response": ("prepare_security_event_response", "Respond to the security event"),
     "show_event_closure": ("show_event_closure", "Show event closure"),
+    "prepare_instruction_file_update": ("prepare_instruction_file_update", "Update the instruction file"),
+    "show_command_verification": ("show_command_verification", "Show command verification"),
     "prepare_release_plan": ("prepare_release_plan", "Plan the release"),
     "show_release_readiness": ("show_release_readiness", "Show release readiness"),
     "prepare_accessibility_audit": ("prepare_accessibility_audit", "Audit accessibility"),
@@ -2260,6 +2264,37 @@ _WORKFLOW_OPERATIONS_CHAT_CARDS: dict[str, dict[str, object]] = {
             "approval passed",
             "canary promoted",
             "rollback performed",
+        ],
+    },
+    "agent-instructions": {
+        "kind": "instruction_file_update",
+        "headline": "I can write or update the agent instruction file inside its marked region.",
+        "body": (
+            "I will list the instruction files and who reads them, mark every build and test command verified with its observed "
+            "run or unverified, map each generated file to its source, regenerate command, and gate, and record the pitfalls "
+            "with what they cost. Only the text between the omh:agent-instructions markers changes, and I refuse counts and "
+            "line numbers because they drift."
+        ),
+        "phase": "instruction_file_update_prepared",
+        "next_action": "prepare_instruction_file_update",
+        "artifact_schema": "instruction_region_update/v1",
+        "claim_boundary_suffix": "It is not a run command, a written file, or a replaced region until the output is observed.",
+        "actions": [
+            {"id": "prepare_instruction_file_update", "label": "Update the instruction file", "style": "primary"},
+            {"id": "show_command_verification", "label": "Show command verification", "style": "secondary"},
+            {"id": "show_status", "label": "Show status", "style": "secondary"},
+        ],
+        "recommended_flow": [
+            "inventory_the_instruction_files",
+            "verify_each_command_or_mark_it_unverified",
+            "map_generated_files_to_source_and_gate",
+            "record_pitfalls_with_their_cost",
+            "replace_only_the_marked_region",
+        ],
+        "evidence_not_observed": [
+            "command run",
+            "file written",
+            "region replaced",
         ],
     },
     "security-event-response": {

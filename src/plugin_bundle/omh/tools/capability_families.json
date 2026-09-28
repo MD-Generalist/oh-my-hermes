@@ -207,6 +207,7 @@
    "relational-db",
    "security-event-response",
    "release-cut",
+   "agent-instructions",
    "ai-slop-cleaner",
    "frontend-refactor",
    "tech-debt-audit",

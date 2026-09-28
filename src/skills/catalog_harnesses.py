@@ -3385,6 +3385,7 @@ _PRIMARY_HARNESSES = {
     "model-optimization": "research",
     "ultraperf": "goal-execution",
     "wiki": "docs-specialist",
+    "agent-instructions": "docs-specialist",
     "ask": "critic",
     "cancel": "goal-execution",
     "skill": "docs-specialist",
