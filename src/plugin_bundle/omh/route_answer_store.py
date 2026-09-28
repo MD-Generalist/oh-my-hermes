@@ -216,7 +216,8 @@ def build_route_answer_record(
 
     `question_options` are the Choice options of the question the digest
     names, when the caller could re-derive it. They are what lets coverage be
-    judged; without them `answer_verdict` rests on mass and argmax alone.
+    judged; without them `answer_verdict` rests on mass and argmax alone and
+    the record says so with `coverage_checked: false`.
     """
     digest = _validated_digest(question_digest)
     answerer = str(answered_by or "").strip()
@@ -256,6 +257,11 @@ def build_route_answer_record(
             message_sha256=message_hash,
         ),
         "answer_verdict": ANSWER_VERDICT_INVALID if invalid else ANSWER_VERDICT_ACCEPTED,
+        # Whether `accepted` covers coverage too. False when the answer carries
+        # a distribution but the question's options were not at hand (no
+        # `message` to re-derive them from): mass and argmax were checked,
+        # coverage was not, and a reader must not treat the verdict as whole.
+        "coverage_checked": options is not None or not probabilities,
         "answered_by": answerer,
         "claim_boundary": CLAIM_BOUNDARY,
         "confidence_source": confidence_source_for(answerer),

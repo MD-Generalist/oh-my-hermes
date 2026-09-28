@@ -3328,8 +3328,8 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
         "internal-audit",
     ),
     # The route question's decline predicate (#1817). Each of these builds a
-    # question today; the first two are turns with nothing to decide, and the
-    # third is an ordinary non-request whose four-candidate question the
+    # question today; the first three are turns with nothing to decide, and the
+    # last is an ordinary non-request whose four-candidate question the
     # predicate must keep -- an answerer saying `none` there is the answer the
     # shadow surface exists to measure.
     RoutingPrecisionCase(
@@ -3347,6 +3347,14 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
         "answer_directly",
         "direct_answer",
         expected_route_question="acknowledgement",
+    ),
+    RoutingPrecisionCase(
+        "route-question-declines-no-candidate",
+        "A question whose Choice offers only none has nothing to decide",
+        "Apologize for being late.",
+        "answer_clarification",
+        "",
+        expected_route_question="no_candidate",
     ),
     RoutingPrecisionCase(
         "route-question-keeps-multi-candidate-control",
@@ -9469,6 +9477,22 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "clarification",
         "doctor",
         expected_route_question="single_candidate",
+    ),
+    # One word is not the same as nothing to decide: a one-word workflow
+    # request routes to several candidates and keeps its question. Only a
+    # one-word approval (`lgtm` above) is declined.
+    RoutingInterventionCase(
+        "route-question-keeps-one-word-request",
+        "A one-word refactor request still has candidates to choose between",
+        "refactor",
+        "clarify",
+        "oh-my-hermes",
+        "answer_clarification",
+        "clarification",
+        # No candidate pinned: the claim is that the question is kept, not
+        # which workflow leads it.
+        "",
+        expected_route_question=ROUTE_QUESTION_ASKED,
     ),
     RoutingInterventionCase(
         "route-question-keeps-multi-candidate-clarify",

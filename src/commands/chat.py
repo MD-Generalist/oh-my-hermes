@@ -236,15 +236,19 @@ def cmd_chat_route_questions_report(args: argparse.Namespace) -> int:
     """Join recorded route answers to recorded routes over a window and report it.
 
     Defaults read this OMH home: answers from `runtime/route-questions/`,
-    routes from `runtime/runs/`. The exit status is 0 whenever a report was
+    routes from `runtime/runs/` (`omh chat route --record`) and from the
+    wrapper-session event logs (live turns that built a question). The exit status is 0 whenever a report was
     produced, an empty window included -- its rates say `percent: null`
     rather than failing the command.
     """
     paths = _paths(args)
     answers = Path(args.answers).expanduser() if args.answers else route_answer_dir(paths.omh_home)
     runs = Path(args.runs).expanduser() if args.runs else paths.runtime_runs_dir
+    sessions = Path(args.sessions).expanduser() if args.sessions else paths.runtime_wrapper_sessions_dir
     try:
-        payload = build_route_question_shadow_report(answers, runs, since=args.since, model=args.model or "")
+        payload = build_route_question_shadow_report(
+            answers, runs, sessions_dir=sessions, since=args.since, model=args.model or ""
+        )
         if args.output:
             atomic_write_json(Path(args.output).expanduser(), payload)
     except (OSError, RoutingQuestionCorpusError, ValueError) as exc:
@@ -1431,6 +1435,11 @@ def _add_chat_commands(sub) -> None:
         "--runs",
         default=None,
         help="Directory of recorded runs holding routing.json; defaults to this OMH home's runtime/runs.",
+    )
+    route_questions_report.add_argument(
+        "--sessions",
+        default=None,
+        help="Directory of wrapper sessions whose events.jsonl carry live route questions; defaults to this OMH home's.",
     )
     route_questions_report.add_argument(
         "--since",

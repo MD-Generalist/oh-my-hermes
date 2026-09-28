@@ -44,6 +44,7 @@ from ..routing.route_question import (
 )
 from .reported_rate import ReportedRate, format_reported_rate, reported_rate
 from .routing_log_calibration import collect_routing_records, router_source_mtime
+from ..system.local_store import read_jsonl_objects
 from .routing_question_corpus import (
     answer_contradictions,
     deterministic_route_reading,
@@ -75,9 +76,26 @@ COST_BASIS_UNPRICED = "model_not_in_price_table"
 # How an answer that is not an opinion or not in the window leaves the join.
 UNRECORDED_MODE = "unrecorded"
 
+LANE_ROUTE_RECORD = "route_record"
+LANE_WRAPPER_SESSION = "wrapper_session"
+# The wrapper-session event a live turn writes when it builds a question.
+# Restated from `omh.wrapper.sessions`, which imports this package's
+# neighbours; a test pins the two against each other.
+ROUTE_QUESTION_OBSERVED_EVENT = "route_question_observed"
+
+JOIN_RULES = (
+    "An answer joins the newest route in the window with the same message_sha256, from either lane.",
+    "The join ignores the route's source surface and whether the answer was recorded before or after the route.",
+    "The decline rate counts every route that built a question, so one request routed twice counts twice.",
+    "Answers whose coverage was not checked (no message to re-derive the question) are excluded from agreement.",
+)
+
 CLAIM_BOUNDARY = (
-    "This report reads OMH-local records only: route_question_answer/v1 answers and the "
-    "route_decision/v1 records `omh chat route --record` wrote. It joins them by message_sha256 "
+    "This report reads OMH-local records only: route_question_answer/v1 answers, the "
+    "route_decision/v1 records `omh chat route --record` wrote, and the route_question_observed "
+    "events a recorded wrapper session (omh_interact, omh chat session) writes on a turn that built "
+    "a question. Live turns that built no question, and interactions run without a session, are "
+    "not seen. It joins answers to routes by message_sha256 "
     "and never sees message text. In shadow the route question changes no route, so agreement "
     "is what the answers would have decided, not what happened, and the decline rate is what a "
     "mode acting on the predicate would have withheld. The per-turn cost is an estimate over a "
@@ -90,15 +108,27 @@ def build_route_question_shadow_report(
     answers_dir: Path,
     runs_dir: Path,
     *,
+    sessions_dir: Path | None = None,
     since: str | None = None,
     model: str = "",
     repo_root: Path | None = None,
 ) -> dict[str, object]:
     """Join recorded answers to recorded routes over one window and report it.
 
-    `since` follows `routing_log_calibration`: omitted, it is the router
-    source's modification time when that file exists; an empty string means
-    every record. The same bound applies to both sides of the join.
+    Routes come from two lanes, and the report counts each:
+
+    - `route_record`: every `omh chat route --record` turn, one
+      `runtime/runs/<id>/routing.json` each, decided routes included.
+    - `wrapper_session`: every live interaction turn through a recorded wrapper
+      session (`omh_interact`, `omh chat session start`) that BUILT a route
+      question, one `route_question_observed` event in that session's
+      `events.jsonl`. Decided live turns write nothing and are not seen.
+
+    `omh chat interact` without a session and `omh_interact` with
+    `record_session: false` record no route, so their answers read as
+    unjoined. `since` follows `routing_log_calibration`: omitted, it is the
+    router source's modification time when that file exists; an empty string
+    means every record. The same bound applies to both sides of the join.
     """
     if since is None:
         resolved_since = router_source_mtime(repo_root)
@@ -108,12 +138,17 @@ def build_route_question_shadow_report(
     else:
         resolved_since, since_basis = "", "none"
 
-    routes, coverage = collect_routing_records(Path(runs_dir), since=resolved_since)
+    recorded, coverage = collect_routing_records(Path(runs_dir), since=resolved_since)
+    live = collect_live_route_observations(Path(sessions_dir), since=resolved_since) if sessions_dir else []
+    routes = [*recorded, *live]
     route_side = _route_side(routes)
+    route_side["summary"]["by_lane"] = {LANE_ROUTE_RECORD: len(recorded), LANE_WRAPPER_SESSION: len(live)}
 
-    # The newest recorded route per request. One request routed twice in the
-    # window is the same request; the later record is the router the answer
-    # was most recently read against.
+    # The newest recorded route per request, whichever lane wrote it. One
+    # request routed twice in the window is the same request; the later record
+    # is the router the answer was most recently read against. The join reads
+    # neither the route's source nor whether the answer came before or after
+    # it -- `JOIN_RULES` says so in the payload.
     latest: dict[str, Mapping[str, Any]] = {}
     for record in sorted(routes, key=lambda item: str(item.get("updated_at", ""))):
         digest = str(record.get("message_sha256") or "")
@@ -134,8 +169,35 @@ def build_route_question_shadow_report(
             "agreement_rate": answer_side["agreement_rate"],
         },
         "cost": _cost(model, turns=len(routes)),
+        "join_rules": list(JOIN_RULES),
         "claim_boundary": CLAIM_BOUNDARY,
     }
+
+
+def collect_live_route_observations(sessions_dir: Path, *, since: str = "") -> list[Mapping[str, Any]]:
+    """Every `route_question_observed` event in the window, shaped as a route record.
+
+    Each event carries what a routing record carries for the join -- the
+    request hash, the deterministic reading, the question summary -- under
+    `data`, and its own timestamp. A line that is not such an event, or an
+    unreadable log, contributes nothing.
+    """
+    routes: list[Mapping[str, Any]] = []
+    if not sessions_dir.is_dir():
+        return routes
+    for events_path in sorted(sessions_dir.glob("*/events.jsonl")):
+        events, _errors = read_jsonl_objects(events_path)
+        for event in events:
+            if event.get("event") != ROUTE_QUESTION_OBSERVED_EVENT:
+                continue
+            data = event.get("data")
+            timestamp = str(event.get("timestamp") or "")
+            if not isinstance(data, Mapping) or not timestamp:
+                continue
+            if since and timestamp < since:
+                continue
+            routes.append({**data, "updated_at": timestamp, "lane": LANE_WRAPPER_SESSION})
+    return routes
 
 
 def _route_side(routes: list[Mapping[str, Any]]) -> dict[str, Any]:
@@ -159,7 +221,7 @@ def _route_side(routes: list[Mapping[str, Any]]) -> dict[str, Any]:
             numerator=len(declinable),
             denominator=len(built),
             numerator_of=("declinable",),
-            denominator_of="recorded routes that built a route question",
+            denominator_of="routes in the window that built a route question, from both lanes",
             # A routing record written before the summary existed says nothing
             # about the question either way, so it is outside both counts.
             excluded=("routes_recorded_without_route_question_summary", "decided_routes"),
@@ -178,6 +240,7 @@ def _answer_side(
     readable = 0
     invalid = 0
     unjoined = 0
+    coverage_unchecked = 0
     joined_valid = 0
     agree = 0
     modes: Counter[str] = Counter()
@@ -197,6 +260,13 @@ def _answer_side(
         # fields, which holds whether or not it could.
         if document.get("answer_verdict") == INVALID_ANSWER_VERDICT or answer_contradictions(record.answers, None):
             invalid += 1
+            continue
+        # `accepted` without coverage is a verdict on mass and argmax alone,
+        # so it is kept out of agreement and named there. A record written
+        # before the field existed says nothing either way and is treated the
+        # same.
+        if document.get("coverage_checked") is not True:
+            coverage_unchecked += 1
             continue
         route = latest.get(record.message_sha256) if record.message_sha256 else None
         if route is None:
@@ -219,6 +289,7 @@ def _answer_side(
             "recorded_before_since": before_since,
             "in_window": readable,
             "invalid_answer": invalid,
+            "coverage_unchecked": coverage_unchecked,
             "unjoined": unjoined,
             "joined": joined_valid,
             "agree": agree,
@@ -241,6 +312,7 @@ def _answer_side(
                 "malformed_answer_records",
                 "recorded_before_since",
                 INVALID_ANSWER_VERDICT,
+                "coverage_unchecked",
                 "unjoined_answer_records",
             ),
         ).to_payload(),
@@ -264,7 +336,10 @@ def _cost(model: str, *, turns: int) -> dict[str, object]:
         "turn_shape": dict(DECLARED_TURN_SHAPE),
         "model": name,
         "turns_in_window": turns,
-        "turns_counted_as": "recorded routes in the window, one per turn",
+        "turns_counted_as": (
+            "routes in the window, one per turn: every `omh chat route --record` turn plus every "
+            "recorded wrapper-session turn that built a route question"
+        ),
     }
     if not name:
         return {**payload, "basis": COST_BASIS_NO_MODEL, "price_per_mtok": None, "per_turn_usd": None, "window_usd": None}
@@ -308,8 +383,8 @@ def format_route_question_shadow_report(report: Mapping[str, Any]) -> str:
         f"Route question shadow report ({report.get('schema_version')})",
         f"Since: {since.get('value') or 'all records'} ({since.get('basis')})",
         (
-            f"Routes: {routes.get('recorded_routes', 0)} recorded, {routes.get('built', 0)} built a question, "
-            f"{routes.get('asked', 0)} asked; mode {routes.get('mode') or {}}"
+            f"Routes: {routes.get('recorded_routes', 0)} recorded {routes.get('by_lane') or {}}, "
+            f"{routes.get('built', 0)} built a question, {routes.get('asked', 0)} asked; mode {routes.get('mode') or {}}"
         ),
         (
             f"Answers: {answers.get('in_window', 0)} in window, {answers.get('malformed', 0)} malformed, "
@@ -332,6 +407,8 @@ def format_route_question_shadow_report(report: Mapping[str, Any]) -> str:
             f"(~${cost.get('window_usd')} over {cost.get('turns_in_window')} turns); "
             f"turn shape assumed: {shape_text}"
         )
+    for rule in report.get("join_rules") or ():
+        lines.append(f"Join rule: {rule}")
     lines.append(f"Boundary: {report.get('claim_boundary', '')}")
     return "\n".join(lines)
 
@@ -343,6 +420,11 @@ __all__ = [
     "COST_BASIS_UNPRICED",
     "DECLARED_TURN_SHAPE",
     "ROUTE_QUESTION_SHADOW_REPORT_SCHEMA_VERSION",
+    "JOIN_RULES",
+    "LANE_ROUTE_RECORD",
+    "LANE_WRAPPER_SESSION",
+    "ROUTE_QUESTION_OBSERVED_EVENT",
     "build_route_question_shadow_report",
+    "collect_live_route_observations",
     "format_route_question_shadow_report",
 ]

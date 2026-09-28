@@ -5,7 +5,7 @@ Four contracts, each pinned from both sides:
 - the mode is read from OMH config, carried with where it came from, and an
   unreadable mode is `unknown`, never the default;
 - in `shadow` -- the default -- every negative-control payload is byte for
-  byte what `origin/main` produced before the mode existed;
+  byte the payload built with the mode seam patched out;
 - the decline predicate and the `invalid_answer` verdict each accept what they
   should and refuse what they should;
 - one report joins recorded answers to recorded routes and every rate in it is
@@ -14,7 +14,6 @@ Four contracts, each pinned from both sides:
 
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import unittest
@@ -33,7 +32,7 @@ from omh.plugin_bundle.omh.route_answer_consistency import (  # noqa: E402
     INVALID_ANSWER_MASS,
     invalid_answer_reasons,
 )
-from omh.plugin_bundle.omh.route_answer_store import build_route_answer_record  # noqa: E402
+from omh.plugin_bundle.omh.route_answer_store import build_route_answer_record, write_route_answer  # noqa: E402
 from omh.plugin_bundle.omh.route_question_mode import (  # noqa: E402
     read_route_question_mode,
     route_question_config_path,
@@ -42,9 +41,12 @@ from omh.plugin_bundle.omh.tools.route_answer_tool import omh_route_answer_handl
 from omh.quality.reported_rate import reported_rate_shape_errors  # noqa: E402
 from omh.quality.route_question_shadow_report import (  # noqa: E402
     DECLARED_TURN_SHAPE,
+    JOIN_RULES,
+    ROUTE_QUESTION_OBSERVED_EVENT,
     build_route_question_shadow_report,
     format_route_question_shadow_report,
 )
+from omh.wrapper.sessions import ROUTE_QUESTION_OBSERVED_EVENT as SESSION_EVENT  # noqa: E402
 from omh.quality.routing_precision import (  # noqa: E402
     ROUTE_QUESTION_ASKED,
     ROUTING_INTERVENTION_CASES,
@@ -63,7 +65,6 @@ from omh.routing.route_question import ROUTE_QUESTION_DECLINE_REASONS, message_d
 from omh.wrapper.contract import build_chat_interaction_payload  # noqa: E402
 from omh.wrapper.route_hints import build_chat_route_hint_payload  # noqa: E402
 
-GOLDEN = Path(__file__).resolve().parent / "fixtures" / "route_question_shadow_negative_controls.json"
 UNDECIDABLE_MESSAGE = "почему сборка падает на main"
 
 
@@ -71,10 +72,6 @@ def _write_mode(omh_home: Path, content: str) -> None:
     path = route_question_config_path(omh_home)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content, encoding="utf-8", newline="\n")
-
-
-def _payload_digest(payload: object) -> str:
-    return hashlib.sha256(json.dumps(payload, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()
 
 
 class RouteQuestionModeReaderTests(unittest.TestCase):
@@ -117,68 +114,113 @@ class RouteQuestionModeReaderTests(unittest.TestCase):
         self.assertEqual(reading["mode_error"], "unreadable")
 
 
-class ShadowPayloadIsTodaysPayloadTests(unittest.TestCase):
-    """`shadow` is defined as the payload `origin/main` produced, byte for byte.
+def _seam_removed():
+    """Patch the mode seam out: no config is read and no mode is applied."""
+    reader = patch(
+        "omh.wrapper.contract.read_route_question_mode",
+        return_value={"mode": "shadow", "mode_source": "not_read"},
+    )
+    applier = patch("omh.wrapper.contract.apply_route_question_mode", side_effect=lambda route, mode: route)
+    return reader, applier
 
-    The fixture holds, per negative-control case, the sha256 of the payload
-    `build_chat_interaction_payload(message, source="discord", paths=...)`
-    returned at the commit it names, before any mode existed. A change that
-    deliberately moves a negative-control payload re-derives it with the
-    capture loop in this class's `_digests`, from a tree where that change is
-    the only difference.
+
+class ShadowPayloadIsTheRoutersPayloadTests(unittest.TestCase):
+    """`shadow` changes nothing: a difference check against the mode seam removed.
+
+    For every negative-control case, the payload under the default mode, an
+    explicit `shadow` and an unreadable config is compared, as the bytes the
+    `omh_interact` tool emits (`json.dumps(..., sort_keys=True)`), with the
+    payload built while the mode seam -- reading the config and applying the
+    mode -- is patched out. That pins "shadow does not move the payload"
+    without freezing what the router produces: a routing change elsewhere
+    moves both sides together.
     """
 
-    @classmethod
-    def setUpClass(cls) -> None:
-        cls.golden = json.loads(GOLDEN.read_text(encoding="utf-8"))["digests"]
+    @staticmethod
+    def _emitted(payload: object) -> str:
+        return json.dumps(payload, sort_keys=True)
 
-    def _digests(self, config: str | None) -> dict[str, str]:
-        messages = {case.id: case.message for case in ROUTING_PRECISION_CASES}
+    def _payloads(self, config: str | None, *, seam: bool) -> dict[str, str]:
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
             if config is not None:
                 _write_mode(root / "omh", config)
             paths = resolve_paths(omh_home=root / "omh", hermes_home=root / "hermes")
-            return {
-                case_id: _payload_digest(
-                    build_chat_interaction_payload(messages[case_id], source="discord", paths=paths)
-                )
-                for case_id in self.golden
-            }
 
-    def test_every_captured_case_is_still_in_the_corpus(self) -> None:
-        present = {case.id for case in ROUTING_PRECISION_CASES}
-        self.assertEqual(sorted(set(self.golden) - present), [])
+            def build() -> dict[str, str]:
+                return {
+                    case.id: self._emitted(build_chat_interaction_payload(case.message, source="discord", paths=paths))
+                    for case in ROUTING_PRECISION_CASES
+                }
 
-    def test_the_default_mode_reproduces_every_captured_payload(self) -> None:
-        digests = self._digests(None)
-        moved = sorted(case_id for case_id, digest in digests.items() if digest != self.golden[case_id])
-        self.assertEqual(moved, [], "negative-control payloads moved under the default shadow mode")
+            if seam:
+                return build()
+            reader, applier = _seam_removed()
+            with reader, applier as applied:
+                payloads = build()
+            self.assertTrue(applied.called)
+            return payloads
 
-    def test_an_explicit_shadow_and_an_unreadable_mode_reproduce_them_too(self) -> None:
-        for config in ('{"mode": "shadow"}', "{not json"):
+    def test_default_shadow_and_unreadable_equal_the_seam_removed_for_every_negative_control(self) -> None:
+        baseline = self._payloads(None, seam=False)
+        self.assertEqual(len(baseline), len(ROUTING_PRECISION_CASES))
+        self.assertTrue(any('"route_question"' in emitted for emitted in baseline.values()))
+        for config in (None, '{"mode": "shadow"}', "{not json"):
             with self.subTest(config=config):
-                digests = self._digests(config)
-                moved = sorted(case_id for case_id, digest in digests.items() if digest != self.golden[case_id])
+                moved = sorted(
+                    case_id
+                    for case_id, emitted in self._payloads(config, seam=True).items()
+                    if emitted != baseline[case_id]
+                )
                 self.assertEqual(moved, [])
 
+    def test_the_tool_emits_the_same_bytes_in_shadow_and_without_the_seam(self) -> None:
+        from omh.plugin_bundle.omh.tools.chat_tool import omh_interact_handler
+
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            env = {"OMH_HOME": str(root / ".omh"), "HERMES_HOME": str(root / ".hermes")}
+            messages = [case.message for case in ROUTING_PRECISION_CASES[::10]]
+
+            def emit() -> list[str]:
+                with patch.dict(os.environ, env):
+                    return [
+                        omh_interact_handler({"message": message, "source": "discord", "record_session": False})
+                        for message in messages
+                    ]
+
+            shadow = emit()
+            reader, applier = _seam_removed()
+            with reader, applier:
+                removed = emit()
+        self.assertEqual(shadow, removed)
+        self.assertTrue(any('"route_question"' in text for text in shadow))
+
     def test_off_withholds_the_question_and_changes_nothing_else(self) -> None:
-        """The negative half: `off` does move the payload, and only by the question."""
+        """The negative half, over every negative control: `off` moves the payload only by the question."""
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
             _write_mode(root / "omh", '{"mode": "off"}')
             off_paths = resolve_paths(omh_home=root / "omh", hermes_home=root / "hermes")
             shadow_paths = resolve_paths(omh_home=root / "other", hermes_home=root / "hermes")
             asked = 0
-            for case in ROUTING_PRECISION_CASES[:60]:
+            for case in ROUTING_PRECISION_CASES:
                 off = build_chat_interaction_payload(case.message, source="discord", paths=off_paths)
                 shadow = build_chat_interaction_payload(case.message, source="discord", paths=shadow_paths)
                 self.assertNotIn("route_question", off["route"])
                 if "route_question" in shadow["route"]:
                     asked += 1
                     shadow["route"].pop("route_question")
-                self.assertEqual(_payload_digest(off), _payload_digest(shadow), case.id)
+                self.assertEqual(self._emitted(off), self._emitted(shadow), case.id)
         self.assertGreater(asked, 0)
+
+    def test_unknown_keeps_the_question_on_the_route_hint(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _write_mode(root / "omh", "{not json")
+            paths = resolve_paths(omh_home=root / "omh", hermes_home=root / "hermes")
+            hint = build_chat_route_hint_payload(UNDECIDABLE_MESSAGE, source="discord", paths=paths)
+        self.assertIsInstance(hint["route_question"], dict)
 
     def test_off_withholds_the_question_on_the_route_hint_too(self) -> None:
         with TemporaryDirectory() as tmp:
@@ -206,6 +248,15 @@ class DeclinePredicateTests(unittest.TestCase):
         for message in (
             "remember to close the file handle in the finally block",
             "review my patch for the export feature",
+            # One word is not nothing to decide: a one-word workflow request
+            # routes to several candidates, and only a listed approval word
+            # (`lgtm` above) is a reply.
+            "refactor",
+            "deploy",
+            "debug",
+            "review",
+            "migrate",
+            "optimize",
             # One "word" by whitespace, a whole sentence in fact: a script
             # without spaces is not a one-word reply.
             "移行を説明する長い文書を書いて",
@@ -224,6 +275,13 @@ class DeclinePredicateTests(unittest.TestCase):
             with self.subTest(corpus=type(corpus[0]).__name__):
                 self.assertIn(ROUTE_QUESTION_ASKED, expectations)
                 self.assertTrue(expectations & set(ROUTE_QUESTION_DECLINE_REASONS))
+        # Every decline reason is pinned by at least one shipped case.
+        pinned = {
+            case.expected_route_question
+            for corpus in (ROUTING_PRECISION_CASES, ROUTING_INTERVENTION_CASES)
+            for case in corpus
+        }
+        self.assertLessEqual(set(ROUTE_QUESTION_DECLINE_REASONS), pinned)
 
     def test_the_corpus_verdict_reads_the_predicate(self) -> None:
         """A case's own row fails when the predicate disagrees with it."""
@@ -269,6 +327,22 @@ class InvalidAnswerTests(unittest.TestCase):
         self.assertEqual(invalid_answer_reasons("plan", None, options=options), ())
         # Without the question's options coverage cannot be judged.
         self.assertEqual(invalid_answer_reasons("plan", {"plan": 0.7, "none": 0.3}), ())
+
+    def test_the_mass_tolerance_sits_between_rounding_and_a_real_miss(self) -> None:
+        self.assertEqual(invalid_answer_reasons("plan", {"plan": 0.605, "none": 0.4}), ())
+        self.assertEqual(invalid_answer_reasons("plan", {"plan": 0.62, "none": 0.4}), (INVALID_ANSWER_MASS,))
+        self.assertEqual(invalid_answer_reasons("plan", {"plan": 0.58, "none": 0.4}), (INVALID_ANSWER_MASS,))
+
+    def test_accepted_says_whether_coverage_was_checked(self) -> None:
+        common = {"question_digest": "ab" * 32, "answered_by": "main_model", "route_choice": "plan"}
+        unchecked = build_route_answer_record(**common, choice_probabilities={"plan": 0.7, "none": 0.3})
+        checked = build_route_answer_record(
+            **common, choice_probabilities={"plan": 0.7, "none": 0.3}, question_options=["plan", "none"]
+        )
+        nothing_to_check = build_route_answer_record(**common)
+        self.assertEqual((unchecked["answer_verdict"], unchecked["coverage_checked"]), ("accepted", False))
+        self.assertEqual((checked["answer_verdict"], checked["coverage_checked"]), ("accepted", True))
+        self.assertTrue(nothing_to_check["coverage_checked"])
 
     def test_the_store_records_the_verdict_and_the_mode(self) -> None:
         record = build_route_answer_record(
@@ -460,6 +534,115 @@ class ShadowReportTests(unittest.TestCase):
         self.assertEqual(cost["turns_in_window"], 3)
         self.assertIn("declared from kerpopule/hermes-jev-skills", text)
         self.assertIn("not priced (no_model_named)", text)
+        self.assertEqual(report["routes"]["by_lane"], {"route_record": 3, "wrapper_session": 0})
+        self.assertEqual(report["join_rules"], list(JOIN_RULES))
+        self.assertIn("Join rule: The join ignores the route's source surface", text)
+        self.assertIn("one request routed twice counts twice", " ".join(report["join_rules"]))
+
+    def test_a_live_interaction_turn_is_a_route_the_report_joins(self) -> None:
+        """The live lane: `omh_interact` with its default session recording."""
+        from omh.plugin_bundle.omh.tools.chat_tool import omh_interact_handler
+
+        kept = "review my patch for the export feature"
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            env = {"OMH_HOME": str(root / ".omh"), "HERMES_HOME": str(root / ".hermes")}
+            with patch.dict(os.environ, env):
+                interaction = json.loads(omh_interact_handler({"message": kept, "source": "discord"}))
+                decided = json.loads(omh_interact_handler({"message": "run omh doctor", "source": "discord"}))
+            self.assertIn("route_question", interaction["route"])
+            self.assertNotIn("route_question", decided["route"])
+            candidate = interaction["route"]["candidate_skill"]
+            self.assertEqual(
+                self._answer(root, kept, {"answered_by": "main_model", "route_choice": candidate, "fits": {candidate: 0.6}})["status"],
+                "recorded",
+            )
+            status, stdout, stderr = run_cli(
+                ["--omh-home", str(root / ".omh"), "--hermes-home", str(root / ".hermes"),
+                 "chat", "route-questions", "report", "--since", "", "--json"]
+            )
+            self.assertEqual(status, 0, stderr)
+            report = json.loads(stdout)
+            events = [
+                json.loads(line)
+                for path in (root / ".omh" / "runtime" / "wrapper_sessions").glob("*/events.jsonl")
+                for line in path.read_text(encoding="utf-8").splitlines()
+            ]
+        self.assertEqual(ROUTE_QUESTION_OBSERVED_EVENT, SESSION_EVENT)
+        observed = [event for event in events if event["event"] == SESSION_EVENT]
+        # One line for the undecidable turn, none for the decided one, and no text.
+        self.assertEqual(len(observed), 1)
+        data = observed[0]["data"]
+        self.assertEqual(data["message_sha256"], message_digest(kept))
+        self.assertEqual(data["route_question"]["mode"], "shadow")
+        self.assertTrue(data["route_question"]["built"])
+        self.assertNotIn(kept, json.dumps(observed))
+        self.assertEqual(report["routes"]["by_lane"], {"route_record": 0, "wrapper_session": 1})
+        self.assertEqual(report["answers"]["joined"], 1)
+        self.assertEqual((report["rates"]["agreement_rate"]["numerator"], report["rates"]["agreement_rate"]["denominator"]), (1, 1))
+
+    def test_the_newest_route_for_a_request_wins_the_join(self) -> None:
+        digest = message_digest("some request")
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for name, stamp, action, candidate in (
+                ("a", "2026-09-01T00:00:00Z", "fallback", ""),
+                ("b", "2026-09-02T00:00:00Z", "clarify", "code-review"),
+            ):
+                (root / "runs" / name).mkdir(parents=True)
+                (root / "runs" / name / "routing.json").write_text(
+                    json.dumps({
+                        "route_decision": {"schema_version": "route_decision/v1"},
+                        "updated_at": stamp,
+                        "message_sha256": digest,
+                        "action": action,
+                        "selected_skill": "oh-my-hermes",
+                        "candidate_skill": candidate,
+                    }),
+                    encoding="utf-8",
+                    newline="\n",
+                )
+            record = build_route_answer_record(
+                question_digest="ab" * 32,
+                answered_by="main_model",
+                route_choice="code-review",
+                fits={"code-review": 0.6},
+                message_sha256=digest,
+            )
+            write_route_answer(root / "omh", record)
+            report = build_route_question_shadow_report(
+                root / "omh" / "runtime" / "route-questions", root / "runs", since=""
+            )
+        self.assertEqual(report["rates"]["agreement_rate"]["numerator"], 1)
+        self.assertEqual(report["rates"]["agreement_rate"]["denominator"], 1)
+
+    def test_an_answer_whose_coverage_was_not_checked_is_excluded_from_agreement(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            base = ["--omh-home", str(root / ".omh"), "--hermes-home", str(root / ".hermes")]
+            kept = "review my patch for the export feature"
+            self._record_route(base, kept)
+            question = route_chat_message(kept, source="discord")["route_question"]
+            options = sorted(question["questions"]["route_choice"]["options"])
+            with patch.dict(os.environ, {"OMH_HOME": str(root / ".omh"), "HERMES_HOME": str(root / ".hermes")}):
+                # No `message`: the options cannot be re-derived, so coverage is unchecked.
+                payload = json.loads(omh_route_answer_handler(
+                    {
+                        "question_digest": question["question_digest"],
+                        "answered_by": "main_model",
+                        "route_choice": options[0],
+                        "choice_probabilities": {options[0]: 1.0},
+                        "message_sha256": message_digest(kept),
+                    },
+                    session_id="session-report",
+                ))
+            report = build_route_question_shadow_report(
+                root / ".omh" / "runtime" / "route-questions", root / ".omh" / "runtime" / "runs", since=""
+            )
+        self.assertEqual((payload["status"], payload["record"]["coverage_checked"]), ("recorded", False))
+        self.assertEqual(report["answers"]["coverage_unchecked"], 1)
+        self.assertEqual(report["rates"]["agreement_rate"]["denominator"], 0)
+        self.assertIn("coverage_unchecked", report["rates"]["agreement_rate"]["excluded"])
 
     def test_an_empty_window_reports_unmeasured_rates_not_zero(self) -> None:
         with TemporaryDirectory() as tmp:

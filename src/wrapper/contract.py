@@ -28,7 +28,7 @@ from ..ingress import CHAT_SOURCES, compact_source_metadata, extract_event_attac
 from ..system.platform_envelope import build_platform_envelope, platform_thread_key_scope
 from ..system.tracker_content import normalize_tracker_content
 from ..routing.catalog_questions import is_skill_catalog_question as _is_skill_catalog_question
-from ..routing.chat import public_chat_route_payload, route_explanation_payload
+from ..routing.chat import public_chat_route_payload, route_explanation_payload, route_question_observation
 from ..routing.coding_route_actions import coding_route_decision_payload, resolve_coding_route_decision
 from ..routing.localization import normalized_phrase
 from ..routing.route_plan import public_workflow_identifier, with_public_skill_names
@@ -4678,6 +4678,7 @@ def build_chat_interaction_payload(
     tracker_host_context: Mapping[str, object] | None = None,
     design_direction_iteration_context: Mapping[str, object] | None = None,
     _host_project_binding_factory: HostProjectBindingFactory | None = None,
+    _route_question_sink: list[dict[str, object]] | None = None,
 ) -> dict[str, object]:
     if source not in CHAT_SOURCES:
         raise ValueError(f"unsupported chat interaction source: {source}")
@@ -4759,7 +4760,14 @@ def build_chat_interaction_payload(
         # the router built it.
         route = payload.get("route")
         if isinstance(route, dict):
-            apply_route_question_mode(route, read_route_question_mode(paths.omh_home)["mode"])
+            reading = read_route_question_mode(paths.omh_home)
+            # Read before the mode applies, so a sink sees the question the
+            # router built even when `off` withholds it. The observation goes
+            # to the caller's list, never into the payload: `shadow` stays the
+            # router's bytes.
+            if _route_question_sink is not None and isinstance(route.get("route_question"), dict):
+                _route_question_sink.append(route_question_observation(route, message, reading))
+            apply_route_question_mode(route, reading["mode"])
     # Attached at the one point every chat surface passes through -- the plugin
     # tool's session and no-session paths both land here -- so Slack, Telegram,
     # Discord, CLI, and desktop all carry the notice from a single seam. The

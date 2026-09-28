@@ -28,6 +28,7 @@ from .route_question import (
     DECLINE_ONE_WORD_REPLY,
     DECLINE_SINGLE_CANDIDATE,
     build_route_question_for_candidate_handoff,
+    message_digest,
     route_question_candidate_count,
 )
 from .domain_signals import (
@@ -1751,9 +1752,13 @@ def route_question_decline_reason(route: Mapping[str, object], message: str) -> 
     - `acknowledgement`: the direct-answer lane's own conversational-turn
       classifier says the message is a thank-you or an okay. Its answer is
       always "no workflow", and asking costs an answerer a turn to say so.
-    - `one_word_reply`: one whitespace-delimited word in a script that
-      delimits words with spaces. Han and kana are excluded because a whole
-      Japanese sentence is one "word" by that count.
+    - `one_word_reply`: the whole message is one word, and that word is an
+      approval from the engine-entry approval vocabulary (`lgtm`, `승인`,
+      ...). A one-word *request* -- `refactor`, `deploy`, `debug` -- routes to
+      several candidates and is exactly the question the surface exists to
+      ask, so length alone never declines. Because the word has to be a
+      listed approval, no script needs excluding: a whole Japanese sentence
+      is one whitespace "word", but it is not an entry in that list.
     - `no_candidate`: the Choice offers only `none`.
     - `single_candidate`: the Choice offers one workflow and `none`.
     """
@@ -1764,8 +1769,7 @@ def route_question_decline_reason(route: Mapping[str, object], message: str) -> 
     lowered = executable.strip().lower()
     if lowered and _is_plain_conversational_turn(_strip_direct_answer_soft_prefix(lowered)):
         return DECLINE_ACKNOWLEDGEMENT
-    script = routing_input_language(message).get("script")
-    if script in _SPACE_DELIMITED_SCRIPTS and len(normalized_phrase(executable).split()) == 1:
+    if len(normalized_phrase(executable).split()) == 1 and _message_approves(executable):
         return DECLINE_ONE_WORD_REPLY
     candidate_count = route_question_candidate_count(question)
     if candidate_count == 0:
@@ -1773,9 +1777,6 @@ def route_question_decline_reason(route: Mapping[str, object], message: str) -> 
     if candidate_count == 1:
         return DECLINE_SINGLE_CANDIDATE
     return ""
-
-
-_SPACE_DELIMITED_SCRIPTS = frozenset({"latin", "hangul"})
 
 
 def _contextual_design_direction_iteration_route(
@@ -7076,6 +7077,30 @@ def route_question_record(
         "asked": built and fields["mode"] != ROUTE_QUESTION_MODE_OFF,
         "decline_reason": route_question_decline_reason(decision, message),
         **fields,
+    }
+
+
+def route_question_observation(
+    route: Mapping[str, object],
+    message: str,
+    route_question_mode: Mapping[str, str],
+) -> dict[str, object]:
+    """The metadata-only line a live interaction records when it built a question.
+
+    The routing record `omh chat route --record` writes is the only other
+    place a route and its question summary are kept, and a Hermes turn through
+    `omh_interact` never writes one. This carries the same fields the shadow
+    report reads off a routing record -- the request hash, the deterministic
+    reading (`action`, `selected_skill`, `candidate_skill`) and the question
+    summary -- and nothing else: no message text, no candidate descriptions.
+    """
+    return {
+        "message_sha256": message_digest(message),
+        "source": str(route.get("source") or ""),
+        "action": str(route.get("action") or ""),
+        "selected_skill": str(route.get("selected_skill") or ""),
+        "candidate_skill": str(route.get("candidate_skill") or ""),
+        "route_question": route_question_record(route, message, route_question_mode),
     }
 
 
