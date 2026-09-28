@@ -2971,6 +2971,7 @@ These surfaces are generated command references, not installed Hermes workflow s
   - The request is a security posture or threat review rather than a service design; use `security-safety-review`.
   - The request is to run or judge the verification of an already-built service; use `verification-gate`.
   - The request is a Rust-language change whose risk is compiler, ownership, or `unsafe` discipline; use `rust`.
+  - The work is a batch or streaming job's rerun, backfill, duplicate rows, or a warehouse table's downstream readers; use `data-pipelines`.
 - Strong routing signals: `backend`, `back-end`, `back end`, `backend skill`, `server side`, `server-side`, `api design`, `api contract`, `rest api`, `graphql api`, `grpc service`, `endpoint design`, `auth boundary`, `authentication flow`, `authorization rules`, `idempotency key`, `pagination contract`, `database schema`, `postgres schema`, `schema migration`, `db migration`, `orm mapping`, `connection pool`, `message queue`, `webhook handler`, `openapi`, `openapi spec`, `deprecate endpoint`, `deprecate this endpoint`, `deprecation window`, `sunset date`, `sunset schedule`, `api versioning`, `breaking api change`, `バックエンド`, `エンドポイント設計`, `認証フロー`, `スキーマ移行`, `백엔드`, `서버 개발`, `서버 api`, `api 설계`, `인증 흐름`, `권한 체크`, `디비 스키마`, `db 스키마`, `스키마 마이그레이션`, `엔드포인트 설계`, `后端`, `後端`, `接口设计`, `认证流程`, `数据库迁移`
 - Good example:
   - Prompt: Design a REST API with a Postgres schema and migrations for the billing service.
@@ -7038,6 +7039,81 @@ These surfaces are generated command references, not installed Hermes workflow s
   - Apply only the saved plan that was reviewed; a fresh apply can differ from what was read.
   - Never hand-edit a state file or a live object to hide drift; import, move, or re-declare it, and say which.
   - OMH never runs terraform, tofu, pulumi, kubectl, or helm, and never reads cloud credentials; every drift, cost, apply, and health fact comes from observed output or is marked unverified.
+
+### data-pipelines
+
+[omh] Data pipeline work -- an ETL or streaming job, a backfill or replay, duplicate events, a schema change downstream, a lineage question, a data-quality regression: make every rerun idempotent, bound every replay, and gate each load on observed checks.
+
+- Category: `planning`
+- Phase: `data-pipelines`
+- Hermes role: `planner`
+- Quality tier: `idempotent-replay-gated`
+- Reasoning demand: `standard`
+- Exposure: `direct_skill`
+- Install visibility: `true`
+- Docs visibility: `primary_workflow_skill`
+- Compatibility alias: `false`
+- Lifecycle stage: `canonical`
+- Preferred usage: Use as an installed Hermes workflow skill when this explicit workflow is the clearest user-facing handle.
+- Handoff policy: Keep the lineage map, schema impact, idempotency contract, replay or backfill plan, and quality gates in Hermes. Row counts, job runs, query results and check outcomes are recorded only from executor, operator, or wrapper observed output; OMH never runs a pipeline, triggers a backfill, or queries a warehouse.
+- Why this exists: `data-pipelines` exists because pipeline work had no owner: `backend` owns a service's schema migration, `data-analysis` analyzes data it is handed, and `relational-db` owns a database's locks and indexes, while a backfill that duplicated events or a schema change with unknown readers reached memory and event lanes with no idempotency contract or replay bound at all.
+- First steps:
+  - Ask what makes a row unique at the sink before planning any rerun.
+  - Bound the window and the targets before ordering any replay or backfill step.
+- Use when: Use when a batch or streaming data pipeline needs planning or repair: an ETL, ELT, Airflow, dbt, Spark or Kafka job; a backfill or a replay of past events; duplicate or missing rows; a schema change whose downstream readers are unknown; a lineage question; or a data-quality regression. The output is the lineage, the schema change's downstream impact, an idempotency contract, a bounded replay or backfill plan, and the data-quality gate each load must pass; OMH runs no job and reads no warehouse.
+- Do not use when:
+  - The ask is a service's own database migration, API, or queue design; use `backend`.
+  - The ask is analyzing, charting, or summarizing a dataset that was handed over; use `data-analysis`.
+  - The ask is a slow query, an index, or DDL locking a live table; use `relational-db`.
+  - The ask is remembering or syncing what the assistant knows about the user; use `memory-sync`.
+- Strong routing signals: `data-pipelines`, `data pipeline`, `data pipelines`, `etl`, `elt`, `etl pipeline`, `etl job`, `etl backfill`, `airflow dag`, `airflow etl`, `airflow backfill`, `dagster`, `dbt model`, `dbt run`, `spark job`, `kafka topic`, `kafka events`, `kafka consumer`, `backfill`, `data backfill`, `replay events`, `replay the events`, `event replay`, `idempotent`, `idempotency`, `exactly once`, `exactly-once`, `duplicate events`, `lineage`, `data lineage`, `data quality`, `data quality check`, `schema evolution`, `late arriving data`, `dead letter queue`, `batch job`
+- Good example:
+  - Prompt: our airflow etl backfill is producing duplicate events
+  - Expected behavior: Find the sink's unique key, name the append that duplicated rows, write the idempotency contract (event-id dedupe or partition overwrite), then bound the backfill window and gate it on key uniqueness and row count against the prior window.
+  - Why: Rerunning an appending backfill doubles the duplicates it was meant to fix.
+- Bad example:
+  - Prompt: just delete the duplicates and rerun the whole history
+  - Expected behavior: Refuse the unbounded rerun: fix the write to be idempotent first, then backfill a bounded window behind a quality gate.
+  - Why: Deleting duplicates without fixing the write guarantees the next rerun duplicates again.
+- Quality bar:
+  - Find what makes a row unique at the sink before proposing any rerun.
+  - Load `references/pipeline-method.md` for the idempotency patterns, the schema compatibility table, the replay and backfill procedure, and the quality checks instead of recalling them.
+  - Map lineage from the orchestrator's graph first and mark anything found only by search.
+  - Treat duplicates as an idempotency defect, not a cleanup task: fix the write, then repair the rows.
+  - Keep prepared, run, and verified as separate states for every load and check.
+- Completion checklist:
+  - The sink's unique key and the idempotency contract are stated.
+  - Every replay or backfill is bounded by window and target.
+  - Every downstream reader of a schema change is named with its impact.
+  - Every load names its data-quality gate and the value that stops it.
+  - OMH ran nothing, and every count cites observed output or is marked unverified.
+- Recovery notes:
+  - If no unique key exists at the sink, the first step is defining one; say so before any rerun.
+  - If lineage is unavailable, list readers found by search and mark the map incomplete.
+- Required inputs:
+  - the pipeline: its orchestrator, its sources, its sinks, and its schedule or trigger
+  - the unit of the problem: the table, topic, or model, and the time window affected
+  - what makes a row unique at the sink: the natural key, the event id, or the partition
+  - the downstream readers already known: models, dashboards, exports, services
+  - observed counts, job logs, or check results for any claim about what was loaded
+- Expected outputs:
+  - lineage_map/v1
+  - schema_change_impact/v1
+  - idempotency_contract/v1
+  - replay_backfill_plan/v1
+  - data_quality_gate/v1
+- Artifact expectations:
+  - lineage_map/v1 names each upstream source and each downstream reader of the affected table, topic, or model, from the orchestrator's graph or a lineage record, and marks readers found by search rather than by the graph
+  - schema_change_impact/v1 classifies the change as additive, widening, or breaking for each downstream reader, and names the reader that breaks and the order that avoids it
+  - idempotency_contract/v1 names the key that makes a rerun safe -- a natural key upsert, an event-id dedupe window, or a partition overwrite -- and what happens to a row written twice
+  - replay_backfill_plan/v1 bounds the window, names the target partitions or offsets, pauses or isolates downstream readers, and writes through the idempotency contract so a second run changes nothing
+  - data_quality_gate/v1 names the observed checks each load must pass before readers see it -- row count against the prior window, key uniqueness, null rate, freshness -- and the value that stops the load
+- Safety rules:
+  - Never plan a replay or backfill without an idempotency contract; a rerun that appends is how the duplicates got there.
+  - Bound every replay and backfill by window and target; an unbounded rerun rewrites history nobody asked about.
+  - A breaking schema change waits until every downstream reader in the lineage map is adapted or named as accepting the break.
+  - Do not publish a load to readers before its data-quality gate is observed; a prepared check is not a passed one.
+  - OMH never runs a job, triggers a backfill, or queries a warehouse; every count and check comes from observed output or is marked unverified.
 
 ### release-cut
 

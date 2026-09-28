@@ -3387,6 +3387,7 @@ _PRIMARY_HARNESSES = {
     "wiki": "docs-specialist",
     "agent-instructions": "docs-specialist",
     "iac-change": "app-delivery-loop",
+    "data-pipelines": "coding-handling",
     "ask": "critic",
     "cancel": "goal-execution",
     "skill": "docs-specialist",

@@ -2142,6 +2142,21 @@ EVERYDAY_SENSE_PHRASES: dict[str, tuple[tuple[str, ...], frozenset[str]]] = {
             }
         ),
     ),
+    # "we need to backfill the open position on the team", "my family lineage
+    # goes back to scotland", "duplicate events in my calendar" and "the batch
+    # job at the bakery" are not pipelines; each phrase keeps this route only
+    # beside a word of data engineering.
+    "data-pipelines": (
+        ("backfill", "lineage", "duplicate events", "batch job", "data quality"),
+        frozenset(
+            {
+                "airflow", "bigquery", "consumer", "dag", "dags", "dagster", "data", "databricks", "dataset", "datasets", "dbt",
+                "elt", "etl", "ingestion", "kafka", "offset", "offsets", "parquet", "partition", "partitions",
+                "pipeline", "pipelines", "redshift", "rows", "schema", "sink", "snowflake", "spark", "stream",
+                "streaming", "table", "tables", "topic", "warehouse",
+            }
+        ),
+    ),
     # "the cost delta between the two flights", "drift detection in the ocean
     # model" and "a helm chart for the sailing class" are not infrastructure;
     # each phrase keeps this route only beside a word of infrastructure.

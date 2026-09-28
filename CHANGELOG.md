@@ -4,6 +4,27 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **Data pipeline work has an owner: `omh-data-pipelines`.** "our airflow etl
+  backfill is producing duplicate events", "replay the last three days of
+  kafka events into the warehouse without double counting", "the dbt model
+  changed its schema, what breaks downstream" and "make this spark job
+  idempotent so a rerun does not duplicate rows" used to ask a question led by
+  `github-event-ops`, `backend` or `github-issue-intake`. They now dispatch to
+  a skill whose idempotency and replay are outputs of their own:
+  - `idempotency_contract/v1` names the key that makes a rerun safe and what
+    happens to a row written twice;
+  - `replay_backfill_plan/v1` bounds the window and targets and writes
+    through that contract, so a second run changes nothing;
+  - `lineage_map/v1`, `schema_change_impact/v1` and `data_quality_gate/v1`
+    name the downstream readers, what breaks for each, and the observed
+    checks a load must pass before readers see it.
+
+  The idempotency patterns, the schema compatibility table, the replay
+  procedure and the quality checks load on demand from
+  `references/pipeline-method.md`. A team backfilling a position, a family
+  lineage, duplicate calendar events and "sync my memory" stay away. OMH runs
+  no job and queries no warehouse (#1565).
+
 - **Routing reads the file a request names, not only its words.** A skill
   may declare `path_globs`; when the request names a matching path and uses
   one of the skill's own trigger words, the skill gains a path score.
