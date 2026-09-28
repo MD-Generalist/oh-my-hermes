@@ -3138,6 +3138,22 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
         "",
         "iac-change",
     ),
+    RoutingPrecisionCase(
+        "tf-file-named-in-passing-is-not-iac-change",
+        "A .tf file named in passing, beside none of the skill's words, adds nothing",
+        "I saved my grocery list as main.tf, what should I cook tonight",
+        "answer_clarification",
+        "",
+        "iac-change",
+    ),
+    RoutingPrecisionCase(
+        "tf-file-open-in-the-editor-is-not-iac-change",
+        "A .tf file open in the editor while asking about a laptop fan is not infrastructure work",
+        "why is my laptop fan loud while main.tf is open in the editor",
+        "answer_directly",
+        "direct_answer",
+        "iac-change",
+    ),
 )
 
 
@@ -8932,6 +8948,26 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "deploy-and-monitor",
         "prepare_deploy_monitor_plan",
         "deploy_monitor_plan",
+    ),
+    RoutingInterventionCase(
+        "terraform-path-reaches-iac-change-without-the-word",
+        "A change to a .tf file reaches the IaC change plan without the word terraform",
+        "review the change to infra/network/main.tf before we apply it",
+        "dispatch",
+        "iac-change",
+        "prepare_iac_change_plan",
+        "iac_change_plan",
+        "iac-change",
+    ),
+    RoutingInterventionCase(
+        "helm-chart-path-reaches-iac-change",
+        "A change to a chart's values file reaches the IaC change plan",
+        "apply the change in charts/payments/values.yaml to staging first",
+        "dispatch",
+        "iac-change",
+        "prepare_iac_change_plan",
+        "iac_change_plan",
+        "iac-change",
     ),
 )
 
