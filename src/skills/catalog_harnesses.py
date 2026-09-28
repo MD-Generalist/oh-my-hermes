@@ -3390,6 +3390,7 @@ _PRIMARY_HARNESSES = {
     "data-pipelines": "coding-handling",
     "model-finetuning": "research",
     "mobile-release": "app-delivery-loop",
+    "internal-audit": "critic",
     "ask": "critic",
     "cancel": "goal-execution",
     "skill": "docs-specialist",

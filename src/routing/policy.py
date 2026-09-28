@@ -2142,6 +2142,22 @@ EVERYDAY_SENSE_PHRASES: dict[str, tuple[tuple[str, ...], frozenset[str]]] = {
             }
         ),
     ),
+    # "the red sox won last night", "i have no internal control over my
+    # snacking", "quality control testing on the assembly line" and "the
+    # material weakness in this bridge design" are not control audits; each
+    # phrase keeps this route only beside a word of auditing.
+    "internal-audit": (
+        ("sox", "internal control", "internal controls", "control testing", "material weakness"),
+        frozenset(
+            {
+                "404", "access", "approval", "approvals", "attestation", "audit", "auditor", "auditors", "audits",
+                "coso", "deficiencies", "deficiency", "evidence", "financial", "icfr", "invoice", "invoices", "itgc",
+                "itgcs", "journal", "ledger", "materiality", "payment", "payments", "pcaob", "population",
+                "reconciliation", "reconciliations", "reperform", "reperformance", "sample", "samples", "sampling",
+                "segregation", "vendor", "walkthrough", "workpaper", "workpapers",
+            }
+        ),
+    ),
     # "the play store on my phone will not open", "my google play gift card did
     # not work" and "the app store keeps asking for my password" are a phone's
     # store app, not a release; each phrase keeps this route only beside a word

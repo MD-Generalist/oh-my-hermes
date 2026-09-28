@@ -288,6 +288,8 @@ VISIBLE_ACTIONS = (
     "show_promotion_gate",
     "prepare_mobile_release_plan",
     "show_rollout_halt",
+    "prepare_control_test_plan",
+    "show_severity_grade",
     "prepare_release_plan",
     "show_release_readiness",
     "show_frontend_handoff",
@@ -1137,6 +1139,8 @@ _ACK_PRIMARY_ACTIONS_BY_NEXT_ACTION = {
     "show_promotion_gate": ("show_promotion_gate", "Show the promotion gate"),
     "prepare_mobile_release_plan": ("prepare_mobile_release_plan", "Plan the store release"),
     "show_rollout_halt": ("show_rollout_halt", "Show the halt thresholds"),
+    "prepare_control_test_plan": ("prepare_control_test_plan", "Plan the control test"),
+    "show_severity_grade": ("show_severity_grade", "Show the severity criteria"),
     "prepare_release_plan": ("prepare_release_plan", "Plan the release"),
     "show_release_readiness": ("show_release_readiness", "Show release readiness"),
     "prepare_accessibility_audit": ("prepare_accessibility_audit", "Audit accessibility"),
@@ -2401,6 +2405,36 @@ _WORKFLOW_OPERATIONS_CHAT_CARDS: dict[str, dict[str, object]] = {
             "build uploaded",
             "review approved",
             "rollout advanced",
+        ],
+    },
+    "internal-audit": {
+        "kind": "control_test_plan",
+        "headline": "I can plan this control test and grade what it finds from stated criteria.",
+        "body": (
+            "I will define the control and its population, check the population is complete, size the sample from the "
+            "control's frequency, name the evidence each item must produce, plan the re-performance, and derive any "
+            "severity grade from stated likelihood, magnitude and compensating controls. I read no ledger and sign off nothing."
+        ),
+        "phase": "control_test_plan_prepared",
+        "next_action": "prepare_control_test_plan",
+        "artifact_schema": "deficiency_severity_grade/v1",
+        "claim_boundary_suffix": "It is not a pulled population, obtained evidence, or a re-performed control until the output is observed.",
+        "actions": [
+            {"id": "prepare_control_test_plan", "label": "Plan the control test", "style": "primary"},
+            {"id": "show_severity_grade", "label": "Show the severity criteria", "style": "secondary"},
+            {"id": "show_status", "label": "Show status", "style": "secondary"},
+        ],
+        "recommended_flow": [
+            "define_the_control_and_its_population",
+            "check_population_completeness",
+            "size_and_draw_the_sample",
+            "request_evidence_and_reperform",
+            "grade_from_stated_criteria",
+        ],
+        "evidence_not_observed": [
+            "population pulled",
+            "evidence obtained",
+            "control re-performed",
         ],
     },
     "iac-change": {
