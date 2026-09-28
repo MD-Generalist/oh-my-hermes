@@ -5007,6 +5007,7 @@ These surfaces are generated command references, not installed Hermes workflow s
   - The refactor's direction is still contested or the goal itself needs consensus planning; use `ralplan`.
   - The work is deletion-first cleanup with no boundary changes; use `ai-slop-cleaner`.
   - The plan is done and the claim is that work is complete; use `verification-gate` for the evidence close.
+  - The version bump carries a security advisory, a CVE, or a leaked secret; use `security-event-response`, which owns containment and closure.
 - Strong routing signals: `refactor-plan`, `refactor plan`, `plan this refactor`, `plan the refactor`, `refactor planning`, `refactor phases`, `phased refactor`, `refactor in phases`, `refactor rollback plan`, `blast radius`, `module restructure plan`, `restructure plan`, `dependency upgrade`, `major version upgrade`, `framework upgrade`, `upgrade to the next major`, `breaking change upgrade`, `lockfile`, `리팩터링 계획`, `리팩토링 계획`, `리팩터링 단계`, `단계별 리팩터링`, `리팩터링 계획 세워줘`, `리팩터링 롤백 계획`
 - Good example:
   - Prompt: We decided to split the billing module out of orders - plan the refactor so each step is shippable.
@@ -5027,6 +5028,7 @@ These surfaces are generated command references, not installed Hermes workflow s
   - Reconnaissance names affected files, boundaries, coupling, and blast radius from observed evidence.
   - Every phase carries its verification command and its rollback point, and ends at a shippable commit.
   - The files table covers every touched file with action, phase, and dependencies.
+  - For an upgrade, every breaking change row names its call sites or an observed empty search, and every stage names its rollback.
   - The plan stopped at the approval gate; no implementation began without the user's go.
 - Recovery notes:
   - If the import graph is unavailable, build the codegraph first or reduce the plan's confidence and say which files are unverified.
@@ -5040,11 +5042,13 @@ These surfaces are generated command references, not installed Hermes workflow s
   - reconnaissance: affected files, ownership boundaries, hidden coupling, blast radius — and for an upgrade, the advisory, licence, migration-guide, and lockfile intake
   - phase plan in the fixed order - types/interfaces, implementations, callers, tests, cleanup - each with verification and rollback
   - files table: path, action, phase, blocks/blocked-by
+  - for an upgrade, the call-site readiness gate: every breaking change between the two versions against this repository's call sites or an observed empty search, and every stage's rollback
   - the approval gate: the plan stops and waits for the user's go
 - Artifact expectations:
   - metadata-only runtime record when a wrapper or shell is available
 - Safety rules:
   - The plan comes from observed repo evidence, never from memory of the tree.
+  - An upgrade plan is not ready while any breaking change lacks its call sites or an observed empty search, or any stage lacks its rollback; name the open rows instead of calling the bump safe to merge.
   - Every phase ends at a commit that could ship; a phase that cannot end green is split further.
   - Nothing is deleted before the cleanup phase, and cleanup starts from a tagged rollback point.
   - Do not begin implementing any phase without the user's explicit approval of the plan.
@@ -6832,7 +6836,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 - Do not use when:
   - Nothing has happened yet and the ask is a review of prompts, tools, or permissions before execution; use `security-safety-review`, which also owns a planned rotation with no exposure.
   - The subject is a design's assets, trust boundaries, and attack scenarios; use `application-threat-model`.
-  - A dependency moves to a new version as routine maintenance with no advisory or leak attached, such as a dependabot bump; use `github-event-ops`.
+  - A dependency moves to a new version as routine maintenance with no advisory or leak attached, such as a dependabot bump; use `refactor-plan`.
   - The question is a contract, a privacy obligation, or legal advice beyond a dependency's declared terms; use `legal-compliance-review`.
   - Production is down or degraded right now and the ask is command of the incident; use `live-incident-response`.
 - Strong routing signals: `security-event-response`, `security event response`, `cve`, `triage this cve`, `cve in our dependency`, `cve in a dependency`, `security advisory`, `dependabot alert`, `dependabot security`, `vulnerable dependency`, `vulnerability in our dependency`, `reachability analysis`, `npm audit`, `committed a secret`, `committed an api key`, `leaked secret`, `leaked a secret`, `leaked credential`, `leaked api key`, `leaked an api key`, `leaked aws key`, `leaked an aws key`, `secret in git history`, `secret in the history`, `dependency license`, `dependency's license`, `license ok`, `license compatibility`, `license compatible`, `gpl dependency`, `agpl dependency`
@@ -7962,6 +7966,7 @@ These surfaces are generated command references, not installed Hermes workflow s
   - The user asks OMH to secretly run external platforms, connectors, schedulers, file exports, or runtime agents.
   - The only safe answer is to ask for missing authority, credentials, target, or observed evidence first.
   - The event is a security advisory, a CVE in a dependency, or a leaked credential; use `security-event-response`, which orders containment and closes only on an observed rotation or fix.
+  - The PR is a dependabot or renovate version bump with no advisory; use `refactor-plan`, which decides whether it is safe to merge from the breaking changes against this repository's call sites.
 - Strong routing signals: `github-event-ops`, `github event ops`, `github ops`, `github triage`, `github pr`, `github review`, `github action`, `github actions`, `pr opened`, `pull request opened`, `pull request review`, `pr review`, `ci failed`, `check failed`, `checks failed`, `failing checks`, `issue opened`, `issue triage`, `pull request webhook`, `github webhook`, `github issue`, `github issue to pr`, `auto review pr`, `label issue`, `label pr`, `ci analysis`, `fix handoff`, `review handoff`, `깃허브`, `깃허브 pr`, `깃허브 이슈`, `github issue 들어온`, `이슈 라벨`, `pr 리뷰`, `리뷰 라벨`, `픽스 핸드오프`, `ci 실패`
 - Good example:
   - Prompt: github-event-ops PR opened with failing CI; triage whether this needs review or fix handoff.

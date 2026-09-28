@@ -213,8 +213,13 @@ NON_SKILL_BACKTICKS = frozenset(
 # `agent-instructions` (#1713) defers to `rules-distill`, `codebase-onboarding`,
 # `context`, and `product-docs`, and `rules-distill` gains the statement
 # pointing back. Five cases, five pairs, one owner.
-EXPECTED_DEFERENCE_CASES = 299
-EXPECTED_DEFERENCE_PAIRS = 310
+# The dependabot split (#1712): `refactor-plan` defers a bump that carries an
+# advisory to `security-event-response`, and `github-event-ops` defers a bump
+# with none to `refactor-plan`; `security-event-response`'s bump statement now
+# names `refactor-plan` instead of `github-event-ops`, which swaps one pair for
+# another. Two cases, two pairs, no new owner.
+EXPECTED_DEFERENCE_CASES = 301
+EXPECTED_DEFERENCE_PAIRS = 312
 EXPECTED_DEFERRING_OWNERS = 86
 
 # The ratchet. Recording a new inversion must be a visible edit to this number,

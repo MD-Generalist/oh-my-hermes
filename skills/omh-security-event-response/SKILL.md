@@ -27,7 +27,7 @@ This is a Hermes-native `security-event-response` workflow skill.
 
 - Nothing has happened yet and the ask is a review of prompts, tools, or permissions before execution; use `security-safety-review`, which also owns a planned rotation with no exposure.
 - The subject is a design's assets, trust boundaries, and attack scenarios; use `application-threat-model`.
-- A dependency moves to a new version as routine maintenance with no advisory or leak attached, such as a dependabot bump; use `github-event-ops`.
+- A dependency moves to a new version as routine maintenance with no advisory or leak attached, such as a dependabot bump; use `refactor-plan`.
 - The question is a contract, a privacy obligation, or legal advice beyond a dependency's declared terms; use `legal-compliance-review`.
 - Production is down or degraded right now and the ask is command of the incident; use `live-incident-response`.
 
