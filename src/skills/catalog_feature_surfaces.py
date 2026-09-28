@@ -61,6 +61,7 @@ _FEATURE_SURFACE_SKILLS = (
         ),
         extra_do_not_use_when=(
             "The event is a security advisory, a CVE in a dependency, or a leaked credential; use `security-event-response`, which orders containment and closes only on an observed rotation or fix.",
+            "The PR is a dependabot or renovate version bump with no advisory; use `refactor-plan`, which decides whether it is safe to merge from the breaking changes against this repository's call sites.",
         ),
     ),
     _feature_surface_skill(

@@ -17,7 +17,7 @@ from .executor_cues import (
 from .intent import classify_omh_quality_intent
 from .reference_regions import executable_routing_text
 from .jev_addressing import jev_addressed_skill
-from .localization import normalized_phrase, phrase_is_spoken, routing_tokens
+from .localization import normalized_phrase, phrase_is_spoken, routing_terms, routing_tokens
 from .materials_cues import OFFICE_FILE_MATERIAL_PHRASES
 from .missed_route import has_normalized_missed_omh_workflow_context
 from .omh_help import is_omh_docs_question
@@ -4811,6 +4811,37 @@ _DEPENDENCY_UPGRADE_PHRASES = (
     "breaking change upgrade",
     "의존성 업그레이드",
     "메이저 버전 업그레이드",
+)
+# A bot-opened version bump is the routine or major upgrade half of the
+# dependabot split (#1694, #1712): an advisory or a leaked secret is an event
+# for `security-event-response`; a bump with no advisory is an upgrade.
+_DEPENDENCY_BUMP_PHRASES = (
+    "dependabot bumped",
+    "dependabot bumps",
+    "dependabot bump",
+    "dependabot bumping",
+    "renovate bumped",
+    "renovate bumps",
+    "renovate bump",
+)
+# A spoken version jump -- "upgrade react from 18 to 19" -- names no upgrade
+# phrase at all: an upgrade verb, two version numbers, and the thing being
+# upgraded. The software word is what separates it from "upgrade my iphone
+# from 14 to 16" and "the price bumped from 10 to 12". Names that are also
+# ordinary words are left out -- express shipping, a mattress spring, the next
+# tier, a vacation package, a battery's runtime -- so "upgrade express from 4
+# to 5" is carried only by a word beside it, such as "dependabot".
+_VERSION_JUMP_VERBS = frozenset(
+    {"upgrade", "upgrading", "upgraded", "bump", "bumped", "bumping", "bumps", "migrate", "migrating"}
+)
+_VERSION_JUMP_SOFTWARE_ANCHORS = frozenset(
+    {
+        "angular", "dependabot", "dependencies", "dependency", "django", "dotnet", "electron", "eslint",
+        "fastapi", "flask", "framework", "golang", "gradle", "java", "jdk", "jest", "js", "kotlin", "laravel",
+        "lodash", "node", "nodejs", "npm", "numpy", "pandas", "php", "pip", "pydantic", "python", "pytorch",
+        "rails", "react", "renovate", "sdk", "svelte", "tailwind", "tensorflow", "typescript", "vite", "vue",
+        "webpack",
+    }
 )
 _GENERATED_ARTIFACT_NOUNS = (
     "generated file",
@@ -9923,8 +9954,34 @@ def credential_rotation_guard_applies(normalized_query: str) -> bool:
 
 
 def dependency_upgrade_guard_applies(normalized_query: str) -> bool:
-    """Complete upgrade phrases only; `upgrade` alone is not this lane."""
-    return _contains_phrase(normalized_query, _DEPENDENCY_UPGRADE_PHRASES)
+    """Complete upgrade phrases or a version bump; `upgrade` alone is not this lane."""
+    return _contains_phrase(normalized_query, _DEPENDENCY_UPGRADE_PHRASES) or dependency_bump_spoken(normalized_query)
+
+
+def dependency_bump_spoken(normalized_query: str) -> bool:
+    """A bot-opened bump or a spoken version jump that carries no security event.
+
+    A security advisory, a leaked secret, or a CVE that arrives as a bump is an
+    event for `security-event-response`, not an upgrade.
+    """
+    if _contains_phrase(normalized_query, _SECURITY_EVENT_OVER_GITHUB_EVENT_PHRASES) or "cve" in routing_tokens(
+        normalized_query
+    ):
+        return False
+    return _contains_phrase(normalized_query, _DEPENDENCY_BUMP_PHRASES) or version_jump_spoken(normalized_query)
+
+
+def version_jump_spoken(normalized_query: str) -> bool:
+    """An upgrade verb, two version numbers, and a word of software.
+
+    "upgrade react from 18 to 19" and "bumped express 4.18 to 5.0" qualify;
+    "upgrade my iphone from 14 to 16" has the shape and no software word.
+    """
+    terms = routing_terms(normalized_query)
+    if not _VERSION_JUMP_VERBS & terms or not _VERSION_JUMP_SOFTWARE_ANCHORS & terms:
+        return False
+    versions = {term for term in terms if term.removeprefix("v").isdigit()}
+    return len(versions) >= 2
 
 
 def _generated_artifact_provenance_guard_applies(normalized_query: str) -> bool:

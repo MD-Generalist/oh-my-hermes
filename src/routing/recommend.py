@@ -48,6 +48,7 @@ from .policy import (
     _explicit_skill_candidate_is_negated,
     active_routing_guard_rules,
     context_query_is_budget_sense,
+    dependency_bump_spoken,
     dependency_upgrade_guard_applies,
     explicit_skill_invocation,
     is_explicit_one_off_request,
@@ -3826,6 +3827,12 @@ def _score_definition(
     if definition.name == "refactor-plan" and _refactor_plan_split_match(normalized_query, query_tokens):
         score += 30
         matched.add("direct:refactor_plan_split")
+    # "upgrade react from 18 to 19" and "dependabot bumped express 4.18 to 5.0"
+    # name no upgrade phrase, and every word they share with this skill is held
+    # back, so without this the upgrade guard had nothing to boost.
+    if definition.name == "refactor-plan" and dependency_bump_spoken(normalized_query):
+        score += 30
+        matched.add("direct:dependency_bump")
     if definition.name == "llm-app-dev" and _llm_app_dev_public_board_match(normalized_query):
         score += 30
         matched.add("direct:llm_app_dev_public_board")

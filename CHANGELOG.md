@@ -4,6 +4,26 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **A version bump reaches the upgrade plan, and "safe to merge" is a
+  call-site verdict.** "dependabot bumped express 4.18 to 5.0, safe to merge",
+  "upgrade react from 18 to 19" and "upgrade python from 3.11 to 3.13" used to
+  ask a question led by `verification-gate`, `frontend-refactor` or
+  `native-debugging`, and a bump that arrived as an opened PR dispatched to
+  `github-event-ops`. They now dispatch to `refactor-plan`, which already owned
+  dependency upgrades:
+  - a spoken version jump counts only with an upgrade verb, two version
+    numbers and a word of software, so "upgrade my iphone from 14 to 16" and
+    "the price bumped from 10 to 12" stay away;
+  - a bump that carries a CVE, a security advisory or a leaked secret stays an
+    event for `security-event-response`;
+  - the plan is not ready, and the bump is not safe to merge, while any
+    breaking change lacks its call sites in this repository (or an observed
+    empty search) or any stage lacks its rollback. The table and the
+    per-stage rollbacks are in `references/dependency-upgrade.md`.
+
+  `github-event-ops`, `security-event-response` and `refactor-plan` each name
+  the other side of the dependabot split (#1712, #1694).
+
 - **Which files a Hermes session touched is now answerable:
   `omh quality-evidence file-activity --hermes-session <id|latest>`.** A
   tool-call count could not say which files a run read, wrote, or patched.

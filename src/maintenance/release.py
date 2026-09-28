@@ -529,7 +529,11 @@ PRE_LLM_CALL_CONTEXT_FALLBACK_CHAR_LIMIT = 6917
 # 464159 -> 467710: one capability row for the new `agent-instructions` skill
 # (#1713) plus its siblings' reciprocal boundary lines. Re-derived from the
 # producer.
-FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 467710
+# 467710 -> 467905: the dependabot split (#1712) -- `github-event-ops` and
+# `refactor-plan` each gain one boundary line naming the other side, and
+# `security-event-response` now names `refactor-plan` for a bump. Re-derived
+# from the producer.
+FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 467905
 FULL_CAPABILITY_SKILL_ITEM_CHAR_LIMIT = 9000
 # 100000 -> 102070: the same three domain workflows each add one standalone
 # capability row, again measured on the merged tree; warranted growth for three
