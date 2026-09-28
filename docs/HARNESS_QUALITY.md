@@ -313,6 +313,61 @@ not show that the model consumed them, that a call succeeded, that a skill's
 guidance was followed, or that a reply was correct, and it is not execution,
 review, CI, or merge evidence.
 
+## Session File Activity
+
+Audience: operators, and agents preparing a review or a handoff. There is no
+chat tool for it: a tool would cost every turn schema bytes for a question
+asked after a run, not during one.
+
+A tool-call count cannot say which files a run read, wrote, or patched.
+`omh quality-evidence file-activity` answers that for one Hermes session at
+query time, from the records Hermes already keeps: the `tool_calls` on each
+assistant row (the call id, the tool, and its arguments) and the tool row
+carrying the same `tool_call_id` (the tool's own result and, for a call that
+never ran or whose effect is unknown, `effect_disposition`). OMH keeps no
+store for it and records nothing while the session runs.
+
+```sh
+omh quality-evidence file-activity --hermes-session <id|latest> [--workspace DIR] [--max-files 100] [--json]
+```
+
+The payload is `session_file_activity/v1`:
+
+| Field | What it holds |
+| --- | --- |
+| `files` | one entry per workspace file, with `first_at` / `last_at` (UTC) and `activity`: one row per operation and outcome, with its call count and first/last time |
+| `calls` | distinct `read_file`, `write_file`, and `patch` calls by tool and by outcome, plus `results_without_call` (results whose call row is gone, so no path can be attributed) |
+| `workspace` | where the root came from: `argument`, `git_repo_root`, `cwd` (Hermes' own workspace key, in that order), or `unknown` |
+| `file_count`, `shown_file_count`, `max_files`, `truncated`, `omitted_file_count` | the bound; the earliest-touched files are kept |
+| `omitted_paths` | declared paths not shown, counted by reason |
+
+Operations are `read`, `write`, `update` (a replace-mode patch or a V4A
+`Update File`), `add`, `delete`, `move_from`, and `move_to`; a V4A patch
+contributes every file it declares, each with the call's outcome.
+
+The outcome is closed: `succeeded`, `failed`, or `unknown`, read from the
+recorded result's own fields, the ones Hermes' own classifier reads, and never
+from wording. `succeeded` needs a `content` field (`read_file`), a
+`bytes_written` field (`write_file`), or `success: true` (`patch`), with no
+`error`. `failed` is `effect_disposition: none`, a truthy `error`, or
+`success: false`. Everything else is `unknown`: no recorded result,
+`effect_disposition: unknown`, or a result that is not a JSON object or lacks
+the success field. So a submitted path is never shown as a successful write.
+
+Paths are workspace-relative only. A path outside the workspace root, the root
+itself, a relative path when the session recorded no cwd, a `~` path, a
+URL-like value, one with control characters, one over 4096 characters, or a
+non-string argument is left out and counted under its reason; its value never
+reaches the payload or the text. Containment is judged by the path's spelling
+after `..` is collapsed: symlinks are not resolved and no named file is read or
+stat'ed. A compaction re-persists rows, so a call is one distinct call id per
+session, the first row by id deciding both its arguments and its result.
+
+A session with no file calls is an observation and exits 0. A missing
+database, an unknown session id, or `--max-files` below 1 exits 2. The claim
+boundary says what the payload is not: it is not file-content, diff, test,
+review, CI, or merge evidence.
+
 ## Cost Receipt
 
 Audience: people ask in chat; agents and operators read the tool payload or

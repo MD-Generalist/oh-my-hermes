@@ -20,8 +20,14 @@ from ..quality.language_diagnostic_evidence import (
     language_diagnostic_claim_support,
 )
 from ..quality.reply_lint import build_reply_lint, format_reply_lint_summary, summarize_reply_lints
-from ..quality.hermes_state import NO_SOURCE_LABEL
-from ..quality.reply_lint_source import HERMES_LATEST_SESSION, ReplySourceError, hermes_session_replies
+from ..quality.hermes_state import HERMES_LATEST_SESSION, NO_SOURCE_LABEL
+from ..quality.reply_lint_source import ReplySourceError, hermes_session_replies
+from ..quality.session_file_activity import (
+    DEFAULT_MAX_FILES,
+    SessionFileActivityError,
+    build_session_file_activity,
+    format_session_file_activity_summary,
+)
 from ..quality.session_usage import SessionUsageError, build_session_usage, format_session_usage_summary
 from .common import _paths, _print_json, _wants_json
 
@@ -163,6 +169,33 @@ def cmd_quality_evidence_session_usage(args: argparse.Namespace) -> int:
         _print_json(payload)
     else:
         print(format_session_usage_summary(payload))
+    return 0
+
+
+def cmd_quality_evidence_file_activity(args: argparse.Namespace) -> int:
+    """Report which workspace files one Hermes session's file tools touched; reads state.db only.
+
+    Tool-call counts cannot say which files a run read, wrote or patched.
+    This derives, at query time and without any OMH store, a bounded
+    per-file projection of one session's ``read_file``, ``write_file`` and
+    ``patch`` calls, each with the outcome Hermes recorded for it. Failed or
+    unknown calls are observations, so the command exits 0 when it read the
+    session; a missing database, an unknown session or a bad argument is an
+    error.
+    """
+    try:
+        payload = build_session_file_activity(
+            _paths(args).hermes_home,
+            args.hermes_session,
+            workspace=args.workspace,
+            max_files=int(args.max_files),
+        )
+    except (OSError, SessionFileActivityError, ValueError) as exc:
+        raise OmhError(str(exc)) from exc
+    if _wants_json(args):
+        _print_json(payload)
+    else:
+        print(format_session_file_activity_summary(payload))
     return 0
 
 
@@ -332,6 +365,36 @@ def _add_quality_evidence_commands(sub: argparse._SubParsersAction[argparse.Argu
     )
     usage.add_argument("--json", action="store_true", help="Print the machine-readable session_usage/v1 payload.")
     usage.set_defaults(func=cmd_quality_evidence_session_usage)
+
+    activity = commands.add_parser(
+        "file-activity",
+        help="Report which workspace files one Hermes session read, wrote, or patched, from state.db, read-only.",
+        description=(
+            "Read one session's read_file, write_file and patch calls from Hermes' own session store "
+            "(mode=ro) and list the workspace files they named, each with its operation, the outcome "
+            "Hermes recorded (succeeded, failed or unknown) and first/last time. Paths are "
+            "workspace-relative; a path outside the workspace is counted, never shown. No file is read, "
+            "and the result is not file-content, diff, test, review, CI, or merge evidence."
+        ),
+    )
+    activity.add_argument(
+        "--hermes-session",
+        required=True,
+        help=f"Hermes session id, or `{HERMES_LATEST_SESSION}` for the most recently active session.",
+    )
+    activity.add_argument(
+        "--workspace",
+        default=None,
+        help="Workspace root the paths are shown against; default: the session's git repo root, else its cwd.",
+    )
+    activity.add_argument(
+        "--max-files",
+        type=int,
+        default=DEFAULT_MAX_FILES,
+        help=f"Most files to list (default {DEFAULT_MAX_FILES}); the payload reports truncation.",
+    )
+    activity.add_argument("--json", action="store_true", help="Print the machine-readable session_file_activity/v1 payload.")
+    activity.set_defaults(func=cmd_quality_evidence_file_activity)
 
     receipt = commands.add_parser(
         "cost-receipt",
