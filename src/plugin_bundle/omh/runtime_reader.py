@@ -1943,6 +1943,22 @@ def read_omh_todo(
     return _todo_summary(home, hermes, session_ref)
 
 
+def reading_session_id(hermes_home: str | Path | None, session_ref: str) -> str:
+    """The durable session id a caller's own reference resolves to (#1794).
+
+    The same translation the todo reader applies before it decides whether a
+    record is the caller's own: a created TUI's gateway transport id becomes
+    the durable session key its records are written under, and any other
+    reference is taken as given. Empty in, empty out -- never the most recent
+    live session, because a store keyed by this must not adopt someone else's.
+    """
+    reference = strip_control_characters(session_ref)[:MAX_TODO_SESSION_REF_CHARS]
+    if not reference:
+        return ""
+    hermes = _expand_path(hermes_home) if hermes_home else _default_hermes_home()
+    return _reading_session(hermes, reference, mru_allowed=False)[0]
+
+
 def default_omh_home() -> Path:
     """Public alias so tools can target the configured home without private imports."""
     return _default_omh_home()

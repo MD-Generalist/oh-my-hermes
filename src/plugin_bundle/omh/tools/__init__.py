@@ -27,6 +27,7 @@ BUILTIN_TOOL_NAMES: tuple[str, ...] = (
     "omh_run_summary",
     "omh_source_trust",
     "omh_status",
+    "omh_team",
     "omh_todo",
 )
 
@@ -58,6 +59,7 @@ def builtin_tool_schemas() -> tuple[dict[str, Any], ...]:
     from .run_summary_tool import OMH_RUN_SUMMARY_SCHEMA
     from .source_trust_tool import OMH_SOURCE_TRUST_SCHEMA
     from .status_tool import OMH_STATUS_SCHEMA
+    from .team_tool import OMH_TEAM_SCHEMA
     from .todo_tool import OMH_TODO_SCHEMA
 
     schemas = (
@@ -81,6 +83,7 @@ def builtin_tool_schemas() -> tuple[dict[str, Any], ...]:
         OMH_RUN_SUMMARY_SCHEMA,
         OMH_SOURCE_TRUST_SCHEMA,
         OMH_STATUS_SCHEMA,
+        OMH_TEAM_SCHEMA,
         OMH_TODO_SCHEMA,
     )
     return tuple(sorted(schemas, key=lambda schema: str(schema.get("name", ""))))

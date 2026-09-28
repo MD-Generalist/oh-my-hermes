@@ -221,7 +221,15 @@ SKILL_INDEX_LINE_CHAR_LIMIT = 100
 # alternatives were a primer line (19 chars of headroom left) or a
 # `pre_llm_call` line, both paid on every turn and both the channel the reply
 # rules keep out of. Re-derived from the producer.
-PLUGIN_TOOL_SCHEMA_CHAR_LIMIT = 61183
+# 61183 -> 62291: the `omh_team` schema (1108), a new tool rather than three
+# more actions on `omh_agent_board`, because `omh_team` runs check commands and
+# `omh_agent_board`'s description promises it runs nothing; widening that tool
+# would have made its own description false and its outputs no longer
+# byte-identical. The description carries the whole loop (start from the
+# accepted plan, dispatch unchanged, reconcile after helpers return, stop at
+# done or blocked, relay `say`) so no per-turn primer line is added for it.
+# Re-derived from the producer.
+PLUGIN_TOOL_SCHEMA_CHAR_LIMIT = 62291
 # The largest fenced `pre_llm_call` context over the named scenario set in
 # `src/maintenance/per_turn_context.py` (the `all_surfaces` scenario). Hermes
 # replays each turn's injection from `api_content` on every later turn, so this
@@ -571,7 +579,13 @@ PRE_LLM_CALL_CONTEXT_FALLBACK_CHAR_LIMIT = 6917
 # 482613 -> 486301: one capability row for the new `internal-audit` skill
 # (#1569) plus its siblings' reciprocal boundary lines. Re-derived from the
 # producer.
-FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 486301
+# 486301 -> 486405: `ultrawork`'s dependency-topology quality-bar clause gains
+# one pointer at `references/team-lane.md` for in-session lanes that count as
+# done only on a check OMH runs itself (`omh_team`). The team loop, the
+# approval binding and the stop rule are in that reference, counted outside
+# this budget; the capability row carries only the pointer. Re-derived from
+# the producer.
+FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 486405
 FULL_CAPABILITY_SKILL_ITEM_CHAR_LIMIT = 9000
 # 100000 -> 102070: the same three domain workflows each add one standalone
 # capability row, again measured on the merged tree; warranted growth for three

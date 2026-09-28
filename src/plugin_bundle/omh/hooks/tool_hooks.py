@@ -15,6 +15,7 @@ from ..jev_consent import arm_tool_call as arm_jev_tool_call
 from ..jev_consent import disarm_tool_call as disarm_jev_tool_call
 from ..omh_roles import extract_role_marker, resolve_role_name, role_aliases, role_names
 from ..plan_stage_gate import plan_stage_edit_directive
+from ..team_gate import team_start_directive
 from ..tool_bursts import (
     record_repeat_refusal,
     record_tool_call,
@@ -287,6 +288,16 @@ def pre_tool_call(**kwargs: object) -> dict[str, object] | None:
         # would be a second record of the same fact, and OMH cannot observe
         # how the gate was answered anyway.
         return dict(plan_stage_directive)
+    # `omh_team` `team_start` freezes commands OMH will later run by itself,
+    # so the person sees the exact list and answers for it (`team_gate`).
+    # Where nobody can answer, the call is blocked rather than let through.
+    team_directive = team_start_directive(
+        tool_name=kwargs.get("tool_name"),
+        tool_input=tool_input,
+        escalation_allowed=escalation_allowed,
+    )
+    if team_directive is not None:
+        return dict(team_directive)
     # Only the normal host loop invokes native Kanban tools. Correlation runs
     # after OMH's user veto; it never dispatches or grants a native permission.
     bridge = _agent_board_bridge()

@@ -172,6 +172,36 @@ All notable changes will be documented here.
   for `delegate_task` is not included: the host dispatches that tool outside
   the only hook that can annotate a result.
 
+- **Helper lanes can be held to their own check: `omh_team`.** An accepted
+  plan whose lanes each carry a check command can now run as a team of
+  in-session `delegate_task` helpers where a lane counts as done only when OMH
+  runs that lane's command itself and sees it exit 0 -- never on a helper's
+  summary.
+  - `team_start` binds to this session's accepted `omh_todo` plan: the plan's
+    reference must match, and every check command must appear word for word
+    in an accepted item. The host then asks the person to approve the exact
+    command list; where nobody can answer, the start is refused. Commands are
+    frozen from that point, and still refuse forge CLIs, remote-moving `git`
+    verbs, shells, `env` and `python -c`.
+  - The host's own `subagent_start` / `subagent_stop` callbacks tell the team
+    which helpers are out, and `team_reconcile` checks nothing until every one
+    is back. A failing check (spends a try) returns a fix-up entry carrying
+    only `{command, exit_code}`; a check that could not run cleanly (timeout,
+    not found, missing workspace, files changed while it ran) spends nothing.
+    A lane starts only when every lane it depends on has passed.
+  - The team stops only at `done` (every lane passed) or `blocked` with a
+    reason, such as `repair_budget_exhausted` with the last check.
+    `max_repair_attempts` defaults to 2 and is capped at 3. Checks time out at
+    ten minutes.
+  - `team_status` gives per-lane state, tries used, the last check, the
+    conversation's cost, and the plain caveat that a check runs code helpers
+    wrote as the person's own user with the real home folder. Accepted lanes
+    carry `{kind: team_check, ref: <team>/<unit>/attempt-<n>/check}` for the
+    matching todo item.
+
+  `omh_agent_board` is unchanged, pinned byte for byte by a fixture captured
+  before this change. Board (kanban) lanes are not yet checked by `omh_team`.
+
 - **A plan item marked done now closes only on a recorded result.** The
   continuation rule stopped a plan once every item said done, so a run could
   mark an item done over a failed command, or tick several items off one

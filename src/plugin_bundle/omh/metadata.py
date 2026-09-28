@@ -21,6 +21,7 @@ PROVIDED_TOOLS = (
     "omh_run_summary",
     "omh_source_trust",
     "omh_status",
+    "omh_team",
     "omh_todo",
 )
 REQUIRED_HOOKS = ("on_session_end", "pre_llm_call", "pre_tool_call")
@@ -32,6 +33,7 @@ OPTIONAL_HOOKS = (
     "post_tool_call",
     "pre_verify",
     "subagent_start",
+    "subagent_stop",
     "transform_llm_output",
     "transform_tool_result",
 )
@@ -63,6 +65,7 @@ TOOL_FILE_STEMS = {
     "omh_run_summary": "run_summary_tool",
     "omh_source_trust": "source_trust_tool",
     "omh_status": "status_tool",
+    "omh_team": "team_tool",
     "omh_todo": "todo_tool",
 }
 

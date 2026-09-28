@@ -955,7 +955,7 @@ _DEFINITIONS = [
         quality_tier="handoff-gated",
         quality_bar=(
             ENGINE_ENTRY_CONFIRMATION_RULE,
-            "Resolve the dependency_topology decision before any dispatch: work coupled by a shared invariant or inseparable edit boundary collapses to one owner; separable but ordered units get explicit acyclic dependency edges; independent units form the dependency-ready parallel frontier; no unit dispatches without scope, acceptance criteria, a verification command, and an owner route - load `references/dependency-topology.md` for the full discipline, and `references/kanban-lane.md` for a lane that must outlive this session.",
+            "Resolve the dependency_topology decision before any dispatch: work coupled by a shared invariant or inseparable edit boundary collapses to one owner; separable but ordered units get explicit acyclic dependency edges; independent units form the dependency-ready parallel frontier; no unit dispatches without scope, acceptance criteria, a verification command, and an owner route - load `references/dependency-topology.md` for the full discipline, `references/kanban-lane.md` for a lane that must outlive this session, and `references/team-lane.md` when each in-session lane must count as done only on a check OMH runs itself.",
             "Before concurrent fan-out, load `references/file-ownership-manifest.md`.",
             "Attach acceptance criteria, verification commands, and review expectations to each lane.",
             "Keep dispatch, execution, review, CI, and merge status evidence separate.",

@@ -1417,6 +1417,37 @@ class NoRemoteMutation(unittest.TestCase):
                 f"src/plugin_bundle/omh/tools/evidence_tool.py.",
             )
 
+    def test_the_team_check_command_policy_refuses_every_remote_command(self) -> None:
+        """The second command-execution surface: `omh_team` check commands.
+
+        A team command is approved by the person rather than matched against
+        `_DEFAULT_ALLOWLIST`, so the test above cannot see it. This drives the
+        policy itself with every program and verb this invariant names, at the
+        start of argv and behind a wrapper such as `uv run`, plus the shell
+        programs that would turn one approved line into any line.
+        """
+        from omh.workflows.team import (
+            TEAM_FORBIDDEN_GIT_VERBS, TEAM_FORGE_PROGRAMS, TeamRefusal, validate_team_command,
+        )
+
+        self.assertLessEqual(FORGE_PROGRAMS, TEAM_FORGE_PROGRAMS)
+        self.assertLessEqual(FORBIDDEN_GIT_VERBS, TEAM_FORBIDDEN_GIT_VERBS)
+        commands = [f"{program} pr merge 7" for program in sorted(FORGE_PROGRAMS)]
+        commands += [f"uv run {program} api repos" for program in sorted(FORGE_PROGRAMS)]
+        commands += [f"git {verb} origin main" for verb in sorted(FORBIDDEN_GIT_VERBS)]
+        commands += [f"git -C checkout {verb}" for verb in sorted(FORBIDDEN_GIT_VERBS)]
+        commands += ["sh run.sh", "bash -x run.sh", "zsh run.sh", "env A=1 pytest", "python -c print",
+                     "python3 -c print", "uv run bash run.sh"]
+        for command in commands:
+            with self.subTest(command=command):
+                with self.assertRaises(
+                    TeamRefusal,
+                    msg=f"INVARIANT 3 (no remote mutation): the omh_team command policy admits {command!r}. "
+                    "A team check is an execution surface; refuse it in "
+                    "src/workflows/team.py `validate_team_command`.",
+                ):
+                    validate_team_command(command)
+
 
 # --------------------------------------------------------------------------
 # INVARIANT 1 corollary -- the fixed Windows junction command boundary

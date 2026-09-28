@@ -164,7 +164,8 @@ HOOK_REVIEWS: dict[str, dict[str, Any]] = {
         "reviewed_timeout_ms": 1000,
         "capability": (
             "user-authored toolcall-rule block directives, the OMH "
-            "repeat-call guard and its human-approval escalation, and the "
+            "repeat-call guard and its human-approval escalation, the "
+            "human approval of an omh_team start's exact check commands, and the "
             "OMH unknown-role warning before a Hermes tool call"
         ),
     },
@@ -194,7 +195,19 @@ HOOK_REVIEWS: dict[str, dict[str, Any]] = {
         "capability": (
             "recording the delegated child's session id in process memory so "
             "the engagement nudges can tell a subagent from the session that "
-            "spawned it (no file write, no runtime read, never blocks a spawn)"
+            "spawned it, and binding an omh_team helper whose goal carries a "
+            "reserved attempt key to that attempt in the team record (the only "
+            "file write, and only for such a goal; never blocks a spawn)"
+        ),
+    },
+    "subagent_stop": {
+        "source_path": "hooks/session_hooks.py",
+        "event_scope": ("subagent_stop",),
+        "reviewed_timeout_ms": 1000,
+        "capability": (
+            "marking an omh_team helper's attempt as returned in the team "
+            "record so its check may run; reads no child summary or status "
+            "and never blocks"
         ),
     },
     "transform_llm_output": {
