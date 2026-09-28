@@ -419,6 +419,42 @@ _AGENT_INSTRUCTIONS_EXPLICIT_PHRASES = tuple(
     )
 )
 
+# `model-finetuning` holds back every everyday token its phrases are built from.
+# Listed are the phrases that name fine-tuning a model. A bare "fine-tuning",
+# "sft", "dpo" or "lora" is not: people fine-tune an email or a workout, a DPO
+# is a data protection officer, and LoRa is a radio; those route here only
+# beside a word of model training (`EVERYDAY_SENSE_PHRASES`).
+_MODEL_FINETUNING_EXPLICIT_PHRASES = tuple(
+    normalized_phrase(phrase)
+    for phrase in (
+        "model-finetuning",
+        "model finetuning",
+        "model fine-tuning",
+        "fine-tune a model",
+        "fine-tune the model",
+        "fine tune a model",
+        "fine tune the model",
+        "fine-tuning a model",
+        "fine-tuning the model",
+        "fine-tuned model",
+        "fine-tuned checkpoint",
+        "supervised fine-tuning",
+        "direct preference optimization",
+        "lora adapter",
+        "qlora",
+        "rlvr",
+        "untuned baseline",
+        # Two method names side by side name the method choice itself; one of
+        # them alone is weak evidence and a DPO is also an officer.
+        "sft vs dpo",
+        "sft or dpo",
+        "sft and dpo",
+        "sft then dpo",
+        "dpo vs sft",
+        "dpo or sft",
+    )
+)
+
 # `data-pipelines` holds back every everyday token its phrases are built from.
 # Listed are the phrases that name pipeline work. A bare "backfill",
 # "lineage" or "duplicate events" is not: a team backfills a position, a family
@@ -1099,6 +1135,18 @@ _SKILL_POLICIES = {
             "Prepare instruction_file_inventory/v1 with every file and its reader; command_verification_record/v1 marking "
             "each command verified with its observed run or unverified; instruction_region_update/v1 replacing only the text "
             "between the omh:agent-instructions markers; and drift_refusal_note/v1 for any requested count or line number."
+        ),
+    ),
+    "model-finetuning": RecommendationPolicy(
+        next_action="prepare_finetune_decision",
+        evidence_boundary=(
+            "A fine-tuning plan is not a training run, an eval score, or a promoted checkpoint until observed; OMH trains "
+            "nothing and runs no eval, and no checkpoint is promoted without a comparison against the untuned baseline."
+        ),
+        wrapper_guidance=(
+            "Prepare finetune_decision/v1 first, returning do_not_finetune when prompting or retrieval closes the gap; "
+            "training_method_choice/v1 from the data's shape; training_data_plan/v1 with a held-out split; "
+            "baseline_comparison/v1 on the same eval; and checkpoint_promotion_gate/v1 with its margin and tolerance."
         ),
     ),
     "data-pipelines": RecommendationPolicy(
@@ -2884,6 +2932,43 @@ _WHOLE_PHRASE_ONLY_TRIGGER_TOKENS = {
             "write",
         }
     ),
+    # `model-finetuning` is built from "fine", "tune", "tuning", "model",
+    # "data", "checkpoint", "baseline", "eval", "adapter", "preference",
+    # "promote" and "supervised" -- a fine-tuned email, a workout that needs
+    # fine-tuning, a promoted colleague and a song's baseline all reached it as
+    # bare tokens. Only the complete phrases score, and "fine-tuning", "fine
+    # tuning", "sft", "dpo" and "lora" also need a word of model training beside
+    # them (`EVERYDAY_SENSE_PHRASES`). "sft", "dpo" and "lora" are not listed:
+    # each is a one-word trigger, which scores as a phrase, so only the
+    # everyday-sense row can withdraw it. Tokens that mean nothing else stay
+    # creditable: `finetuning`, `untuned`.
+    "model-finetuning": frozenset(
+        {
+            "adapter",
+            "baseline",
+            "checkpoint",
+            "data",
+            "direct",
+            "eval",
+            "fine",
+            "fine-tune",
+            "fine-tuned",
+            "fine-tuning",
+            "held",
+            "held-out",
+            "model",
+            "optimization",
+            "out",
+            "preference",
+            "promote",
+            "rewards",
+            "supervised",
+            "tune",
+            "tuned",
+            "tuning",
+            "verifiable",
+        }
+    ),
     # `data-pipelines` is built from "data", "pipeline", "backfill",
     # "lineage", "replay", "events", "duplicate", "quality", "batch", "job",
     # "schema", "spark", "kafka", "airflow" and "dbt" -- a sales pipeline, a
@@ -3983,6 +4068,9 @@ def _score_definition(
     if definition.name == "release-cut" and _release_cut_explicit_match(normalized_query):
         score += 30
         matched.add("direct:release_cut")
+    if definition.name == "model-finetuning" and _model_finetuning_explicit_match(normalized_query):
+        score += 30
+        matched.add("direct:model_finetuning")
     if definition.name == "data-pipelines" and _data_pipelines_explicit_match(normalized_query):
         score += 30
         matched.add("direct:data_pipelines")
@@ -4801,6 +4889,10 @@ def _relational_db_explicit_match(normalized_query: str) -> bool:
 
 def _release_cut_explicit_match(normalized_query: str) -> bool:
     return any(_explicit_phrase_match(normalized_query, phrase) for phrase in _RELEASE_CUT_EXPLICIT_PHRASES)
+
+
+def _model_finetuning_explicit_match(normalized_query: str) -> bool:
+    return any(_explicit_phrase_match(normalized_query, phrase) for phrase in _MODEL_FINETUNING_EXPLICIT_PHRASES)
 
 
 def _data_pipelines_explicit_match(normalized_query: str) -> bool:

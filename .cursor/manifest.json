@@ -107,7 +107,7 @@
     "omh-live-incident-response/SKILL.md": "f32bd88827505a03b67a72e9990cab6edb118c9c10b4412c9b426f7f741b7449",
     "omh-live-incident-response/references/incident-command-method.md": "8d5ad3bb15d401cf45300ec3d7df126072fcd20bee40e3bc702bd35027b754b7",
     "omh-live-info/SKILL.md": "10121acd9ce9956d9e37f9b5e5730615f25c3cc1d5ff99630512c2cecc29f38d",
-    "omh-llm-app-dev/SKILL.md": "e8e7a0e17c10e204e4f4f4fd6519173903f011dc1209d30babf46846cc96be4d",
+    "omh-llm-app-dev/SKILL.md": "35fa547ba7bcc7d165574a2ef535f4c4cc59176acb18e6b5bd7df87561c1501a",
     "omh-llm-app-dev/references/build-rails.md": "35db50a4960ced98fa2ee556e59c5a439188e8b47bebef5073efa9264d8fe149",
     "omh-llm-app-dev/references/eval-harness.md": "959130e28abaabea53cf9ed6fe46268ce27372333d2a6d28b6f0e02928ac2cbd",
     "omh-llm-app-dev/references/public-board.md": "e69b890be7da4d91ce612722b180b229821db714bd72aa28a55db013364e7cca",
@@ -117,6 +117,8 @@
     "omh-media-input/SKILL.md": "209bc122247681cc8219ec571fa7073e51479a9bff11eced33b7dd8e86cd4312",
     "omh-meeting-brief/SKILL.md": "fefee4ac21b0aee86f37c82421571296c0588cb123cc6fd1289770fe02207ccf",
     "omh-memory-new/SKILL.md": "65e609a4f9009e78db0eee138f137112e59b2c5430ea15753f5ca330f2049e94",
+    "omh-model-finetuning/SKILL.md": "bdddf920ea23a916976c35ba5c07b6b389cdde61ff98de926c5115bf7c13566e",
+    "omh-model-finetuning/references/finetuning-method.md": "10a677fdc07303b3b2b3b0d7759f9b5956e9f00fac94ccad0bac9bdef3d8d797",
     "omh-native-debugging/SKILL.md": "97820a1a3394088515416e63b77560be371900986ff13a16e10d72cfbb709dde",
     "omh-native-debugging/references/native-debug-loop.md": "3ce0f29395b8a1c71074ce2808d6d2497bef1ccbecbba179b74950055435430d",
     "omh-operating-rhythm/SKILL.md": "354028fabd45913ba2512a3ce157a8523846b375929ada94b1994c0aed219967",
@@ -256,6 +258,7 @@
     "omh-media-input",
     "omh-meeting-brief",
     "omh-memory-new",
+    "omh-model-finetuning",
     "omh-native-debugging",
     "omh-operating-rhythm",
     "omh-ops-observability-card",
@@ -305,7 +308,7 @@
     "ulw-work"
   ],
   "source": "agent-skills",
-  "source_digest": "88328743f37d2107004fa79fbb16108d5af750b80fc06b0cc110faafe3adad59",
+  "source_digest": "b6aa0f44b278fff3869338f4b3ea82259569ceeb1c223c7a6a20f005c69350d3",
   "targets": {
     "repo": ".agents/skills",
     "user": ".agents/skills"

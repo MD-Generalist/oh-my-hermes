@@ -6145,6 +6145,7 @@ _DEFINITIONS = [
             "The subject is the harness's own context window, prompt caching, or token budget rather than the application being built; use `context-budget-review`.",
             "The request is a prompt-injection, secret-handling, or dependency risk gate on work that already exists; use `security-safety-review`.",
             "The feature makes no model call - the LLM is only mentioned as the subject being discussed - so this is a direct answer, not a build handoff.",
+            "The ask is training the weights themselves on your own data -- SFT, DPO, RLVR, or a LoRA adapter; use `model-finetuning`.",
         ),
         good_example=SkillExample(
             prompt="$llm-app-dev we are adding an invoice-field extractor that calls a model per upload - set it up so we can change the prompt later without guessing.",
@@ -9946,6 +9947,142 @@ _DEFINITIONS.append(
             "which reports break if we drop this column from the warehouse",
             "the numbers on the dashboard dropped after the load",
             "the stream consumer fell behind and we need to catch up",
+        ),
+    )
+)
+
+_DEFINITIONS.append(
+    SkillDefinition(
+        "model-finetuning",
+        "Fine-tuning a model on your own data -- SFT, DPO, RLVR or a LoRA adapter: decide first whether prompting or retrieval already closes the gap, choose the method from the data you have, and promote a checkpoint only when it beats the untuned baseline on a held-out eval.",
+        (
+            "model-finetuning",
+            "model finetuning",
+            "model fine-tuning",
+            "fine-tune a model",
+            "fine-tune the model",
+            "fine tune a model",
+            "fine tune the model",
+            "fine-tune",
+            "fine tune",
+            "fine-tuning",
+            "fine tuning",
+            "fine-tuned model",
+            "fine-tuned checkpoint",
+            "finetune",
+            "finetuning",
+            "sft",
+            "supervised fine-tuning",
+            "dpo",
+            "direct preference optimization",
+            "rlvr",
+            "verifiable rewards",
+            "lora",
+            "qlora",
+            "lora adapter",
+            "preference data",
+            "untuned baseline",
+            "held-out eval",
+        ),
+        (
+            "Use when someone wants to fine-tune a model on their own data, or is deciding whether to: supervised fine-tuning "
+            "(SFT), preference tuning (DPO), reinforcement learning from verifiable rewards (RLVR), or a LoRA adapter. The "
+            "output is a decision on whether to train at all, the method chosen from the data available, a training data "
+            "plan with a held-out split, a comparison against the untuned baseline, and a checkpoint promotion gate; OMH "
+            "trains nothing and runs no eval."
+        ),
+        category="planning",
+        phase="model-finetuning",
+        hermes_role="retained-cognition",
+        delegation_boundary="retained-catalog-intent",
+        handoff_policy=(
+            "Keep the fine-tune decision, the method choice, the data plan, the baseline comparison, and the promotion gate "
+            "in Hermes. Losses, eval scores, and comparisons are recorded only from executor, operator, or wrapper observed "
+            "output; OMH never launches a training run, calls a model, or runs an eval."
+        ),
+        required_inputs=(
+            "the task the model fails at, and the held-out examples that show the failure",
+            "what prompting, few-shot examples, or retrieval were already tried, and what they scored",
+            "the data available: demonstrations, ranked or paired preferences, or answers a program can check",
+            "the base model, its license, and the compute or provider the operator will train on",
+            "observed eval scores for the untuned baseline and every candidate checkpoint",
+        ),
+        expected_outputs=(
+            "finetune_decision/v1",
+            "training_method_choice/v1",
+            "training_data_plan/v1",
+            "baseline_comparison/v1",
+            "checkpoint_promotion_gate/v1",
+        ),
+        artifact_expectations=(
+            "finetune_decision/v1 names the measured gap on the held-out eval and what prompting, few-shot, and retrieval scored against it, and returns `do_not_finetune` when one of them closes the gap -- a complete outcome, reached before any training step",
+            "training_method_choice/v1 picks SFT, DPO, or RLVR from the shape of the data -- demonstrations, preference pairs, or a verifiable reward -- and full weights or an adapter, and names the failure mode of the method chosen",
+            "training_data_plan/v1 names each source and its license, the dedupe and filtering, and a held-out split drawn before training and checked for overlap with the training set",
+            "baseline_comparison/v1 runs the same held-out eval on the untuned baseline and each candidate, per metric, plus a regression check on general capability the task does not cover",
+            "checkpoint_promotion_gate/v1 promotes a checkpoint only when it beats the untuned baseline by a stated margin with no regression past a stated tolerance, and otherwise keeps the baseline serving",
+        ),
+        safety_rules=(
+            "Decide whether to fine-tune before any training step; `do_not_finetune` is a complete answer when prompting or retrieval closes the measured gap.",
+            "Never promote a checkpoint on a standalone score; promotion needs the same held-out eval observed on the untuned baseline and on the candidate.",
+            "Draw the held-out split before training and keep it out of the training data; an eval the model trained on proves nothing.",
+            "Do not train on data whose license or consent does not permit it.",
+            "OMH trains nothing, calls no model, and runs no eval; every loss, score, and comparison comes from observed output or is marked unverified.",
+        ),
+        quality_tier="baseline-comparison-gated",
+        quality_bar=(
+            "Measure the untuned model and the cheaper fixes on the held-out eval before proposing any training.",
+            "Load `references/finetuning-method.md` for the decision ladder, the method table, the data checklist, and the promotion procedure instead of recalling them.",
+            "Choose the method from the data that exists, not from the method that is fashionable.",
+            "Compare every candidate against the untuned baseline on the same eval, never against its own previous run alone.",
+            "Keep prepared, trained, evaluated, and promoted as separate states for every checkpoint.",
+        ),
+        why_this_exists=(
+            "`model-finetuning` exists because producing a model had no owner: `model-optimization` onboards a model into "
+            "OMH, `inference-serving` serves one that exists, and `llm-app-dev` builds on top of one, while an SFT or DPO "
+            "question reached `workflow-learning` with no baseline comparison and no way to answer that training is not needed."
+        ),
+        opening_steps=(
+            "Ask what the untuned model and the best prompt score on the held-out examples before discussing any method.",
+            "Ask what shape the data has -- demonstrations, preference pairs, or answers a program can check.",
+        ),
+        do_not_use_when=(
+            "The ask is onboarding a new model generation into OMH's routing, calibration, or pricing; use `model-optimization`.",
+            "The ask is serving an existing model behind an endpoint or benchmarking that endpoint; use `inference-serving`.",
+            "The ask is building an application on top of a hosted model -- RAG, structured output, prompt versions; use `llm-app-dev`.",
+            "The ask is learning from an OMH run, a missed route, or a skill improvement candidate; use `workflow-learning`.",
+        ),
+        good_example=SkillExample(
+            prompt="should we fine-tune a model for our support replies or is a better prompt enough",
+            expected=(
+                "Ask for the held-out examples and the current prompt's score, try few-shot and retrieval against them, and "
+                "return `do_not_finetune` if one closes the gap; otherwise pick SFT from the reply demonstrations and gate "
+                "promotion on beating the untuned baseline."
+            ),
+            why="Most prompt-shaped gaps close without training, and training first hides that the cheaper fix was enough.",
+        ),
+        bad_example=SkillExample(
+            prompt="the fine-tuned checkpoint got 0.82 on our eval, ship it",
+            expected="Refuse to promote on a standalone score: run the same held-out eval on the untuned baseline and compare before promotion.",
+            why="A score with no baseline cannot show the training helped at all.",
+        ),
+        final_checklist=(
+            "The fine-tune decision is stated, and `do_not_finetune` was considered first.",
+            "The method is chosen from the data's shape and its failure mode is named.",
+            "The held-out split was drawn before training and checked for overlap.",
+            "Promotion cites the same eval observed on the untuned baseline and the candidate.",
+            "OMH ran nothing, and every score cites observed output or is marked unverified.",
+        ),
+        recovery_notes=(
+            "If no held-out eval exists, building one is the first step; say so before any training plan.",
+            "If the candidate does not beat the baseline, keep the baseline serving and report the gap rather than retraining blindly.",
+        ),
+        situations=(
+            "the base model keeps botching our reply format no matter how we word the prompt",
+            "we have thousands of rated answers and want it to favor the higher-rated ones",
+            "is it worth training our own version or should we just improve the prompt",
+            "the tuned version scored well in training but users say it regressed",
+            "teach it to solve problems whose answers we can check automatically",
+            "which of the trained versions should we actually ship",
         ),
     )
 )

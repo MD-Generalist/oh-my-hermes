@@ -4,6 +4,28 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **Fine-tuning a model has an owner: `omh-model-finetuning`.** "sft vs dpo
+  for our summarization model", "should we fine-tune a model or is prompting
+  enough" and "train a lora adapter on our internal docs" used to ask a
+  question led by `context-budget-review`, `model-setup` or
+  `curriculum-design`. They now dispatch to a skill whose first output is
+  whether to train at all:
+  - `finetune_decision/v1` measures the untuned model and the cheaper fixes
+    on a held-out eval and returns `do_not_finetune` when prompting or
+    retrieval closes the gap, before any training step;
+  - `training_method_choice/v1` picks SFT, DPO or RLVR from the shape of the
+    data and names the method's failure mode;
+  - `training_data_plan/v1`, `baseline_comparison/v1` and
+    `checkpoint_promotion_gate/v1` draw the held-out split before training,
+    run the same eval on the untuned baseline and each candidate, and promote
+    only a checkpoint that beats the baseline.
+
+  The decision ladder, the method table, the data checklist and the promotion
+  procedure load on demand from `references/finetuning-method.md`. An email's
+  wording, a hiring process, a data protection officer and a LoRa radio stay
+  away, and learning from an OMH run stays on `workflow-learning`. OMH trains
+  nothing and runs no eval (#1567).
+
 - **`omh coding fanout dispatch` keeps a unit going until its checks pass
   or its repair budget is spent.** A unit may declare `max_repair_attempts`
   (0 to 3, off by default). When the dispatcher runs the unit's declared checks

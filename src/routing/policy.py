@@ -2142,6 +2142,22 @@ EVERYDAY_SENSE_PHRASES: dict[str, tuple[tuple[str, ...], frozenset[str]]] = {
             }
         ),
     ),
+    # "fine-tune the wording of this email", "my workout needs some
+    # fine-tuning", "our dpo needs a report" (a data protection officer) and "a
+    # lora gateway for the soil sensors" (a radio) are not model training; each
+    # phrase keeps this route only beside a word of model training.
+    "model-finetuning": (
+        ("fine-tune", "fine tune", "fine-tuning", "fine tuning", "sft", "dpo", "lora"),
+        frozenset(
+            {
+                "adapter", "adapters", "baseline", "bert", "checkpoint", "checkpoints", "classifier", "dataset",
+                "datasets", "embedding", "embeddings", "epoch", "epochs", "eval", "evals", "finetune", "finetuning",
+                "gemma", "gpt", "gpu", "gpus", "huggingface", "hyperparameters", "llama", "llm", "llms", "mistral",
+                "model", "models", "peft", "preference", "preferences", "pytorch", "qlora", "qwen", "reward",
+                "rewards", "rlvr", "tokenizer", "train", "training", "transformers", "weights",
+            }
+        ),
+    ),
     # "we need to backfill the open position on the team", "my family lineage
     # goes back to scotland", "duplicate events in my calendar" and "the batch
     # job at the bakery" are not pipelines; each phrase keeps this route only

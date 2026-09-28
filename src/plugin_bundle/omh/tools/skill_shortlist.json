@@ -84,7 +84,7 @@
 }
 },
 {
-"anchors":"applicabl apply blocker book cours creator gap highest hit immediat immediately jit knowledg learn leverag payoff podcast problem recommend resourc right specific target topic unblock",
+"anchors":"applicabl apply blocker book cours creator gap highest hit immediat immediately jit knowledg leverag payoff podcast recommend resourc right specific target topic unblock",
 "hangul":"강의 당장 도움 되는 리에 리프 목표 브리 스트 에이 용할 이터 적용 주제 캐스 크리 팟캐 학습",
 "hangul_anchors":"강의 당장 도움 되는 리에 리프 목표 브리 에이 용할 이터 적용 주제 캐스 크리 팟캐 학습",
 "label":"omh-jit-learn",
@@ -233,7 +233,7 @@
 }
 },
 {
-"anchors":"arxiv attach beginner breakdown detail don drop easy expert explain explainer explanation learn level losing moderat paper pdf simpl term understand walk walkthrough",
+"anchors":"arxiv attach beginner breakdown detail don drop easy expert explain explainer explanation level losing moderat paper pdf simpl term understand walk walkthrough",
 "hangul":"가급 난이 내용 논문 당한 말고 명해 문가 설명 쉽게 아주 이도 이지 적당 전문 줄이 해설",
 "hangul_anchors":"가급 난이 내용 논문 당한 말고 명해 문가 설명 쉽게 아주 이도 이지 적당 전문 줄이 해설",
 "label":"omh-paper-learning",
@@ -300,7 +300,7 @@
 }
 },
 {
-"anchors":"actual against budget burn cash cfo end expens explain financ forecast month quarter rate runway varianc vs",
+"anchors":"actual budget burn cash cfo end expens explain financ forecast month quarter rate runway varianc vs",
 "hangul":"대비 마감 분석 실적 예산 월마 재무",
 "hangul_anchors":"대비 마감 분석 실적 예산 월마 재무",
 "label":"omh-finance-analysis",
@@ -349,7 +349,7 @@
 }
 },
 {
-"anchors":"angry answer cannot customer draft email engineer escalation log refund reply respons ticket urgent",
+"anchors":"angry cannot customer draft email engineer escalation log refund reply respons ticket urgent",
 "hangul":"고객 답변 레이 분류 스컬 에스 이션 지원 초안 컬레 티켓",
 "hangul_anchors":"고객 답변 분류 스컬 에스 이션 지원 초안 컬레 티켓",
 "label":"omh-support-operations",
@@ -364,7 +364,7 @@
 }
 },
 {
-"anchors":"assessment cours curriculum hire learn lesson objectiv program quizz six syllabus train weekly workshop",
+"anchors":"assessment cours curriculum hire lesson objectiv program quizz six syllabus train weekly workshop",
 "hangul":"계획 리큘 목표 설계 커리 큘럼 평가 학습",
 "hangul_anchors":"계획 리큘 목표 설계 커리 큘럼 평가 학습",
 "label":"omh-curriculum-design",
@@ -659,7 +659,7 @@
 }
 },
 {
-"anchors":"400 a11y aa accessibility accessibl ada against appearanc architect aria background blind color complianc contrast focus hard keyboard launch name navigation order ratio reader reflow role screen screenreader size tab target text touch trap usabl valu wcag websit zoom",
+"anchors":"400 a11y aa accessibility accessibl ada appearanc architect aria background blind color complianc contrast focus hard keyboard launch name navigation order ratio reader reflow role screen screenreader size tab target text touch trap usabl valu wcag websit zoom",
 "hangul":"감사 검사 검토 게이 근성 내비 대비 리더 린리 명도 보드 비게 순서 스크 이션 접근 커스 크기 크린 키보 타깃 터치 포커 표시",
 "hangul_anchors":"감사 검사 검토 게이 근성 내비 대비 리더 린리 명도 보드 비게 순서 스크 이션 접근 커스 크기 크린 키보 타깃 터치 포커 표시",
 "label":"omh-accessibility-audit",
@@ -675,7 +675,7 @@
 }
 },
 {
-"anchors":"analyz assuranc broken browser button cjk click clip consol cut dead imag interaction keyboard layout link look mobil navigation network pixel problem regression render responsiv right screenshot terminal text tui ui viewport visual wrong",
+"anchors":"analyz assuranc broken browser button cjk click clip consol cut dead imag interaction keyboard layout link look mobil navigation network pixel regression render responsiv right screenshot terminal text tui ui viewport visual wrong",
 "hangul":"검증 글자 깨짐 레이 렌더 린샷 문제 미널 바꿈 비교 비주 스크 시각 아웃 이아 잘림 주얼 줄바 크린 터미 픽셀 한글 화면",
 "hangul_anchors":"검증 글자 깨짐 렌더 린샷 문제 미널 바꿈 비교 비주 스크 시각 아웃 이아 잘림 주얼 줄바 크린 터미 픽셀 한글 화면",
 "label":"omh-visual-qa",
@@ -774,7 +774,7 @@
 }
 },
 {
-"anchors":"best comment distill distillation extract guidanc guidelin learn md past practic principl rule trac wrong",
+"anchors":"best comment distill distillation extract guidanc guidelin md past practic principl rule trac wrong",
 "hangul":"규칙 롬프 스킬 원칙 증류 추출 프롬 프트",
 "hangul_anchors":"규칙 롬프 스킬 원칙 증류 추출 프롬 프트",
 "label":"omh-rules-distill",
@@ -1022,7 +1022,7 @@
 }
 },
 {
-"anchors":"adversarial advocat against angl approach architectur argu consensus devil hyperplan migration perspectiv stress",
+"anchors":"adversarial advocat angl approach architectur argu consensus devil hyperplan migration perspectiv stress",
 "hangul":"검토 계획 관점 다관 대적 드팀 레드 반박 에서 여러 적대 점에 찾아 허점",
 "hangul_anchors":"검토 계획 관점 다관 대적 드팀 레드 반박 에서 여러 적대 점에 찾아 허점",
 "label":"omh-adversarial-consensus",
@@ -1089,7 +1089,7 @@
 }
 },
 {
-"anchors":"budget clean cleanup codebas problem quick rank win worst",
+"anchors":"budget clean cleanup codebas quick rank win worst",
 "hangul":"감사 기술 부채 사해 술부 원장 장부 점검",
 "hangul_anchors":"감사 기술 부채 사해 술부 원장 장부 점검",
 "label":"omh-tech-debt-audit",
@@ -1153,7 +1153,7 @@
 }
 },
 {
-"anchors":"answer base driv googl knowledg live markdown notion obsidian organiz shar stor system vault wiki",
+"anchors":"base driv googl knowledg live markdown notion obsidian organiz shar stor system vault wiki",
 "hangul":"노션 다운 디언 마크 베이 볼트 시디 식베 옵시 위키 이스 정리 지식 체계 크다",
 "hangul_anchors":"노션 다운 디언 마크 베이 볼트 시디 식베 옵시 위키 이스 정리 지식 체계 크다",
 "label":"omh-wiki",
@@ -1433,7 +1433,7 @@
 }
 },
 {
-"anchors":"answer away cannot ci fifth figur function give goes heisenbug log negativ number overwrit",
+"anchors":"away cannot ci fifth figur function give goes heisenbug log negativ number overwrit",
 "hangul":"",
 "hangul_anchors":"",
 "label":"omh-app-debugging",
@@ -1566,6 +1566,22 @@
 }
 },
 {
+"anchors":"actually automatically base botch dpo favor finetun format higher improv lora matter one qlora rated regress reply rlvr say scor sft solv teach thousand train untun well word worth",
+"hangul":"",
+"hangul_anchors":"",
+"label":"omh-model-finetuning",
+"name":"model-finetuning",
+"situation":"Fine-tuning a model on your own data -- SFT, DPO, RLVR or a LoRA adapter",
+"terms":{
+"1":"against already availabl beat choos chosen clos comparison decision first gap gate learn noth output plan promot promotion reinforcement retrieval run split their want",
+"2":"actually answer automatically base botch check decid direct favor format higher improv keep matter method one optimization problem qlora rated regress reply say scor ship solv teach thousand user version well whether word worth",
+"3":"preferenc prompt reward supervis train tune verifiabl",
+"4":"adapter baselin checkpoint data dpo eval fine held lora rlvr sft tuned tuning untun",
+"5":"finetun",
+"9":"model"
+}
+},
+{
 "anchors":"bad five number percent restor semver send yesterday",
 "hangul":"",
 "hangul_anchors":"",
@@ -1583,7 +1599,7 @@
 }
 },
 {
-"anchors":"assumption choic concept decid disposabl experiment feasibility library performanc prob proof prototyp quick quickly risky small solution spik throwaway timing try uncertain",
+"anchors":"assumption choic concept disposabl experiment feasibility library performanc prob proof prototyp quick quickly risky small solution spik throwaway timing try uncertain",
 "hangul":"",
 "hangul_anchors":"",
 "label":"omh-decision-prototype",
@@ -1617,7 +1633,7 @@
 }
 },
 {
-"anchors":"assumption business customer demand discovery guid hypothesis idea interview kill pay peopl persever pivot portfolio prd problem riskiest solution startup validat validation willingness worth zero",
+"anchors":"assumption business customer demand discovery guid hypothesis idea interview kill pay peopl persever pivot portfolio prd riskiest solution startup validat validation willingness worth zero",
 "hangul":"가정 검증 결정 고객 발견 스트 지속 테스 피벗",
 "hangul_anchors":"가정 검증 결정 고객 발견 지속 테스 피벗",
 "label":"omh-product-discovery-validation",
@@ -1669,7 +1685,7 @@
 }
 },
 {
-"anchors":"break decid fit sent tie undecidabl",
+"anchors":"break fit sent tie undecidabl",
 "hangul":"",
 "hangul_anchors":"",
 "label":"omh-jev-route",
@@ -1735,7 +1751,7 @@
 }
 },
 {
-"anchors":"against agree completion confirm finish object really",
+"anchors":"agree completion confirm finish object really",
 "hangul":"",
 "hangul_anchors":"",
 "label":"omh-jev-done-check",
@@ -2187,7 +2203,7 @@
 }
 },
 {
-"anchors":"confidenc confident cross export global habit import instinct learn ledger lesson pattern promot promotion relearn scor specific",
+"anchors":"confidenc confident cross export global habit import instinct ledger lesson pattern promot promotion relearn scor specific",
 "hangul":"로젝 본능 스코 승격 전역 젝트 코프 트별 패턴 프로 학습",
 "hangul_anchors":"로젝 본능 스코 승격 전역 젝트 코프 트별 패턴 학습",
 "label":"omh-instinct-ledger",
@@ -2236,7 +2252,7 @@
 }
 },
 {
-"anchors":"bundl case corpus didn export gepa happen improv improvement index learn lesson process queu rebuild regression self stor supervision trac vprm wiki",
+"anchors":"bundl case corpus didn export gepa happen improv improvement index lesson process queu rebuild regression self stor supervision trac vprm wiki",
 "hangul":"개선 기록 내기 내보 누락 라우 보내 상태 스킬 실행 썼어 우팅 워크 이번 이스 점검 준비 케이 크플 플로 학습 회귀",
 "hangul_anchors":"개선 기록 내기 내보 누락 라우 보내 상태 스킬 실행 썼어 우팅 워크 이번 이스 점검 케이 크플 플로 학습 회귀",
 "label":"omh-workflow-learning",
@@ -2252,7 +2268,7 @@
 }
 },
 {
-"anchors":"against already alternativ approach decid dismiss drop idea option previously recall reject rule",
+"anchors":"already alternativ approach dismiss drop idea option previously recall reject rule",
 "hangul":"각된 거절 결정 기각 대안 절된",
 "hangul_anchors":"각된 거절 결정 기각 대안 절된",
 "label":"omh-decision-recall",
