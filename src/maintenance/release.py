@@ -22,7 +22,7 @@ from ..command_path import (
 )
 from ..install.plugin_compat import compat_matrix_drift
 from ..local_store import atomic_write_json, read_json_object_result, utc_now
-from .changelog import ChangelogError, MAX_CHANGELOG_BYTES, extract_notes
+from .changelog import ChangelogError, MAX_CHANGELOG_BYTES, bound_release_body, extract_notes
 from .release_notes import notes_metadata, read_bounded, read_notes
 from .documentation_claims import DocumentationClaimReport, documentation_claims_report
 from .release_identity import (
@@ -3618,6 +3618,19 @@ def _product_readiness_next_actions(blocking_failures: Sequence[Mapping[str, obj
     return actions
 
 
+def require_notes_from_source(repo_root: Path, notes_file: Path, version: str) -> None:
+    """Refuse a notes file that is not the body ``release notes`` derives.
+
+    The comparison is against the published view of the section, bounded the
+    same way ``prepare_notes`` bounds it, not the raw section: a section over
+    the release-body limit is written trimmed, and comparing that file to the
+    untrimmed section refused every oversized release (v3.0.0's first run).
+    """
+    authored = extract_notes(read_bounded(repo_root / 'CHANGELOG.md', MAX_CHANGELOG_BYTES), version)
+    if read_notes(notes_file) != bound_release_body(authored, version):
+        raise ChangelogError('notes_source_mismatch')
+
+
 def release_evidence_bundle(
     *,
     version: str = __version__,
@@ -3636,9 +3649,7 @@ def release_evidence_bundle(
     if notes_file is not None:
         if repo_root is None:
             raise ChangelogError('notes_source_required')
-        authored = extract_notes(read_bounded(Path(repo_root) / 'CHANGELOG.md', MAX_CHANGELOG_BYTES), release_version)
-        if read_notes(Path(notes_file)) != authored:
-            raise ChangelogError('notes_source_mismatch')
+        require_notes_from_source(Path(repo_root), Path(notes_file), release_version)
     resolved_paths = paths or OmhPaths(omh_home=Path("~/.omh").expanduser(), hermes_home=Path("~/.hermes").expanduser())
     probe_kwargs: dict[str, object] = {}
     if runner is not None:
