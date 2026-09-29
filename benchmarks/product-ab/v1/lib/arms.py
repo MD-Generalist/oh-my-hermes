@@ -14,7 +14,7 @@ between ``hermes`` and ``omh`` are the ones OMH owns.
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 import json
 import os
@@ -283,25 +283,50 @@ def workspace_changed_paths(workspace: Path, merge_base: str) -> list[str]:
 
 
 def task_linked_postcondition(
-    workspace: Path, merge_base: str, hidden_test_paths: Sequence[str]
+    workspace: Path,
+    merge_base: str,
+    hidden_test_paths: Sequence[str],
+    *,
+    green_at_merge_base: Callable[[Sequence[str]], list[str]],
 ) -> dict[str, Any]:
     """The shipped rule resolved against the candidate's own changes.
 
     The pull request's own test files are excluded, as they are from the
     regression set: they are the hidden validator, and their merge-base copies
     assert the behaviour the pull request changed, so running them would push
-    a correct fix back toward the old behaviour.
+    a correct fix back toward the old behaviour. A module the pull request
+    edits is therefore a target test, never a regression check.
+
+    A selected module that is not green at the merge base is excluded too, for
+    the reason the corpus admits a task only when its regression set is green
+    there: no fix can make a pre-existing failure the candidate's fault. It is
+    recorded under `red_at_merge_base_test_paths`, apart from the hidden paths.
     """
 
     module = postconditions()
     from omh.codegraph import build_codegraph  # noqa: PLC0415
 
-    return module.resolve_task_linked_postcondition(
-        build_codegraph(workspace),
-        workspace_changed_paths(workspace, merge_base),
-        TASK_LINKED_RUNNER,
-        exclude_test_paths=list(hidden_test_paths),
+    graph = build_codegraph(workspace)
+    changed = workspace_changed_paths(workspace, merge_base)
+    hidden = list(hidden_test_paths)
+    linked = module.resolve_task_linked_postcondition(
+        graph, changed, TASK_LINKED_RUNNER, exclude_test_paths=hidden
     )
+    reached = list(linked["selected_test_paths"])
+    green = set(green_at_merge_base(reached)) if reached else set()
+    red = [path for path in reached if path not in green]
+    if not red:
+        return linked
+    linked = module.resolve_task_linked_postcondition(
+        graph, changed, TASK_LINKED_RUNNER, exclude_test_paths=[*hidden, *red]
+    )
+    excluded_hidden = [path for path in linked["excluded_test_paths"] if path not in red]
+    if excluded_hidden:
+        linked["excluded_test_paths"] = excluded_hidden
+    else:
+        del linked["excluded_test_paths"]
+    linked["red_at_merge_base_test_paths"] = red
+    return linked
 
 
 def benchmark_unit(
