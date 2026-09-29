@@ -4,6 +4,15 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **`omh_jev_ask` no longer refuses every call with `consent_not_observed`
+  when the person named Jev.** Hermes loads the OMH bundle twice in one
+  process: once as a plugin, and again as the memory provider that
+  `omh setup` enables. The hooks that record the person's request came from
+  the first copy, while the tool could come from the second. The tool
+  therefore read consent state that no hook had written. Both copies now
+  share one consent state. The turn binding is unchanged: a request is still
+  consent only for the turn that made it. (#1939)
+
 - **Plugin reinstalls no longer delete files you added to the plugin
   directory.** `omh setup` now refuses to replace
   `$HERMES_HOME/plugins/omh/` when it holds entries absent from the installed

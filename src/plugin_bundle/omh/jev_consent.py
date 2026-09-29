@@ -143,14 +143,17 @@ that runs the tool without `pre_tool_call` leaves no arm of its own, and would
 read another in-flight call's.
 
 Process-local and bounded, like `session_attendance`: nothing about it is
-written to disk.
+written to disk. Every copy of this module in the process shares the one
+state holder, because Hermes can load the bundle twice (#1939).
 """
 
 from __future__ import annotations
 
 import os
 import re
+import sys
 import threading
+import types
 from collections import OrderedDict
 from typing import Any, Final
 
@@ -158,16 +161,37 @@ MAX_TRACKED_SESSIONS: Final = 256
 # `jev` at the start of a token, not followed by a Latin letter.
 _JEV_TOKEN: Final = re.compile(r"(?<![^\W_])jev(?![a-z])", re.IGNORECASE)
 
-_lock = threading.Lock()
-# session -> (turn_id, requested)
-_turn_markers: "OrderedDict[str, tuple[str, bool]]" = OrderedDict()
-# session -> {tool_call_id: turn_id} of each `omh_jev_ask` call between its
-# pre_tool_call and its post_tool_call
-_armed_turns: "OrderedDict[str, dict[str, str]]" = OrderedDict()
+# One process can hold two copies of this module: Hermes' memory-provider
+# loader execs the bundle again under `_hermes_user_memory.*`, next to the
+# general loader's `hermes_plugins.omh`. The hooks that record and arm stay on
+# the general loader's copy, while `omh_jev_ask` is whichever copy registered
+# it last, so per-copy state left the tool reading a marker nobody wrote
+# (#1939). The state lives in one process-wide holder instead.
+_STATE_HOLDER: Final = "_omh_jev_consent_state"
+
+
+def _shared_state() -> types.SimpleNamespace:
+    candidate = types.SimpleNamespace(
+        lock=threading.Lock(),
+        # session -> (turn_id, requested)
+        turn_markers=OrderedDict(),
+        # session -> {tool_call_id: turn_id} of each `omh_jev_ask` call
+        # between its pre_tool_call and its post_tool_call
+        armed_turns=OrderedDict(),
+        # session -> sender_id recorded on the session's first turn
+        session_owners=OrderedDict(),
+    )
+    holder = sys.modules.setdefault(_STATE_HOLDER, types.ModuleType(_STATE_HOLDER))
+    return holder.__dict__.setdefault("state", candidate)
+
+
+_state = _shared_state()
+_lock = _state.lock
+_turn_markers: "OrderedDict[str, tuple[str, bool]]" = _state.turn_markers
+_armed_turns: "OrderedDict[str, dict[str, str]]" = _state.armed_turns
 # In-flight calls tracked per session; past this the session reads as contested.
 MAX_ARMED_CALLS: Final = 32
-# session -> sender_id recorded on the session's first turn
-_session_owners: "OrderedDict[str, str]" = OrderedDict()
+_session_owners: "OrderedDict[str, str]" = _state.session_owners
 
 # Host platform ids where a person types the turn's message. Read from
 # hermes-agent origin/main 8fb0fc6ae6: `Platform` in `gateway/config.py`, the
