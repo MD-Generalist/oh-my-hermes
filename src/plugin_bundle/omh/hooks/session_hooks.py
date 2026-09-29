@@ -16,6 +16,7 @@ from ..degradation import (
 from ..delegation_route_restore import restore_delegation_baseline
 from ..engagement_nudges import record_engagement_observer_failure
 from ..host_observation import host_session_id, observe_plugin_hook_call
+from ..team_observer import observe_team_dispatch, observe_team_return
 from .nudge_budget import (
     DELEGATION_LATCH_FIELD,
     ENGAGEMENT_LOCK,
@@ -60,6 +61,22 @@ def subagent_start(**kwargs) -> None:
         # Recorded rather than silent: see `record_engagement_observer_failure`.
         record_engagement_observer_failure(type(exc).__name__)
         return None
+    # A checked-team helper is bound to the attempt its goal names; any other
+    # goal leaves on a prefix test (`team_observer`). Never raises.
+    observe_team_dispatch(kwargs)
+    return None
+
+
+def subagent_stop(**kwargs) -> None:
+    """Mark a checked-team helper as returned, so its part may be checked.
+
+    The host's own end-of-child callback, fired once per child with the same
+    `child_session_id` `subagent_start` carried. It is the only return signal
+    `omh_team` accepts: a helper's summary or status is never read here, and
+    nothing about the child's outcome is recorded beyond "it came back".
+    Never raises, never blocks.
+    """
+    observe_team_return(kwargs)
     return None
 
 

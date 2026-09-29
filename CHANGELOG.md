@@ -172,6 +172,61 @@ All notable changes will be documented here.
   for `delegate_task` is not included: the host dispatches that tool outside
   the only hook that can annotate a result.
 
+- **Helper lanes can be held to their own check: `omh_team`.** An accepted
+  plan whose lanes each carry a check command can now run as a team of
+  in-session `delegate_task` helpers where a lane counts as done only when OMH
+  runs that lane's command itself and sees it exit 0 -- never on a helper's
+  summary.
+  - `team_start` binds to this session's accepted `omh_todo` plan: the plan's
+    reference must match, and every check command must be written in an
+    accepted item as ``check: `<command>` ``, exactly. A command that is only
+    mentioned in the plan binds nothing. The host then asks the person to
+    approve the exact command list; where nobody can answer, and in a cron
+    run, the start is refused. Commands are frozen from that point.
+  - A check command refuses, anywhere in argv: shells, `env` and `xargs`;
+    inline program text (`python -c`, `-Ic`, `perl -e`, `node -e`, `deno
+    eval`); `git -c` / `-C` / `alias.` / `core.` and git verbs that move a
+    remote or rewrite the checkout; forge CLIs; `sudo`; network tools;
+    package install and publish; and `rm` / `mv` / `chmod` / `chown` / `dd`.
+    Every command then also passes Hermes' own hardline floor and the
+    person's `approvals.deny` rules, at start and again before it runs; when
+    that floor cannot be reached, nothing runs.
+  - The record on disk is not trusted to run anything. Which command lists a
+    person approved, and which checks OMH ran, live only in the Hermes
+    process: `team_reconcile` refuses a team whose commands were not approved
+    since Hermes started, and a stored pass this process did not observe is
+    checked again. After a restart, `team_start` with the same parts asks the
+    person again and every earlier pass is re-earned.
+  - The host's own `subagent_start` / `subagent_stop` callbacks tell the team
+    which helpers are out, and `team_reconcile` checks nothing until every one
+    is back. A failing check (spends a try) returns a fix-up entry carrying
+    only `{command, exit_code}`; a check that could not run cleanly (timeout,
+    not found, killed by a signal, missing workspace, a workspace outside git,
+    files changed while it ran) spends nothing. One `team_reconcile` runs at
+    most two checks, each leased just before it runs. A lane starts only when
+    every lane it depends on has passed.
+  - The team stops only at `done` (every lane passed) or `blocked` with a
+    reason, such as `repair_budget_exhausted` with the last check.
+    `max_repair_attempts` defaults to 2 and is capped at 3. Checks time out at
+    ten minutes.
+  - `team_status` gives per-lane state, tries used, the last check, the
+    conversation's cost, and the plain caveat that a check runs code helpers
+    wrote as the person's own user with the real home folder. Accepted lanes
+    carry `{kind: team_check, ref: <team>/<unit>/attempt-<n>/check}` for the
+    matching todo item.
+  - The record keeps a bounded list (newest 64) of renderable team events --
+    `started`, `finished`, `check_passed`, `check_failed`, `repairing`,
+    `blocked`, `done` -- each with a monotonic `seq`, the part's title as the
+    teammate, one plain summary line and a reference into the record.
+    `team_reconcile` and `team_status` return the events newer than the
+    caller's `since_seq`.
+
+  `omh_agent_board` is unchanged, pinned byte for byte by a fixture captured
+  before this change. Board (kanban) lanes are not yet checked by `omh_team`.
+  Hermes answers the approval itself under `--yolo`, `approvals.mode: off`
+  or a cron `approve` mode; the command policy and Hermes' floor still apply
+  there, but no person has read the list.
+
 - **A plan item marked done now closes only on a recorded result.** The
   continuation rule stopped a plan once every item said done, so a run could
   mark an item done over a failed command, or tick several items off one

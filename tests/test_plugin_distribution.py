@@ -970,6 +970,7 @@ print(json.dumps(observed, ensure_ascii=False))
                     "omh_run_summary",
                     "omh_source_trust",
                     "omh_status",
+                    "omh_team",
                     "omh_todo",
                 ],
             )
@@ -983,6 +984,7 @@ print(json.dumps(observed, ensure_ascii=False))
                     "pre_tool_call",
                     "pre_verify",
                     "subagent_start",
+                    "subagent_stop",
                     "transform_llm_output",
                     "transform_tool_result",
                 ],

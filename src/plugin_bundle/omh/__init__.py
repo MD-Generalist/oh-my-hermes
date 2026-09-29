@@ -201,7 +201,7 @@ def register(ctx: _PluginContext) -> None:
         pre_llm_call,
     )
     from .hooks.result_transforms import transform_llm_output, transform_tool_result
-    from .hooks.session_hooks import on_session_end, on_session_start, subagent_start
+    from .hooks.session_hooks import on_session_end, on_session_start, subagent_start, subagent_stop
     from .hooks.tool_hooks import post_tool_call, pre_tool_call
     from .hooks.verify_hooks import pre_verify
     from .tools.agent_board_tool import OMH_AGENT_BOARD_SCHEMA, omh_agent_board_handler
@@ -224,6 +224,7 @@ def register(ctx: _PluginContext) -> None:
     from .tools.run_summary_tool import OMH_RUN_SUMMARY_SCHEMA, omh_run_summary_handler
     from .tools.source_trust_tool import OMH_SOURCE_TRUST_SCHEMA, omh_source_trust_handler
     from .tools.status_tool import OMH_STATUS_SCHEMA, omh_status_handler
+    from .tools.team_tool import OMH_TEAM_SCHEMA, omh_team_handler
     from .tools.todo_tool import OMH_TODO_SCHEMA, omh_todo_handler
 
     _ = ctx.register_tool(
@@ -374,6 +375,13 @@ def register(ctx: _PluginContext) -> None:
         description=OMH_STATUS_SCHEMA["description"],
     )
     _ = ctx.register_tool(
+        "omh_team",
+        _TOOLSET,
+        OMH_TEAM_SCHEMA,
+        omh_team_handler,
+        description=OMH_TEAM_SCHEMA["description"],
+    )
+    _ = ctx.register_tool(
         "omh_todo",
         _TOOLSET,
         OMH_TODO_SCHEMA,
@@ -399,6 +407,7 @@ def register(ctx: _PluginContext) -> None:
     _register_optional_hook(ctx, "post_tool_call", post_tool_call)
     _register_optional_hook(ctx, "pre_verify", pre_verify)
     _register_optional_hook(ctx, "subagent_start", subagent_start)
+    _register_optional_hook(ctx, "subagent_stop", subagent_stop)
     _register_optional_hook(ctx, "transform_tool_result", transform_tool_result)
     _register_optional_hook(ctx, "transform_llm_output", transform_llm_output)
     get_config = getattr(ctx, "get_config", None)

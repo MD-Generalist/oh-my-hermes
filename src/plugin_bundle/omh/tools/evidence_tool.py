@@ -231,7 +231,20 @@ def _matches_allowlist(tokens: list[str], allowlist: tuple[str, ...]) -> bool:
     return False
 
 
-def _run_command(command_text: str, tokens: list[str], *, workdir: Path, timeout: int, truncate: int) -> dict[str, object]:
+def run_verification_command(tokens: list[str], *, workdir: Path, timeout: int) -> dict[str, object]:
+    """Run one already-approved argv and say what happened, without judging it.
+
+    The runner only: no allowlist, no metacharacter check, no pass/fail
+    verdict. The two callers approve a command differently -- this tool by the
+    allowlist below, `omh_team` by the person's plan approval plus its own
+    command policy (`omh.workflows.team.validate_team_command`) -- and each
+    needs to tell a command that ran and exited non-zero apart from one that
+    never ran, which a bare `passed: False` cannot. So the outcome is
+    ``exited`` (with ``exit_code``), ``not_found`` or ``timeout``.
+
+    ``shell=False``, the minimal child environment, and a private pycache are
+    the same for both callers.
+    """
     try:
         with tempfile.TemporaryDirectory(prefix="omh-evidence-pycache-") as pycache_dir:
             env = _minimal_child_environment(pycache_dir)
@@ -246,17 +259,26 @@ def _run_command(command_text: str, tokens: list[str], *, workdir: Path, timeout
                 env=env,
             )
     except FileNotFoundError:
-        return _rejected_result(command_text, f"command not found: {tokens[0] if tokens else command_text}")
+        return {"outcome": "not_found", "exit_code": None, "output": ""}
     except subprocess.TimeoutExpired:
+        return {"outcome": "timeout", "exit_code": None, "output": ""}
+    return {"outcome": "exited", "exit_code": proc.returncode, "output": (proc.stdout or "") + (proc.stderr or "")}
+
+
+def _run_command(command_text: str, tokens: list[str], *, workdir: Path, timeout: int, truncate: int) -> dict[str, object]:
+    run = run_verification_command(tokens, workdir=workdir, timeout=timeout)
+    if run["outcome"] == "not_found":
+        return _rejected_result(command_text, f"command not found: {tokens[0] if tokens else command_text}")
+    if run["outcome"] == "timeout":
         return _rejected_result(command_text, f"timeout after {timeout}s")
-    output = (proc.stdout or "") + (proc.stderr or "")
+    output = str(run["output"])
     truncated = len(output) > truncate
     return {
         "command": command_text,
-        "exit_code": proc.returncode,
+        "exit_code": run["exit_code"],
         "output_tail": output[-truncate:] if truncated else output,
         "truncated": truncated,
-        "passed": proc.returncode == 0,
+        "passed": run["exit_code"] == 0,
         "evidence_type": "observed_local_command",
     }
 
