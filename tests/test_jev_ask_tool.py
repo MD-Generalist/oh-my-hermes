@@ -142,6 +142,28 @@ class ConsentGateTests(unittest.TestCase):
         self.assertIsNone(result["answers"])
         self.assertEqual(transport.requests, [])
 
+    def test_a_second_copy_of_the_module_reads_the_same_consent(self) -> None:
+        # #1939: Hermes' memory-provider loader execs the bundle again under
+        # `_hermes_user_memory.*`. Hooks stay on the general loader's copy, but
+        # the tool registered last can be the other copy's, so the marker and
+        # the tool's read must not live in per-copy state.
+        import importlib.util
+
+        import omh.plugin_bundle.omh.jev_consent as canonical
+
+        spec = importlib.util.spec_from_file_location("_hermes_user_memory_copy_jev_consent", canonical.__file__)
+        assert spec is not None and spec.loader is not None
+        copy = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(copy)
+        self.assertIsNot(copy, canonical)
+        note_turn(SESSION, "ask jev about the readme", platform="desktop", turn_id=TURN)
+        arm_tool_call(SESSION, TURN, "call-1")
+        self.assertTrue(copy.consent_observed(SESSION))
+        # The turn binding still holds across copies.
+        copy.arm_tool_call(SESSION, "another-turn", "call-2")
+        self.assertFalse(consent_observed(SESSION))
+        self.assertFalse(copy.consent_observed(SESSION))
+
     def test_the_marker_is_this_turn_only(self) -> None:
         self.assertTrue(_observed("ask jev whether the readme covers install"))
         self.assertFalse(_observed("thanks, now fix the typo", turn="next-turn"))
