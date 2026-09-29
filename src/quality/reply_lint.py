@@ -215,6 +215,7 @@ _SCHEMA_ID_TERMS: tuple[str, ...] = (
     "omh_skill_picker/v1",
     "omh_skill_shortlist_index/v1",
     "omh_status/v1",
+    "omh_team_result/v1",
     "omh_todo/v1",
     "omh_todo_result/v1",
     "omh_tool_activity/v1",
