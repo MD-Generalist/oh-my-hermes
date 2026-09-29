@@ -885,7 +885,7 @@ class HiddenCharactersAreRefused(TeamHarness):
 
 
 class AgentBoardStaysByteIdentical(unittest.TestCase):
-    """`omh_agent_board` outputs as captured at origin/main 02442af92, compared as strings.
+    """`omh_agent_board` outputs as captured at origin/main 1239b36bd, compared as strings.
 
     Mutation: change any prepared field, the schema text, or an unavailable reason.
     """

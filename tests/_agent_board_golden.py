@@ -1,7 +1,8 @@
 """Produce the `omh_agent_board` outputs the golden fixture pins.
 
 The fixture (`fixtures/agent_board_golden.json`) was captured at origin/main
-02442af92, before `omh_team` existed, by running this producer. The team lane
+1239b36bd, which has no `omh_team`, by running this producer (re-captured
+there after main changed the tool's own schema text). The team lane
 is a separate tool precisely so this tool stays what it was; the test that
 reads the fixture compares STRINGS, not parsed dicts, because a dict compare
 cannot see key order and this pin is about bytes a host reads.
