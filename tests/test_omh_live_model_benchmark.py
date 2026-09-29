@@ -182,6 +182,7 @@ class OmhLiveAdapterTests(unittest.TestCase):
         self.assertIn("write `.omh-benchmark-answer.json` at the workspace root", baseline)
         self.assertIn("Verify the file exists and parses as JSON", baseline)
         self.assertIn(HIGH_EFFORT_CALIBRATIONS["deepseek"], optimized)
+        self.assertEqual(optimized, f"{HIGH_EFFORT_CALIBRATIONS['deepseek']}\n\n{baseline}")
         self.assertEqual(module.task_digest(baseline), module.task_digest(optimized))
 
     def test_family_condition_sends_the_inherited_block_without_the_override(self) -> None:

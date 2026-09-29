@@ -13,7 +13,9 @@ All notable changes will be documented here.
   `MODEL_OPTI.md` section now records the numbers, including that the rule
   written before the first three arms failed narrowly and a pooled rule was
   added before the fourth. `mistral`, `llama` and `solar` stay pending.
-  (#1056)
+  The benchmark's pairing test now checks that the calibration block is the
+  only difference between the two prompts; before, extra text before or
+  after the block, or a changed separator, still passed it. (#1056)
 - **English one-word replies now decline the route question.** The
   `one_word_reply` verdict accepted only the engine-entry approval
   vocabulary, which holds one English word (`lgtm`) against thirteen Korean
