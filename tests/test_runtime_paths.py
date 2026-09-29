@@ -248,7 +248,7 @@ class RuntimePathsTests(unittest.TestCase):
             with patch_modules({"hermes_constants": None}), patch.dict("os.environ", {
                 "OMH_HOME": str(root / "state"), "HERMES_HOME": str(root / "profile"),
                 "SYNTHETIC_PATH_SECRET": "SYNTHETIC_NOT_FOR_OUTPUT",
-            }):
+            }), patch.object(runtime_paths, "runtime_cwd", return_value=root):
                 for field in ("project_root", "workdir"):
                     for reference in ("$SYNTHETIC_PATH_SECRET", "${SYNTHETIC_PATH_SECRET}",
                                       "${env:SYNTHETIC_PATH_SECRET}", "%SYNTHETIC_PATH_SECRET%"):

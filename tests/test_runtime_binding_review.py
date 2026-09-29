@@ -406,6 +406,7 @@ class RuntimeBindingReviewTests(unittest.TestCase):
         from omh.plugin_bundle.omh.tools import evidence_tool
         for root in ('default_omh_home', 'default_hermes_home'):
             with self.subTest(root=root), patch.object(paths, root, side_effect=paths.RuntimeBindingError('PRIVATE_PATH')), \
+                    patch.object(paths, 'runtime_cwd', return_value=self.root), \
                     patch.object(evidence_tool.subprocess, 'run') as child:
                 result = json.loads(evidence_tool.omh_evidence_handler({
                     'commands': ['git diff --check'], 'project_root': str(self.root)}))

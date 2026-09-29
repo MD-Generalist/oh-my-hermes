@@ -245,7 +245,8 @@ or default coding agent, and evidence state. Host-supplied token metadata
 remains available in the machine-readable payload but is not shown in the
 Hermes-facing status line.
 It intentionally omits install inventory such as managed skill counts. Its
-evidence probe is allowlisted, shell-free, bounded to a project root, and emits
+evidence probe is allowlisted, shell-free, bounded to a project root inside the
+host working directory (with `-m unittest` limited to reporting flags), and emits
 truncated structured command output. It does not provide an arbitrary shell,
 patch Hermes core, or claim execution evidence from prepared handoffs. Role
 context is prompt guidance only; it is not proof
