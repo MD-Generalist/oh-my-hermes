@@ -211,6 +211,34 @@ _ENGINE_ENTRY_APPROVAL_PHRASES: tuple[str, ...] = (
     "이의 없",
     "수정할 것 없",
 )
+# Whole-message English replies for the route question's `one_word_reply`
+# decline (#1938), kept apart from the approval phrases above on purpose.
+# Those decide dispatch at the engine-entry gate; these only decide whether a
+# prepared question has anything to ask, so adding a word here moves a shadow
+# record and never a route. Each entry is a reply only when it is the entire
+# message. `stop` is deliberately absent: its question offers `cancel` and
+# `loop`, which is a one-word request the question can decide.
+_ROUTE_QUESTION_ONE_WORD_REPLIES = frozenset(
+    {
+        # Go-ahead.
+        "yes",
+        "yeah",
+        "yep",
+        "yup",
+        "sure",
+        "proceed",
+        "approved",
+        # Refusal.
+        "no",
+        "nope",
+        "nah",
+        # Acknowledgement.
+        "cool",
+        "great",
+        "nice",
+        "perfect",
+    }
+)
 _ENGINE_ENTRY_APPROVAL_REASON_PREFIX = "Approval-shaped message named"
 # Deliberately names no skill. Offering the one the person just approved is the
 # defect restated as a question, and the rule this gate enforces asks for a
@@ -1754,10 +1782,10 @@ def route_question_decline_reason(route: Mapping[str, object], message: str) -> 
       always "no workflow", and asking costs an answerer a turn to say so.
     - `one_word_reply`: the whole message is one word, and that word is an
       approval from the engine-entry approval vocabulary (`lgtm`, `승인`,
-      ...). A one-word *request* -- `refactor`, `deploy`, `debug` -- routes to
+      ...) or an English reply (`yes`, `nope`, `cool`, ...). A one-word *request* -- `refactor`, `deploy`, `debug` -- routes to
       several candidates and is exactly the question the surface exists to
       ask, so length alone never declines. Because the word has to be a
-      listed approval, no script needs excluding: a whole Japanese sentence
+      listed reply, no script needs excluding: a whole Japanese sentence
       is one whitespace "word", but it is not an entry in that list.
     - `no_candidate`: the Choice offers only `none`.
     - `single_candidate`: the Choice offers one workflow and `none`.
@@ -1769,7 +1797,9 @@ def route_question_decline_reason(route: Mapping[str, object], message: str) -> 
     lowered = executable.strip().lower()
     if lowered and _is_plain_conversational_turn(_strip_direct_answer_soft_prefix(lowered)):
         return DECLINE_ACKNOWLEDGEMENT
-    if len(normalized_phrase(executable).split()) == 1 and _message_approves(executable):
+    if len(normalized_phrase(executable).split()) == 1 and (
+        _message_approves(executable) or _is_one_word_english_reply(executable)
+    ):
         return DECLINE_ONE_WORD_REPLY
     candidate_count = route_question_candidate_count(question)
     if candidate_count == 0:
@@ -7417,6 +7447,17 @@ def _message_approves(message: str) -> bool:
     spaced = "".join(character if character.isalnum() else " " for character in folded)
     padded = f" {' '.join(spaced.split())} "
     return any(f" {normalized_phrase(phrase).strip()} " in padded for phrase in _ENGINE_ENTRY_APPROVAL_PHRASES)
+
+
+def _is_one_word_english_reply(message: str) -> bool:
+    """Whether the whole of `message` is one listed English reply word.
+
+    Punctuation folds to spaces the way `_message_approves` folds it, so
+    `Yes!` and `sure.` are replies and `nope-refactor` is two words.
+    """
+    folded = normalized_phrase(message)
+    words = "".join(character if character.isalnum() else " " for character in folded).split()
+    return len(words) == 1 and words[0] in _ROUTE_QUESTION_ONE_WORD_REPLIES
 
 
 def _skill_case_rests_on_its_own_name(message: str, skill: str) -> bool:

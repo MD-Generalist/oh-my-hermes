@@ -303,6 +303,46 @@ class DeclinePredicateTests(unittest.TestCase):
             with self.subTest(message=message):
                 self.assertEqual(self._reason(message), "")
 
+    def test_english_one_word_replies_decline(self) -> None:
+        # #1938: English had one listed reply (`lgtm`) against thirteen Korean
+        # tokens, so the shadow decline rate undercounted English turns.
+        for message in (
+            "yes",
+            "Yes!",
+            "yeah",
+            "yep",
+            "yup",
+            "sure.",
+            "proceed",
+            "approved",
+            "no",
+            "nope",
+            "nah",
+            "cool",
+            "great",
+            "nice",
+            "perfect",
+        ):
+            with self.subTest(message=message):
+                self.assertEqual(self._reason(message), "one_word_reply")
+
+    def test_a_reply_word_inside_a_request_or_a_workflow_word_is_kept(self) -> None:
+        for message in (
+            # One-word workflow requests: each routes to several candidates.
+            "test",
+            "fix",
+            "ship",
+            # `stop` offers `cancel` and `loop`: a one-word request to end a
+            # running workflow, which the question can actually decide.
+            "stop",
+            # A reply word is only a reply when it is the whole message.
+            "yes refactor the export module",
+            "no, review my patch for the export feature instead",
+            "nope-refactor",
+        ):
+            with self.subTest(message=message):
+                self.assertEqual(self._reason(message), "")
+
     def test_a_route_without_a_question_has_nothing_to_decline(self) -> None:
         route = route_chat_message("run omh doctor", source="discord")
         self.assertNotIn("route_question", route)
