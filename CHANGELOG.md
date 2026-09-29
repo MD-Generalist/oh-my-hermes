@@ -4,6 +4,16 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **The Ultra-Skills section shows how to use the `ulw-` workflows.** Every
+  README (en/ko/ja/zh) and the site now carry a recommended set of prompts
+  typed at the Hermes prompt: `ulw-interview` or `ulw-plan` to shape the work,
+  `ulw-work` to run the accepted plan, `ulw-loop` to finish against a named
+  gate, and a `ulw-maestro` prompt that dispatches one unit to Claude Code and
+  one to Codex. Two real Hermes TUI captures (a `ulw-plan` answer with its
+  target dependency graph and lane order, and a `ulw-interview` first round)
+  and a labelled `ulw-maestro` illustration sit beside them. The generated
+  inventory regions are unchanged.
+
 ## 3.0.0 - 2026-09-29
 
 Highlights of this major release (details in the entries below):

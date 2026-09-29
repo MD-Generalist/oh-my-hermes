@@ -3969,7 +3969,11 @@ class RouterContentTests(unittest.TestCase):
             # The three localized files are in step again; the ceiling is only
             # a sanity bound against README.md's length (~660), not a parity
             # proxy — structural sync is asserted separately below.
-            self.assertLess(len(localized_readme.splitlines()), 560)
+            # 560 -> 610 when the Ultra-Skills usage examples (a recommended
+            # set of ulw prompts, two TUI captures, and the ulw-maestro
+            # illustration, ~48 lines, owner-directed) landed in every
+            # language; README.md grew by the same block (~710).
+            self.assertLess(len(localized_readme.splitlines()), 610)
             # The trust surface is the evidence table, not the wire token that
             # used to stand in for it. Pinning the token meant a README could
             # satisfy this by naming a value no reader could decode; pinning
@@ -4277,14 +4281,18 @@ class RouterContentTests(unittest.TestCase):
         # The landing page carries the character mark four times (header,
         # hero, Hermes executor card, footer) plus two product captures --
         # the terminal boot banner and the /omh-model chain picker under
-        # Recommended chains -- and nothing else. The exact count keeps
-        # decorative images off the page; the three surface demos (the TUI
-        # ultrawork run, the Desktop run, the messenger card) are <video>
-        # elements.
-        self.assertEqual(site.count("<img"), 6)
+        # Recommended chains -- plus the two ulw usage-example figures (the
+        # real ulw-plan TUI capture and the labelled ulw-maestro
+        # illustration) under the ulw family, and nothing else. The exact
+        # count keeps decorative images off the page; the three surface demos
+        # (the TUI ultrawork run, the Desktop run, the messenger card) are
+        # <video> elements.
+        self.assertEqual(site.count("<img"), 8)
         self.assertEqual(site.count('src="assets/omh-character-mask.png"'), 4)
         self.assertEqual(site.count('src="assets/omh-terminal-boot-banner.png"'), 1)
         self.assertEqual(site.count('src="assets/omh-model-tui.png"'), 1)
+        self.assertEqual(site.count('src="assets/omh-terminal-ulw-plan-refactor.png"'), 1)
+        self.assertEqual(site.count('src="assets/omh-ulw-maestro-dispatch.svg"'), 1)
         self.assertEqual(site.count("<video"), 3)
         for stem in ("hermes-cli", "hermes-desktop", "hermes-messenger"):
             self.assertEqual(site.count(f'src="assets/{stem}.webm"'), 1)

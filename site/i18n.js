@@ -233,6 +233,39 @@ window.OMH_I18N = {
       zh: "找出系统真正慢、漏、贵的地方 —— 然后逐条修复被测量过的热路径。"
     },
 
+    /* ------------------------------------------------------- ulw examples */
+    "ulwex.kicker": { en: "Recommended set", ko: "추천 조합", ja: "おすすめの組み合わせ", zh: "推荐组合" },
+    "ulwex.title": {
+      en: "Shape it, build it, finish it.",
+      ko: "모양 잡고, 만들고, 끝낸다.",
+      ja: "形にして、作って、仕上げる。",
+      zh: "定形、构建、收尾。"
+    },
+    "ulwex.lead": {
+      en: "Type these at the Hermes prompt. ulw-interview or ulw-plan shapes the work, ulw-work runs the accepted plan, ulw-loop keeps going until your gate passes.",
+      ko: "Hermes 프롬프트에 이렇게 입력하세요. ulw-interview나 ulw-plan이 일의 모양을 잡고, ulw-work가 승인된 계획을 실행하고, ulw-loop가 지정한 게이트가 통과할 때까지 계속 돕니다.",
+      ja: "Hermes のプロンプトにこう入力します。ulw-interview か ulw-plan で形を決め、ulw-work が承認済みの計画を実行し、ulw-loop が指定したゲートを通るまで回り続けます。",
+      zh: "在 Hermes 提示符里这样输入。ulw-interview 或 ulw-plan 负责定形，ulw-work 执行已确认的计划，ulw-loop 一直循环到你指定的关卡通过。"
+    },
+    "ulwex.plan.alt": {
+      en: "Hermes TUI answering a ulw-plan prompt on a small JavaScript project: the target dependency graph with no cycles, rejected options, six lanes in dependency order, acceptance criteria, the plan checklist, and the [OMH] HUD line at the bottom",
+      ko: "작은 JavaScript 프로젝트에서 ulw-plan 프롬프트에 답하는 Hermes TUI: 순환이 없는 목표 의존성 그래프, 기각한 선택지, 의존 순서대로 놓인 여섯 레인, 수용 기준, 계획 체크리스트, 하단의 [OMH] HUD 줄",
+      ja: "小さな JavaScript プロジェクトで ulw-plan プロンプトに答える Hermes TUI：循環のない目標依存グラフ、却下した選択肢、依存順に並んだ六つのレーン、受け入れ基準、計画チェックリスト、下部の [OMH] HUD 行",
+      zh: "Hermes TUI 在一个小型 JavaScript 项目上回答 ulw-plan 提示：无环的目标依赖图、被否决的方案、按依赖顺序排列的六条车道、验收标准、计划清单，以及底部的 [OMH] HUD 行"
+    },
+    "ulwex.maestro": {
+      en: "Name the coding agent and ulw-maestro builds each prompt from that agent's own installed skills, dispatches it, and adds a steerable row per unit to the OMH HUD. It never picks the agent for you, and it never merges.",
+      ko: "코딩 에이전트를 지정하면 ulw-maestro가 그 에이전트에 설치된 스킬로 프롬프트를 구성해 디스패치하고, 유닛마다 조종 가능한 행을 OMH HUD에 추가합니다. 에이전트를 대신 고르지 않고, 머지도 하지 않습니다.",
+      ja: "コーディングエージェントを指名すると、ulw-maestro はそのエージェント自身のインストール済みスキルからプロンプトを組み立ててディスパッチし、ユニットごとに操作できる行を OMH HUD に追加します。エージェントを代わりに選ぶことも、マージすることもありません。",
+      zh: "指定编码代理后，ulw-maestro 用该代理自身安装的技能组装提示词并派发，并为每个单元在 OMH HUD 中添加一行可操控的记录。它不会替你选代理，也不会合并。"
+    },
+    "ulwex.maestro.alt": {
+      en: "Illustration: ulw-maestro dispatching one unit to Claude Code (orange) and one to Codex (gray), with a resume handle per unit and both rows in the OMH HUD",
+      ko: "일러스트: ulw-maestro가 유닛 하나는 Claude Code(주황)에, 하나는 Codex(회색)에 디스패치하고, 유닛별 재개 핸들과 OMH HUD의 두 행을 보여줍니다",
+      ja: "イラスト：ulw-maestro が一つのユニットを Claude Code（オレンジ）に、もう一つを Codex（グレー）にディスパッチし、ユニットごとの再開ハンドルと OMH HUD の二行を表示",
+      zh: "示意图：ulw-maestro 把一个单元派发给 Claude Code（橙色），另一个派发给 Codex（灰色），并显示每个单元的恢复句柄和 OMH HUD 中的两行"
+    },
+
     /* ----------------------------------------------------------- families */
     "fam.kicker": { en: "Capability families", ko: "역량 패밀리", ja: "ファミリー", zh: "能力家族" },
     "fam.title": { en: "Start with the job.", ko: "할 일에서 시작합니다.", ja: "仕事から始める。", zh: "从要办的事开始。" },

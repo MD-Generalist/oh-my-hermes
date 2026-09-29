@@ -436,6 +436,55 @@ Do not replace the resolved SHA with main. Execute the pinned protocol's OS-appr
 | ⚡ `ulw-qa` | わざと過酷なシナリオで攻撃し、壊れた所を直します。 |
 | ⚡ `ulw-perf` | 本当に遅く高コストな場所を測り、ホットパスを一つずつ修正します。 |
 
+### おすすめの組み合わせ
+
+Hermes のプロンプトにこう入力します。`ulw-` の接頭辞が workflow を選び、
+残りは普段の言葉で書いた依頼です。
+
+**1. 形にする。** アイデアがまだ曖昧なら `ulw-interview`、変更内容は決まって
+いてもリスクがあるなら `ulw-plan`。
+
+```text
+❯ ulw-interview: I want a CLI that tracks the ISS and warns me before it passes overhead
+❯ ulw-plan: analyze this project's circular dependencies and plan the refactor
+```
+
+**2. 作る。** `ulw-work` が承認済みの計画を、同じファイルに触れない並列
+レーンで実行します。
+
+```text
+❯ ulw-work: run the accepted plan
+```
+
+**3. 仕上げる。** `ulw-loop` は指定したゲートが通るまで回り続けます。
+
+```text
+❯ ulw-loop: keep going until npm test passes
+```
+
+<p align="center">
+  <img src="assets/omh-terminal-ulw-plan-refactor.png" alt="小さな JavaScript プロジェクトで ulw-plan プロンプトに答える Hermes TUI：循環のない目標依存グラフ、却下した選択肢、依存順に並んだ六つのレーン、受け入れ基準、計画チェックリスト、下部の [OMH] HUD 行" width="900">
+</p>
+
+<p align="center">
+  <img src="assets/omh-terminal-ulw-interview.png" alt="ulw-interview プロンプトに答える Hermes TUI：明確度スコア付きの全 6 ラウンド中ラウンド 1 と、四つの選択肢を持つ一つの質問" width="900">
+</p>
+
+### Claude Code と Codex に仕事を渡す
+
+コーディングエージェントを指名すると、`ulw-maestro` はそのエージェント自身の
+インストール済みスキルからプロンプトを組み立ててディスパッチし、再開・操作
+できるセッションとともにユニットごとの行を OMH HUD に追加します。エージェントを
+代わりに選ぶことも、マージすることもありません。
+
+```text
+❯ ulw-maestro: send the retry-queue fix to Claude Code and the lint cleanup to Codex, dispatch both now
+```
+
+<p align="center">
+  <img src="assets/omh-ulw-maestro-dispatch.svg" alt="イラスト：ulw-maestro が一つのユニットを Claude Code（オレンジ）に、もう一つを Codex（グレー）にディスパッチし、ユニットごとの再開ハンドルと OMH HUD の二行を表示" width="900">
+</p>
+
 <br>
 
 ## OMH が追加するもの
