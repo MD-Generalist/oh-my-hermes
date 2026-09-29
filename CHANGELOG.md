@@ -4,6 +4,24 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **The product A/B corpus digests no longer depend on local Git settings.**
+  Test-diff hashes are now taken from a fixed diff format: full object IDs,
+  no color, no external diff, and fixed context and algorithm. Before this,
+  Git 2.55's longer abbreviations or a local `core.abbrev` changed the hashed
+  text, and the pinned-corpus tests failed on those machines while CI passed.
+  The corpus digest moved to `9b5ff901ebcb`, re-derived from the same pinned
+  commits; task text and validator blobs are unchanged. Records under the
+  old digest must not be combined with new ones. (#1917, #1948, contributed
+  by @jbaehova)
+- **New regression tests for the route-question sink and fanout repair.**
+  - Recording a route question does not change the payload.
+  - `off` mode records the question before withholding it.
+  - An in-flight repair skip keeps the earlier dispatch entry and resumes as
+    not attempted.
+  - Repeated identical checks pair with their own failures in order.
+
+  (#1938, #1932, #1946, #1947, contributed by @jbaehova)
+
 - **The plugin declares a Hermes floor, not a window.** `requires_hermes` is
   now `">=0.21.1"`, and the in-process admission gate reads the same value, so
   a new Hermes minor release no longer skips or refuses the plugin. Hosts older
