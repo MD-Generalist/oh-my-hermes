@@ -4,6 +4,16 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **The `codestral` calibration block now has a live measurement.** It was
+  one of four family blocks marked "live benchmark validation pending". Four
+  arms of 30 evaluation instances on `codestral-2508` at `high` (two without
+  the block, two with it) show no measurable effect either way: 9 / 60
+  passes with the block against 5 / 60 without, and +1,607 tokens per task,
+  bootstrap CI95 [−2,451, +5,788]. The block is kept, and the
+  `MODEL_OPTI.md` section now records the numbers, including that the rule
+  written before the first three arms failed narrowly and a pooled rule was
+  added before the fourth. `mistral`, `llama` and `solar` stay pending.
+  (#1056)
 - **English one-word replies now decline the route question.** The
   `one_word_reply` verdict accepted only the engine-entry approval
   vocabulary, which holds one English word (`lgtm`) against thirteen Korean

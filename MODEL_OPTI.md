@@ -1127,8 +1127,30 @@ pairing so a benchmark claim can never mix in other prompt changes.
   file-scoped implementation slices with exact verification commands —
   investigation, review, and synthesis belong on a generalist lane.
 - **Source:** provider-published specialization (completion/FIM-oriented
-  coding model); authored fresh in the family-coverage change (#1051) — live
-  benchmark validation pending.
+  coding model); authored fresh in the family-coverage change (#1051).
+- **Measured (2026-09-29, subagent block on `codestral-2508`, block vs no
+  block):** four arms on `benchmarks/live-model-tools/v1`, evaluation split
+  (30 instances), `hermes_current_session` path, `codestral-2508` at `high`
+  on Mistral's API, one arm at a time, same UTC day. A1 and A4 send no
+  calibration block; A2 and A3 send the block above. Passes: A1 4 / 30,
+  A2 3 / 30, A3 6 / 30, A4 1 / 30. Every pass is in `BUGFIX`, `SCALE` or
+  `EXPLICIT`, and the model often leaves no valid answer file, so this model
+  sits far below the corpus's 18 / 30 ceiling. The rule written before A1
+  (A2 not below A1 on passes, and A2's extra tokens inside the A3 vs A2
+  same-text drift) failed narrowly on both counts: 3 vs 4 passes, +4,712
+  tokens per task against a drift of 4,420. The same block run twice had
+  moved further (A2 to A3: 3 to 6 passes), so a baseline repeat, A4, was
+  added with a pooled rule written before it ran; A4 then moved from A1's 4
+  passes to 1. Pooled over both runs of each condition, the block passed
+  9 / 60 against 5 / 60 and cost +1,607 tokens per task, bootstrap
+  CI95 [−2,451, +5,788]: no measurable effect either way on this corpus, so
+  the block is kept. Hermes sends `reasoning_effort` whenever an effort is
+  set and Codestral rejects that field at any value, so every arm ran
+  through a loopback proxy that removed only that field. Not measured: the
+  composer block (no fanout in this harness), efforts below `high` (the
+  block does not fire there), and any claim beyond this corpus. Records,
+  manifests and analysis scripts are archived outside git and linked from
+  the pull request that added this entry.
 
 ### `solar` (Upstage Solar Pro)
 
