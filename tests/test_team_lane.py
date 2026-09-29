@@ -368,6 +368,11 @@ class T8ApprovalBinding(TeamHarness):
             "uv run python3 -c print": "command_inline_program",
             "pytest && rm -rf x": "command_shell_syntax",
             "pytest | tee log": "command_shell_syntax",
+            "xargs -a units.txt pytest": "command_runs_a_shell",
+            "uv run xargs -n1 pytest": "command_runs_a_shell",
+            "xargs -I{} sh -c {}": "command_shell_syntax",
+            "find . -exec touch F +": "command_changes_files",
+            "find . -name x -delete": "command_changes_files",
         }
         for command, reason in cases.items():
             with self.subTest(command=command):
@@ -873,7 +878,11 @@ class HiddenCharactersAreRefused(TeamHarness):
     """L3. Mutation: drop `_HIDDEN_CHARACTERS` from the command or the title check."""
 
     def test_bidi_and_zero_width_characters(self) -> None:
-        for character in ("\u202e", "\u2066", "\u200b", "\u200f"):
+        # One per range in `_HIDDEN_CHARACTERS`: soft hyphen, Arabic letter
+        # mark, zero-width, bidi embedding/override, word joiner and invisible
+        # operators, bidi isolates, line/paragraph separators, BOM.
+        for character in ("\u00ad", "\u061c", "\u200b", "\u200f", "\u202e", "\u2060", "\u2064",
+                          "\u2066", "\u2029", "\ufeff"):
             with self.subTest(character=repr(character)):
                 with self.assertRaises(team.TeamRefusal) as refused:
                     team.validate_team_command(f"pytest{character} -q")

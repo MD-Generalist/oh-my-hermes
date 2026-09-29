@@ -1447,6 +1447,7 @@ class NoRemoteMutation(unittest.TestCase):
             "uv publish", "twine upload dist/x.whl", "docker push image", "python -m pip install x", "npx pkg",
             "npm install", "uv pip install x", "git reset --hard", "git clean -fdx", "git checkout main",
             "git commit -m x", "git -C /tmp status", "mv a b", "chmod 777 a", "chown me a", "dd if=a of=b",
+            "xargs -a units.txt pytest", "find . -exec touch F +",
         ]
         for command in commands:
             with self.subTest(command=command):

@@ -191,7 +191,9 @@ _FIND_ACTIONS: Final = frozenset({"-delete", "-exec", "-execdir", "-ok", "-okdir
 _SHELL_METACHARACTERS: Final = re.compile(r"[\n\r;&|`$<>(){}]")
 # Bidirectional overrides and zero-width characters make a line read
 # differently from what runs; refused in commands and titles.
-_HIDDEN_CHARACTERS: Final = re.compile("[​-‏‪-‮⁦-⁩  ﻿]")
+_HIDDEN_CHARACTERS: Final = re.compile(
+    "[\u00ad\u061c\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\u2028\u2029\ufeff]"
+)
 # The plan binding: a command is approved only as the exact text of a
 # `check: `<command>`` field in an accepted plan item.
 _CHECK_FIELD: Final = re.compile(r"check:\s*`([^`\n]+)`", re.IGNORECASE)
