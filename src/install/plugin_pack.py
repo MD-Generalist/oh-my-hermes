@@ -483,10 +483,17 @@ def _generated_plugin_bytecode(path: Path, plugin_dir: Path, managed: set[str]) 
         return False
     stream = io.BytesIO(data)
     header = stream.read(16)
-    if len(header) != 16 or header[:4] != importlib.util.MAGIC_NUMBER:
+    if len(header) != 16 or header[2:4] != b"\r\n":
         return False
     if int.from_bytes(header[4:8], "little") not in (0, 1, 3):
         return False
+    if header[:4] != importlib.util.MAGIC_NUMBER:
+        # Hermes imports the bundle with its own interpreter, which is often not
+        # the one running omh, so many caches here carry another version's
+        # magic and a payload this marshal cannot read. Accept a well-formed
+        # header under a foreign cache tag; a foreign magic under our own tag
+        # is not something an interpreter writes.
+        return path.name.split(".")[1] != sys.implementation.cache_tag
     try:
         code = marshal.load(stream)
     except (EOFError, TypeError, ValueError):

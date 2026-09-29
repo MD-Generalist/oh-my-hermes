@@ -297,10 +297,13 @@ Move additions outside the plugin directory before retrying, or use
 `omh setup --force` / `omh update --force` only if you intend to discard local
 changes and additions inside that directory. Unchanged files listed in an older
 manifest can still be refreshed or removed when the current bundle retires them.
-Recognizable Python bytecode caches for managed sources do not block refresh:
-only bounded, complete timestamp or hash `.pyc` files with a valid code-object
-payload qualify (the cache is parsed, never executed). Oversized, truncated,
-non-code, or trailing-data payloads remain protected as additions. The staged
+Recognizable Python bytecode caches for managed sources do not block refresh.
+A cache written by omh's own Python qualifies only as a bounded, complete
+timestamp or hash `.pyc` with a valid code-object payload (the cache is parsed,
+never executed); oversized, truncated, non-code, or trailing-data payloads
+remain protected as additions. Hermes imports the plugin with its own Python,
+which may be another version, so a cache under another version's tag qualifies
+by its well-formed header alone; a foreign header under omh's own tag does not. The staged
 replacement checks the renamed original again before installing; late additions
 or managed edits cause a refusal and restoration of the original directory.
 If a plugin tree appears after an initially empty path was inspected, setup

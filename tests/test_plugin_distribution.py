@@ -1801,6 +1801,38 @@ class PluginReinstallSafetyTests(unittest.TestCase):
                     install_plugin_bundle(self.paths)
                 self.assertEqual(cache.read_bytes(), payload)
 
+    def _foreign_cache(self, tag: str, magic: bytes) -> Path:
+        cache = self.target / "__pycache__" / f"__init__.{tag}.pyc"
+        cache.parent.mkdir(exist_ok=True)
+        cache.write_bytes(magic + b"\0" * 12 + b"payload another interpreter can read")
+        return cache
+
+    def test_another_interpreters_bytecode_does_not_block_reinstall(self) -> None:
+        # Hermes loads the plugin with its own Python; on a machine where that
+        # is not omh's Python every managed module leaves a cache this
+        # interpreter cannot unmarshal, and treating those as additions made
+        # every `omh update` skip the plugin refresh.
+        version = int.from_bytes(importlib.util.MAGIC_NUMBER[:2], "little")
+        self._foreign_cache("cpython-39", (version - 1).to_bytes(2, "little") + b"\r\n")
+        result = install_plugin_bundle(self.paths)
+        self.assertFalse(result["changed"])
+        self.assertTrue(result["register_smoke"])
+
+    def test_foreign_bytecode_counterfeits_are_preserved(self) -> None:
+        version = int.from_bytes(importlib.util.MAGIC_NUMBER[:2], "little")
+        foreign_magic = (version - 1).to_bytes(2, "little") + b"\r\n"
+        for tag, magic in (
+            (sys.implementation.cache_tag, foreign_magic),  # foreign magic under our own tag
+            ("cpython-39", foreign_magic[:2] + b"\0\0"),  # not a magic number at all
+        ):
+            with self.subTest(tag=tag, magic=magic):
+                cache = self._foreign_cache(tag, magic)
+                payload = cache.read_bytes()
+                with self.assertRaisesRegex(PluginPackError, "unmanaged plugin entries"):
+                    install_plugin_bundle(self.paths)
+                self.assertEqual(cache.read_bytes(), payload)
+                cache.unlink()
+
     def test_hash_generated_bytecode_does_not_block_reinstall(self) -> None:
         import py_compile
 

@@ -4,6 +4,22 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **Plugin reinstalls no longer delete files you added to the plugin
+  directory.** `omh setup` now refuses to replace
+  `$HERMES_HOME/plugins/omh/` when it holds entries absent from the installed
+  OMH manifest, and it names them. `omh update` leaves that tree in place,
+  prints why the plugin refresh was skipped, and continues its other updates.
+  `--force` still replaces the tree. Replacement runs in a private per-run
+  transaction directory, so an existing `.omh.previous` or `.omh.installing`
+  sibling is never cleared. After the original tree is moved aside it is
+  checked again, so additions or edits made while the new tree was staged
+  cause a refusal and a restore. If the rollback itself fails, the error names
+  the retained backup. Bytecode caches for managed sources do not block a
+  refresh, including caches written by Hermes' own Python when that is a
+  different version from omh's; on a machine where the two differ, treating
+  those as additions would have skipped every plugin refresh. (#1933,
+  contributed by @junjuny0227)
+
 - **The route question says which mode recorded it, what it would have
   declined, which answers contradict themselves, and how it reads against your
   own traffic.**
