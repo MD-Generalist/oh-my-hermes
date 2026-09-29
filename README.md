@@ -569,7 +569,8 @@ edit the same file.
 </p>
 
 <p align="center">
-  <img src="assets/omh-terminal-ulw-interview.png" alt="Hermes TUI answering a ulw-interview prompt: round 1 of 6 with a clarity score and one question with four answer options" width="900">
+  <img src="assets/omh-slack-ulw-interview.png" alt="Illustration of a Slack thread: a user posts a ulw-interview prompt about an ISS pass-warning CLI and the Hermes app replies in the thread with round 1 of 6, a clarity score, and one question with four options; the reply text is the real one from the TUI run" width="900">
+  <br><sub>The same ulw-interview reply, as it reads in a Slack thread (illustration)</sub>
 </p>
 
 ### Hand work to Claude Code and Codex

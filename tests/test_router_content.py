@@ -4281,17 +4281,19 @@ class RouterContentTests(unittest.TestCase):
         # The landing page carries the character mark four times (header,
         # hero, Hermes executor card, footer) plus two product captures --
         # the terminal boot banner and the /omh-model chain picker under
-        # Recommended chains -- plus the two ulw usage-example figures (the
-        # real ulw-plan TUI capture and the labelled ulw-maestro
+        # Recommended chains -- plus the three ulw usage-example figures (the
+        # real ulw-plan TUI capture, the Slack-thread illustration of the
+        # real ulw-interview reply, and the labelled ulw-maestro
         # illustration) under the ulw family, and nothing else. The exact
         # count keeps decorative images off the page; the three surface demos
         # (the TUI ultrawork run, the Desktop run, the messenger card) are
         # <video> elements.
-        self.assertEqual(site.count("<img"), 8)
+        self.assertEqual(site.count("<img"), 9)
         self.assertEqual(site.count('src="assets/omh-character-mask.png"'), 4)
         self.assertEqual(site.count('src="assets/omh-terminal-boot-banner.png"'), 1)
         self.assertEqual(site.count('src="assets/omh-model-tui.png"'), 1)
         self.assertEqual(site.count('src="assets/omh-terminal-ulw-plan-refactor.png"'), 1)
+        self.assertEqual(site.count('src="assets/omh-slack-ulw-interview.png"'), 1)
         self.assertEqual(site.count('src="assets/omh-ulw-maestro-dispatch.svg"'), 1)
         self.assertEqual(site.count("<video"), 3)
         for stem in ("hermes-cli", "hermes-desktop", "hermes-messenger"):

@@ -253,6 +253,18 @@ window.OMH_I18N = {
       ja: "小さな JavaScript プロジェクトで ulw-plan プロンプトに答える Hermes TUI：循環のない目標依存グラフ、却下した選択肢、依存順に並んだ六つのレーン、受け入れ基準、計画チェックリスト、下部の [OMH] HUD 行",
       zh: "Hermes TUI 在一个小型 JavaScript 项目上回答 ulw-plan 提示：无环的目标依赖图、被否决的方案、按依赖顺序排列的六条车道、验收标准、计划清单，以及底部的 [OMH] HUD 行"
     },
+    "ulwex.slack.alt": {
+      en: "Illustration of a Slack thread: a user posts a ulw-interview prompt about an ISS pass-warning CLI and the Hermes app replies in the thread with round 1 of 6, a clarity score, and one question with four options; the reply text is the real one from the TUI run",
+      ko: "Slack 스레드 일러스트: 사용자가 ISS 통과 알림 CLI에 대한 ulw-interview 프롬프트를 올리고, Hermes 앱이 스레드에서 6라운드 중 1라운드, 명확도 점수, 선택지 네 개가 달린 질문 하나로 답합니다. 답변 문구는 TUI 실행에서 나온 실제 답변입니다",
+      ja: "Slack スレッドのイラスト：ユーザーが ISS 通過通知 CLI についての ulw-interview プロンプトを投稿し、Hermes アプリがスレッドで全 6 ラウンド中ラウンド 1、明確度スコア、四つの選択肢を持つ一つの質問で返信します。返信の文面は TUI 実行で得た実際のものです",
+      zh: "Slack 线程示意图：用户发布关于 ISS 过境提醒 CLI 的 ulw-interview 提示，Hermes 应用在线程中回复：共 6 轮中的第 1 轮、清晰度评分，以及一个带四个选项的问题；回复文字取自 TUI 实际运行"
+    },
+    "ulwex.slack.caption": {
+      en: "The same ulw-interview reply, as it reads in a Slack thread (illustration).",
+      ko: "같은 ulw-interview 답변을 Slack 스레드에서 본 모습 (일러스트).",
+      ja: "同じ ulw-interview の返信を Slack スレッドで見た様子（イラスト）。",
+      zh: "同一条 ulw-interview 回复在 Slack 线程中的样子（示意图）。"
+    },
     "ulwex.maestro": {
       en: "Name the coding agent and ulw-maestro builds each prompt from that agent's own installed skills, dispatches it, and adds a steerable row per unit to the OMH HUD. It never picks the agent for you, and it never merges.",
       ko: "코딩 에이전트를 지정하면 ulw-maestro가 그 에이전트에 설치된 스킬로 프롬프트를 구성해 디스패치하고, 유닛마다 조종 가능한 행을 OMH HUD에 추가합니다. 에이전트를 대신 고르지 않고, 머지도 하지 않습니다.",

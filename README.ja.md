@@ -467,7 +467,8 @@ Hermes のプロンプトにこう入力します。`ulw-` の接頭辞が workf
 </p>
 
 <p align="center">
-  <img src="assets/omh-terminal-ulw-interview.png" alt="ulw-interview プロンプトに答える Hermes TUI：明確度スコア付きの全 6 ラウンド中ラウンド 1 と、四つの選択肢を持つ一つの質問" width="900">
+  <img src="assets/omh-slack-ulw-interview.png" alt="Slack スレッドのイラスト：ユーザーが ISS 通過通知 CLI についての ulw-interview プロンプトを投稿し、Hermes アプリがスレッドで全 6 ラウンド中ラウンド 1、明確度スコア、四つの選択肢を持つ一つの質問で返信します。返信の文面は TUI 実行で得た実際のものです" width="900">
+  <br><sub>同じ ulw-interview の返信を Slack スレッドで見た様子（イラスト）</sub>
 </p>
 
 ### Claude Code と Codex に仕事を渡す

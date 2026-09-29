@@ -455,7 +455,8 @@ Do not replace the resolved SHA with main. Execute the pinned protocol's OS-appr
 </p>
 
 <p align="center">
-  <img src="assets/omh-terminal-ulw-interview.png" alt="Hermes TUI 回答 ulw-interview 提示：共 6 轮中的第 1 轮，附清晰度评分，以及一个带四个选项的问题" width="900">
+  <img src="assets/omh-slack-ulw-interview.png" alt="Slack 线程示意图：用户发布关于 ISS 过境提醒 CLI 的 ulw-interview 提示，Hermes 应用在线程中回复：共 6 轮中的第 1 轮、清晰度评分，以及一个带四个选项的问题；回复文字取自 TUI 实际运行" width="900">
+  <br><sub>同一条 ulw-interview 回复在 Slack 线程中的样子（示意图）</sub>
 </p>
 
 ### 把工作交给 Claude Code 和 Codex

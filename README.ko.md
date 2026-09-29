@@ -461,7 +461,8 @@ Hermes 프롬프트에 이렇게 입력합니다. `ulw-` 접두어가 workflow�
 </p>
 
 <p align="center">
-  <img src="assets/omh-terminal-ulw-interview.png" alt="ulw-interview 프롬프트에 답하는 Hermes TUI: 명확도 점수가 붙은 6라운드 중 1라운드, 선택지 네 개가 달린 질문 하나" width="900">
+  <img src="assets/omh-slack-ulw-interview.png" alt="Slack 스레드 일러스트: 사용자가 ISS 통과 알림 CLI에 대한 ulw-interview 프롬프트를 올리고, Hermes 앱이 스레드에서 6라운드 중 1라운드, 명확도 점수, 선택지 네 개가 달린 질문 하나로 답합니다. 답변 문구는 TUI 실행에서 나온 실제 답변입니다" width="900">
+  <br><sub>같은 ulw-interview 답변을 Slack 스레드에서 본 모습 (일러스트)</sub>
 </p>
 
 ### Claude Code와 Codex에 일 맡기기
