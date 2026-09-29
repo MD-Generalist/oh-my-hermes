@@ -4,6 +4,31 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+## 3.0.0 - 2026-09-29
+
+Highlights of this major release (details in the entries below):
+
+- **Work that finishes.** A todo item closes only on a recorded result
+  (#1928), a fanout unit repairs itself in its own worktree until its checks
+  pass or its budget is spent (#1929), and a unit's "done" is held to the tests
+  its own changes reach (#1876).
+- **Teammates on Hermes' runtime.** `omh_team` runs a checked delegate team
+  from an accepted plan: owners, dependencies, and a verification command per
+  task, with a result only on observed evidence (#1931).
+- **Replies in the host's voice.** OMH's record vocabulary stays out of the
+  reply, while orchestration decisions (team split, routing, goal, blocked
+  reason) carry one plain sentence (#1930, #1837, #1851), and the reply rules
+  are linted against real sessions (#1848).
+- **Hermes Desktop.** The bundle ships the Desktop half, with an OMH pane and
+  status item (#1856, #1864).
+- **Routing and skills.** Dispatch only on strong evidence with a lexical
+  shortlist otherwise (#1879, #1880, #1891), a measured reach gate for every
+  installable skill (#1875), and new skills for app debugging, git workflow,
+  relational databases, security events, release cuts, IaC, data pipelines,
+  model fine-tuning, mobile release, and internal audit.
+- **Models.** Claude Opus 5.5, GPT-6 Luna, and GPT-6 Sol onboarded (#1833,
+  #1841); OMH can ask Jev itself when the user names it (#1844).
+
 - **`omh_jev_ask` no longer refuses every call with `consent_not_observed`
   when the person named Jev.** Hermes loads the OMH bundle twice in one
   process: once as a plugin, and again as the memory provider that
