@@ -4,6 +4,14 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **A fanout dispatch that found a unit busy exits 75, not 0.** When another
+  dispatch holds a unit's repair loop, `omh coding fanout dispatch` skips the
+  unit as `repair_in_flight` and spawns nothing for it. That run used to exit
+  0, so a wrapper reading only the status could not tell "busy, nothing done"
+  from success. It now exits 75 (`EX_TEMPFAIL`, retry later), also when other
+  units in the batch completed. A failed or blocked unit still exits 1 and an
+  interrupt still exits 130; both outrank the busy code. `already_completed`
+  and `not_selected` skips still exit 0. (#1932)
 - **English one-word replies now decline the route question.** The
   `one_word_reply` verdict accepted only the engine-entry approval
   vocabulary, which holds one English word (`lgtm`) against thirteen Korean

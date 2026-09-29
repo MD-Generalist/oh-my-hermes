@@ -14,6 +14,7 @@ from ..coding.hermes_model_recommendation import resolved_hermes_model_recommend
 from ..coding.diagnostic_execution import DiagnosticExecutionEngine
 from ..coding.fanout_failure_diagnostics import FailureDiagnostic, is_string_map, read_failure_diagnostic
 from ..coding.fanout_final_review_hook import FinalReviewWaveEngine
+from ..coding.fanout_repair import REPAIR_IN_FLIGHT_STATUS
 from ..coding.final_review_local_engine import (
     FinalReviewLocalEngineConfig,
     FinalReviewLocalEngineError,
@@ -2545,8 +2546,17 @@ def _write_stderr_line(line: str) -> None:
     print(line, file=sys.stderr)
 
 
+# A selected unit skipped as `repair_in_flight`: another dispatch holds its
+# repair loop, so nothing was spawned and nothing failed. sysexits' EX_TEMPFAIL,
+# "try again later". Not 0, because the work this dispatch was asked for did not
+# happen; not 1, because nothing is wrong and the same command succeeds once
+# the other dispatch lets go; not 2, which `main` returns for an OmhError.
+FANOUT_DISPATCH_BUSY_EXIT_CODE = 75
+
+
 def _fanout_dispatch_exit_code(summary: dict) -> int:
-    """130 for a cut-short batch, 1 for a refusal or any failed unit, 0 otherwise.
+    """130 for a cut-short batch, 1 for a refusal or any failed unit, 75 for a
+    unit skipped because another dispatch is repairing it, 0 otherwise.
 
     A spawn-guard refusal exits non-zero on purpose: the summary is still
     printed as JSON so a wrapper can read `refusal_reason`, but a shell that
@@ -2567,6 +2577,10 @@ def _fanout_dispatch_exit_code(summary: dict) -> int:
     observed failing carries no `failure_kind`, and until #1929 that batch
     exited 0 too. Its `unit_state_reason` (`verification_failed`, or
     `repair_budget_exhausted` once a repair budget is spent) now maps to 1.
+
+    A busy unit ranks below every failure: retrying later cannot fix a unit
+    that failed, so a batch carrying both exits 1. A busy unit beside
+    completed ones still exits 75, because part of the batch is not done.
     """
     if summary.get("interrupted"):
         return 130
@@ -2588,6 +2602,10 @@ def _fanout_dispatch_exit_code(summary: dict) -> int:
         for unit in units
     ):
         return 1
+    if isinstance(units, list) and any(
+        isinstance(unit, dict) and unit.get("status") == REPAIR_IN_FLIGHT_STATUS for unit in units
+    ):
+        return FANOUT_DISPATCH_BUSY_EXIT_CODE
     return 0
 
 
