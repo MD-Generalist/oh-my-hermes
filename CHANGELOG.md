@@ -10,8 +10,10 @@ All notable changes will be documented here.
   `ulw-work` to run the accepted plan, `ulw-loop` to finish against a named
   gate, and a `ulw-maestro` prompt that dispatches one unit to Claude Code and
   one to Codex. A real Hermes TUI capture of a `ulw-plan` answer (target
-  dependency graph and lane order), a Slack-thread illustration carrying the
-  real reply of a `ulw-interview` first round, and a labelled `ulw-maestro`
+  dependency graph and lane order), Slack-thread illustrations carrying the
+  real reply of a `ulw-interview` first round and a real `ulw-work` run (one
+  row per lane with its routed category and model, marked with the model
+  vendor glyphs from `model_vendor_glyphs`), and a labelled `ulw-maestro`
   illustration sit beside them. The generated inventory regions are
   unchanged.
 

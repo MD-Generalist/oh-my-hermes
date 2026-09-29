@@ -260,10 +260,22 @@ window.OMH_I18N = {
       zh: "Slack 线程示意图：用户发布关于 ISS 过境提醒 CLI 的 ulw-interview 提示，Hermes 应用在线程中回复：共 6 轮中的第 1 轮、清晰度评分，以及一个带四个选项的问题；回复文字取自 TUI 实际运行"
     },
     "ulwex.slack.caption": {
-      en: "The same ulw-interview reply, as it reads in a Slack thread (illustration).",
-      ko: "같은 ulw-interview 답변을 Slack 스레드에서 본 모습 (일러스트).",
-      ja: "同じ ulw-interview の返信を Slack スレッドで見た様子（イラスト）。",
-      zh: "同一条 ulw-interview 回复在 Slack 线程中的样子（示意图）。"
+      en: "A real ulw-interview reply, as it reads in a Slack thread (illustration).",
+      ko: "실제 ulw-interview 답변을 Slack 스레드에서 본 모습 (일러스트).",
+      ja: "実際の ulw-interview の返信を Slack スレッドで見た様子（イラスト）。",
+      zh: "一条真实的 ulw-interview 回复在 Slack 线程中的样子（示意图）。"
+    },
+    "ulwex.slackwork.alt": {
+      en: "Illustration of a Slack thread built from a real ulw-work run: Hermes locks six lanes, one row per lane with the model-vendor glyph, the routed category and the model (the first Lane A attempt on claude-fable-5-1 failed with HTTP 400 and was re-dispatched on kimi-k3-ultrafast; lanes B to E ran on kimi-k3-ultrafast; Lane F ran on Hermes' own deepseek model), then the before/after dependency-check summary",
+      ko: "실제 ulw-work 실행으로 만든 Slack 스레드 일러스트: Hermes가 여섯 레인을 확정하고, 레인마다 모델 벤더 글리프, 라우팅된 카테고리, 모델을 한 줄로 보여줍니다(첫 Lane A 시도는 claude-fable-5-1에서 HTTP 400으로 실패해 kimi-k3-ultrafast로 재디스패치, B~E는 kimi-k3-ultrafast, F는 Hermes 자신의 deepseek 모델). 마지막에 의존성 검사 전후 요약이 나옵니다",
+      ja: "実際の ulw-work 実行から作った Slack スレッドのイラスト：Hermes が六つのレーンを確定し、レーンごとにモデルベンダーのグリフ、ルーティングされたカテゴリ、モデルを 1 行で表示（最初の Lane A は claude-fable-5-1 で HTTP 400 により失敗し kimi-k3-ultrafast で再ディスパッチ、B〜E は kimi-k3-ultrafast、F は Hermes 自身の deepseek モデル）。最後に依存チェックの前後サマリー",
+      zh: "根据一次真实 ulw-work 运行制作的 Slack 线程示意图：Hermes 锁定六条车道，每条一行，显示模型厂商图标、路由到的类别和模型（第一次 Lane A 在 claude-fable-5-1 上因 HTTP 400 失败，改派到 kimi-k3-ultrafast；B 到 E 在 kimi-k3-ultrafast 上运行；F 由 Hermes 自己的 deepseek 模型运行），最后是依赖检查的前后对比"
+    },
+    "ulwex.slackwork.caption": {
+      en: "A real ulw-work run, as it reads in a Slack thread (illustration): one row per lane with its routed category and model, colored by model vendor.",
+      ko: "실제 ulw-work 실행을 Slack 스레드에서 본 모습 (일러스트): 레인마다 라우팅된 카테고리와 모델을 한 줄로, 모델 벤더별 색으로 표시.",
+      ja: "実際の ulw-work 実行を Slack スレッドで見た様子（イラスト）：レーンごとにルーティングされたカテゴリとモデルを 1 行で、モデルのベンダー別の色で表示。",
+      zh: "一次真实的 ulw-work 运行在 Slack 线程中的样子（示意图）：每条车道一行，显示路由到的类别和模型，并按模型厂商着色。"
     },
     "ulwex.maestro": {
       en: "Name the coding agent and ulw-maestro builds each prompt from that agent's own installed skills, dispatches it, and adds a steerable row per unit to the OMH HUD. It never picks the agent for you, and it never merges.",

@@ -570,7 +570,12 @@ edit the same file.
 
 <p align="center">
   <img src="assets/omh-slack-ulw-interview.png" alt="Illustration of a Slack thread: a user posts a ulw-interview prompt about an ISS pass-warning CLI and the Hermes app replies in the thread with round 1 of 6, a clarity score, and one question with four options; the reply text is the real one from the TUI run" width="900">
-  <br><sub>The same ulw-interview reply, as it reads in a Slack thread (illustration)</sub>
+  <br><sub>A real ulw-interview reply, as it reads in a Slack thread (illustration)</sub>
+</p>
+
+<p align="center">
+  <img src="assets/omh-slack-ulw-work.png" alt="Illustration of a Slack thread built from a real ulw-work run: Hermes locks six lanes, one row per lane with the model-vendor glyph, the routed category and the model (the first Lane A attempt on claude-fable-5-1 failed with HTTP 400 and was re-dispatched on kimi-k3-ultrafast; lanes B to E ran on kimi-k3-ultrafast; Lane F ran on Hermes' own deepseek model), then the before/after dependency-check summary" width="900">
+  <br><sub>A real ulw-work run, as it reads in a Slack thread (illustration): one row per lane with its routed category and model, colored by model vendor</sub>
 </p>
 
 ### Hand work to Claude Code and Codex

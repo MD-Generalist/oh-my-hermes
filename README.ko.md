@@ -462,7 +462,12 @@ Hermes 프롬프트에 이렇게 입력합니다. `ulw-` 접두어가 workflow�
 
 <p align="center">
   <img src="assets/omh-slack-ulw-interview.png" alt="Slack 스레드 일러스트: 사용자가 ISS 통과 알림 CLI에 대한 ulw-interview 프롬프트를 올리고, Hermes 앱이 스레드에서 6라운드 중 1라운드, 명확도 점수, 선택지 네 개가 달린 질문 하나로 답합니다. 답변 문구는 TUI 실행에서 나온 실제 답변입니다" width="900">
-  <br><sub>같은 ulw-interview 답변을 Slack 스레드에서 본 모습 (일러스트)</sub>
+  <br><sub>실제 ulw-interview 답변을 Slack 스레드에서 본 모습 (일러스트)</sub>
+</p>
+
+<p align="center">
+  <img src="assets/omh-slack-ulw-work.png" alt="실제 ulw-work 실행으로 만든 Slack 스레드 일러스트: Hermes가 여섯 레인을 확정하고, 레인마다 모델 벤더 글리프, 라우팅된 카테고리, 모델을 한 줄로 보여줍니다(첫 Lane A 시도는 claude-fable-5-1에서 HTTP 400으로 실패해 kimi-k3-ultrafast로 재디스패치, B~E는 kimi-k3-ultrafast, F는 Hermes 자신의 deepseek 모델). 마지막에 의존성 검사 전후 요약이 나옵니다" width="900">
+  <br><sub>실제 ulw-work 실행을 Slack 스레드에서 본 모습 (일러스트): 레인마다 라우팅된 카테고리와 모델을 한 줄로, 모델 벤더별 색으로 표시</sub>
 </p>
 
 ### Claude Code와 Codex에 일 맡기기

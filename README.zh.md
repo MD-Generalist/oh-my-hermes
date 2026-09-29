@@ -456,7 +456,12 @@ Do not replace the resolved SHA with main. Execute the pinned protocol's OS-appr
 
 <p align="center">
   <img src="assets/omh-slack-ulw-interview.png" alt="Slack 线程示意图：用户发布关于 ISS 过境提醒 CLI 的 ulw-interview 提示，Hermes 应用在线程中回复：共 6 轮中的第 1 轮、清晰度评分，以及一个带四个选项的问题；回复文字取自 TUI 实际运行" width="900">
-  <br><sub>同一条 ulw-interview 回复在 Slack 线程中的样子（示意图）</sub>
+  <br><sub>一条真实的 ulw-interview 回复在 Slack 线程中的样子（示意图）</sub>
+</p>
+
+<p align="center">
+  <img src="assets/omh-slack-ulw-work.png" alt="根据一次真实 ulw-work 运行制作的 Slack 线程示意图：Hermes 锁定六条车道，每条一行，显示模型厂商图标、路由到的类别和模型（第一次 Lane A 在 claude-fable-5-1 上因 HTTP 400 失败，改派到 kimi-k3-ultrafast；B 到 E 在 kimi-k3-ultrafast 上运行；F 由 Hermes 自己的 deepseek 模型运行），最后是依赖检查的前后对比" width="900">
+  <br><sub>一次真实的 ulw-work 运行在 Slack 线程中的样子（示意图）：每条车道一行，显示路由到的类别和模型，并按模型厂商着色</sub>
 </p>
 
 ### 把工作交给 Claude Code 和 Codex

@@ -468,7 +468,12 @@ Hermes のプロンプトにこう入力します。`ulw-` の接頭辞が workf
 
 <p align="center">
   <img src="assets/omh-slack-ulw-interview.png" alt="Slack スレッドのイラスト：ユーザーが ISS 通過通知 CLI についての ulw-interview プロンプトを投稿し、Hermes アプリがスレッドで全 6 ラウンド中ラウンド 1、明確度スコア、四つの選択肢を持つ一つの質問で返信します。返信の文面は TUI 実行で得た実際のものです" width="900">
-  <br><sub>同じ ulw-interview の返信を Slack スレッドで見た様子（イラスト）</sub>
+  <br><sub>実際の ulw-interview の返信を Slack スレッドで見た様子（イラスト）</sub>
+</p>
+
+<p align="center">
+  <img src="assets/omh-slack-ulw-work.png" alt="実際の ulw-work 実行から作った Slack スレッドのイラスト：Hermes が六つのレーンを確定し、レーンごとにモデルベンダーのグリフ、ルーティングされたカテゴリ、モデルを 1 行で表示（最初の Lane A は claude-fable-5-1 で HTTP 400 により失敗し kimi-k3-ultrafast で再ディスパッチ、B〜E は kimi-k3-ultrafast、F は Hermes 自身の deepseek モデル）。最後に依存チェックの前後サマリー" width="900">
+  <br><sub>実際の ulw-work 実行を Slack スレッドで見た様子（イラスト）：レーンごとにルーティングされたカテゴリとモデルを 1 行で、モデルのベンダー別の色で表示</sub>
 </p>
 
 ### Claude Code と Codex に仕事を渡す
