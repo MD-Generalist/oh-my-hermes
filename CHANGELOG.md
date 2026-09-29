@@ -4,6 +4,17 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **English one-word replies now decline the route question.** The
+  `one_word_reply` verdict accepted only the engine-entry approval
+  vocabulary, which holds one English word (`lgtm`) against thirteen Korean
+  entries, so `yes`, `sure`, `yep`, `nope`, `nah`, `cool` and `proceed` kept a
+  question with nothing to decide and the shadow decline rate undercounted
+  English turns. A separate English reply list (go-ahead, refusal,
+  acknowledgement) now counts when it is the whole message, punctuation
+  folded. It only moves the shadow record: the engine-entry approval gate and
+  every route payload are unchanged. `stop` stays out because its question
+  offers `cancel` and `loop`, and one-word workflow requests (`test`, `fix`,
+  `ship`, `refactor`) are still asked. (#1938)
 - **The product A/B corpus digests no longer depend on local Git settings.**
   Test-diff hashes are now taken from a fixed diff format: full object IDs,
   no color, no external diff, and fixed context and algorithm. Before this,
