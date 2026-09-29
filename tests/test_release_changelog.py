@@ -181,3 +181,25 @@ class ReleaseBodyBoundTests(unittest.TestCase):
             self.assertLessEqual(len(body.encode('utf-16-le')) // 2, 125_000)
             self.assertIn('_Bounded for publication:', body)
             self.assertEqual(changelog.read_text(encoding='utf-8'), original)
+
+    def test_evidence_accepts_the_bounded_body_the_notes_step_wrote(self):
+        from omh.maintenance.changelog import ChangelogError
+        from omh.maintenance.release import require_notes_from_source
+        from omh.maintenance.release_notes import prepare_notes
+        # Given an oversized section, written by the same step the release
+        # workflow runs before the evidence bundle (v3.0.0's first run).
+        section = ''.join(f'- **Entry {i}.** body {i} ' + 'x' * 400 + '\n\n' for i in range(1, 401))
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / 'CHANGELOG.md').write_text(
+                '# Changelog\n\n## Unreleased\n\n## 2.0.4 - 2026-09-21\n\n' + section, encoding='utf-8')
+            notes = root / 'notes.md'
+            prepare_notes(root, '2.0.4', notes)
+            self.assertIn('_Bounded for publication:', notes.read_text(encoding='utf-8'))
+            # When / Then the trimmed artifact is the derived body, not a mismatch.
+            require_notes_from_source(root, notes, '2.0.4')
+            # And an edit to that artifact is still refused.
+            notes.write_bytes(notes.read_bytes() + b'forged\n')
+            with self.assertRaises(ChangelogError) as caught:
+                require_notes_from_source(root, notes, '2.0.4')
+            self.assertEqual(caught.exception.code, 'notes_source_mismatch')
