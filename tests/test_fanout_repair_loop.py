@@ -29,6 +29,7 @@ from _local_package import load_local_package
 load_local_package()
 
 from omh.commands.coding import (  # noqa: E402
+    FANOUT_DISPATCH_BUSY_EXIT_CODE,
     _brief_repair,
     _fanout_brief_unit_line,
     _fanout_dispatch_exit_code,
@@ -519,7 +520,7 @@ class RepairConcurrencyTests(unittest.TestCase):
 
         second = _unit(second_summary)
         self.assertEqual(second["status"], REPAIR_IN_FLIGHT_STATUS)
-        self.assertEqual(_fanout_dispatch_exit_code(second_summary), 0)
+        self.assertEqual(_fanout_dispatch_exit_code(second_summary), FANOUT_DISPATCH_BUSY_EXIT_CODE)
         self.assertEqual(sum("[Repair attempt]" in prompt for prompt in harness.prompts), 1)
         self.assertEqual([event["repair_attempt"] for event in harness.events(REPAIR_ATTEMPT_STARTED_EVENT)], [1])
         self.assertEqual(outcome["first"]["unit_state"], "verified")
@@ -586,6 +587,53 @@ class RepairExitScopeTests(unittest.TestCase):
         self.assertEqual(core["repair"]["status"], "blocked")
         self.assertNotIn("unit_state_reason", core)
         self.assertEqual(_fanout_dispatch_exit_code(summary), 0)
+
+
+
+class RepairInFlightExitCodeTests(unittest.TestCase):
+    """An in-flight skip spawned nothing, so the batch is neither done nor failed.
+
+    Precedence, most severe first: interrupted (130), refused or any failed
+    unit (1), a selected unit skipped in flight (busy), otherwise 0.
+    """
+
+    unit = {"unit_id": "core", "run_ref": "run-core", "owner": "codex"}
+
+    def _in_flight(self) -> dict[str, Any]:
+        return fanout_dispatch._skipped(self.unit, REPAIR_IN_FLIGHT_STATUS)
+
+    def test_the_busy_code_is_neither_success_failure_nor_a_reserved_code(self) -> None:
+        # 2 is `main`'s OmhError, 130 and 143 are interrupts.
+        self.assertNotIn(FANOUT_DISPATCH_BUSY_EXIT_CODE, {0, 1, 2, 130, 143})
+
+    def test_an_in_flight_skip_alone_exits_busy(self) -> None:
+        summary = {"units": [self._in_flight()]}
+
+        self.assertEqual(_fanout_dispatch_exit_code(summary), FANOUT_DISPATCH_BUSY_EXIT_CODE)
+
+    def test_a_completed_unit_beside_an_in_flight_skip_still_exits_busy(self) -> None:
+        done = {"unit_id": "docs", "status": "completed", "exit_code": 0}
+        summary = {"units": [done, self._in_flight()]}
+
+        self.assertEqual(_fanout_dispatch_exit_code(summary), FANOUT_DISPATCH_BUSY_EXIT_CODE)
+
+    def test_a_failed_unit_outranks_an_in_flight_skip(self) -> None:
+        failed = {"unit_id": "docs", "failure_kind": "crash"}
+        self.assertEqual(_fanout_dispatch_exit_code({"units": [failed, self._in_flight()]}), 1)
+        verification = {"unit_id": "docs", "unit_state_reason": "verification_failed"}
+        self.assertEqual(_fanout_dispatch_exit_code({"units": [self._in_flight(), verification]}), 1)
+        self.assertEqual(_fanout_dispatch_exit_code({"refused": True, "units": [self._in_flight()]}), 1)
+
+    def test_an_interrupt_outranks_an_in_flight_skip(self) -> None:
+        summary = {"interrupted": True, "units": [self._in_flight()]}
+
+        self.assertEqual(_fanout_dispatch_exit_code(summary), 130)
+
+    def test_the_other_skip_statuses_still_exit_zero(self) -> None:
+        for status in ("already_completed", "not_selected"):
+            with self.subTest(status=status):
+                summary = {"units": [fanout_dispatch._skipped(self.unit, status)]}
+                self.assertEqual(_fanout_dispatch_exit_code(summary), 0)
 
 
 class RepairPairingTests(unittest.TestCase):

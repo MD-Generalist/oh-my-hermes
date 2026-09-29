@@ -132,6 +132,38 @@ class ExitCodeTruthfulnessPolicyTests(unittest.TestCase):
                         f"{module_stem}.{function_name} reported success over a unit the {status} gate refused",
                     )
 
+    def test_a_unit_skipped_while_another_dispatch_holds_it_is_never_success(self) -> None:
+        """Every dispatch skip status is classified, and a deferred one is not 0.
+
+        Re-derived from the dispatcher's own skip vocabulary, so a skip status
+        added there fails here until someone says whether it means the work is
+        done or merely not done yet. A deferred skip is busy, not failed: it
+        must not read as success, and it must not read as the failure code
+        either, or a wrapper cannot tell "retry later" from "fix something".
+        Only the dispatch mapper grades these rows; other mappers keep their
+        own vocabulary, as this module's docstring promises.
+        """
+        from omh.coding.fanout_dispatch import _DISPATCH_SKIP_STATUSES, _skipped
+        from omh.coding.fanout_repair import REPAIR_IN_FLIGHT_STATUS
+        from omh.commands.coding import FANOUT_DISPATCH_BUSY_EXIT_CODE, _fanout_dispatch_exit_code
+
+        done_or_not_asked = {"already_completed", "not_selected"}
+        deferred = {REPAIR_IN_FLIGHT_STATUS}
+        self.assertEqual(
+            set(_DISPATCH_SKIP_STATUSES),
+            done_or_not_asked | deferred,
+            "a dispatch skip status is unclassified; decide whether it is done or deferred",
+        )
+        unit = {"unit_id": "core", "run_ref": "run-core", "owner": "codex"}
+        for status in sorted(_DISPATCH_SKIP_STATUSES):
+            summary = {"units": [_skipped(unit, status)]}
+            with self.subTest(status=status):
+                if status in deferred:
+                    self.assertEqual(_fanout_dispatch_exit_code(summary), FANOUT_DISPATCH_BUSY_EXIT_CODE)
+                    self.assertNotIn(FANOUT_DISPATCH_BUSY_EXIT_CODE, {0, 1})
+                else:
+                    self.assertEqual(_fanout_dispatch_exit_code(summary), 0)
+
     def test_a_clean_summary_still_maps_to_zero(self) -> None:
         for module_stem, function_name in _discovered_mappers():
             mapper = _load(module_stem, function_name)
