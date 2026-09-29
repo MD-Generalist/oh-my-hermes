@@ -233,6 +233,63 @@ window.OMH_I18N = {
       zh: "找出系统真正慢、漏、贵的地方 —— 然后逐条修复被测量过的热路径。"
     },
 
+    /* ------------------------------------------------------- ulw examples */
+    "ulwex.kicker": { en: "Recommended set", ko: "추천 조합", ja: "おすすめの組み合わせ", zh: "推荐组合" },
+    "ulwex.title": {
+      en: "Shape it, build it, finish it.",
+      ko: "모양 잡고, 만들고, 끝낸다.",
+      ja: "形にして、作って、仕上げる。",
+      zh: "定形、构建、收尾。"
+    },
+    "ulwex.lead": {
+      en: "Type these at the Hermes prompt. ulw-interview or ulw-plan shapes the work, ulw-work runs the accepted plan, ulw-loop keeps going until your gate passes.",
+      ko: "Hermes 프롬프트에 이렇게 입력하세요. ulw-interview나 ulw-plan이 일의 모양을 잡고, ulw-work가 승인된 계획을 실행하고, ulw-loop가 지정한 게이트가 통과할 때까지 계속 돕니다.",
+      ja: "Hermes のプロンプトにこう入力します。ulw-interview か ulw-plan で形を決め、ulw-work が承認済みの計画を実行し、ulw-loop が指定したゲートを通るまで回り続けます。",
+      zh: "在 Hermes 提示符里这样输入。ulw-interview 或 ulw-plan 负责定形，ulw-work 执行已确认的计划，ulw-loop 一直循环到你指定的关卡通过。"
+    },
+    "ulwex.plan.alt": {
+      en: "Hermes TUI answering a ulw-plan prompt on a small JavaScript project: the target dependency graph with no cycles, rejected options, six lanes in dependency order, acceptance criteria, the plan checklist, and the [OMH] HUD line at the bottom",
+      ko: "작은 JavaScript 프로젝트에서 ulw-plan 프롬프트에 답하는 Hermes TUI: 순환이 없는 목표 의존성 그래프, 기각한 선택지, 의존 순서대로 놓인 여섯 레인, 수용 기준, 계획 체크리스트, 하단의 [OMH] HUD 줄",
+      ja: "小さな JavaScript プロジェクトで ulw-plan プロンプトに答える Hermes TUI：循環のない目標依存グラフ、却下した選択肢、依存順に並んだ六つのレーン、受け入れ基準、計画チェックリスト、下部の [OMH] HUD 行",
+      zh: "Hermes TUI 在一个小型 JavaScript 项目上回答 ulw-plan 提示：无环的目标依赖图、被否决的方案、按依赖顺序排列的六条车道、验收标准、计划清单，以及底部的 [OMH] HUD 行"
+    },
+    "ulwex.slack.alt": {
+      en: "Illustration of a Slack thread: a user posts a ulw-interview prompt about an ISS pass-warning CLI and the Hermes app replies in the thread with round 1 of 6, a clarity score, and one question with four options; the reply text is the real one from the TUI run",
+      ko: "Slack 스레드 일러스트: 사용자가 ISS 통과 알림 CLI에 대한 ulw-interview 프롬프트를 올리고, Hermes 앱이 스레드에서 6라운드 중 1라운드, 명확도 점수, 선택지 네 개가 달린 질문 하나로 답합니다. 답변 문구는 TUI 실행에서 나온 실제 답변입니다",
+      ja: "Slack スレッドのイラスト：ユーザーが ISS 通過通知 CLI についての ulw-interview プロンプトを投稿し、Hermes アプリがスレッドで全 6 ラウンド中ラウンド 1、明確度スコア、四つの選択肢を持つ一つの質問で返信します。返信の文面は TUI 実行で得た実際のものです",
+      zh: "Slack 线程示意图：用户发布关于 ISS 过境提醒 CLI 的 ulw-interview 提示，Hermes 应用在线程中回复：共 6 轮中的第 1 轮、清晰度评分，以及一个带四个选项的问题；回复文字取自 TUI 实际运行"
+    },
+    "ulwex.slack.caption": {
+      en: "A real ulw-interview reply, as it reads in a Slack thread (illustration).",
+      ko: "실제 ulw-interview 답변을 Slack 스레드에서 본 모습 (일러스트).",
+      ja: "実際の ulw-interview の返信を Slack スレッドで見た様子（イラスト）。",
+      zh: "一条真实的 ulw-interview 回复在 Slack 线程中的样子（示意图）。"
+    },
+    "ulwex.slackwork.alt": {
+      en: "Illustration of a Slack thread built from a real ulw-work run: Hermes locks six lanes, one row per lane with the model-vendor glyph, the routed category and the model (the first Lane A attempt on claude-fable-5-1 failed with HTTP 400 and was re-dispatched on kimi-k3-ultrafast; lanes B to E ran on kimi-k3-ultrafast; Lane F ran on Hermes' own deepseek model), then the before/after dependency-check summary",
+      ko: "실제 ulw-work 실행으로 만든 Slack 스레드 일러스트: Hermes가 여섯 레인을 확정하고, 레인마다 모델 벤더 글리프, 라우팅된 카테고리, 모델을 한 줄로 보여줍니다(첫 Lane A 시도는 claude-fable-5-1에서 HTTP 400으로 실패해 kimi-k3-ultrafast로 재디스패치, B~E는 kimi-k3-ultrafast, F는 Hermes 자신의 deepseek 모델). 마지막에 의존성 검사 전후 요약이 나옵니다",
+      ja: "実際の ulw-work 実行から作った Slack スレッドのイラスト：Hermes が六つのレーンを確定し、レーンごとにモデルベンダーのグリフ、ルーティングされたカテゴリ、モデルを 1 行で表示（最初の Lane A は claude-fable-5-1 で HTTP 400 により失敗し kimi-k3-ultrafast で再ディスパッチ、B〜E は kimi-k3-ultrafast、F は Hermes 自身の deepseek モデル）。最後に依存チェックの前後サマリー",
+      zh: "根据一次真实 ulw-work 运行制作的 Slack 线程示意图：Hermes 锁定六条车道，每条一行，显示模型厂商图标、路由到的类别和模型（第一次 Lane A 在 claude-fable-5-1 上因 HTTP 400 失败，改派到 kimi-k3-ultrafast；B 到 E 在 kimi-k3-ultrafast 上运行；F 由 Hermes 自己的 deepseek 模型运行），最后是依赖检查的前后对比"
+    },
+    "ulwex.slackwork.caption": {
+      en: "A real ulw-work run, as it reads in a Slack thread (illustration): one row per lane with its routed category and model, colored by model vendor.",
+      ko: "실제 ulw-work 실행을 Slack 스레드에서 본 모습 (일러스트): 레인마다 라우팅된 카테고리와 모델을 한 줄로, 모델 벤더별 색으로 표시.",
+      ja: "実際の ulw-work 実行を Slack スレッドで見た様子（イラスト）：レーンごとにルーティングされたカテゴリとモデルを 1 行で、モデルのベンダー別の色で表示。",
+      zh: "一次真实的 ulw-work 运行在 Slack 线程中的样子（示意图）：每条车道一行，显示路由到的类别和模型，并按模型厂商着色。"
+    },
+    "ulwex.maestro": {
+      en: "Name the coding agent and ulw-maestro builds each prompt from that agent's own installed skills, dispatches it, and adds a steerable row per unit to the OMH HUD. It never picks the agent for you, and it never merges.",
+      ko: "코딩 에이전트를 지정하면 ulw-maestro가 그 에이전트에 설치된 스킬로 프롬프트를 구성해 디스패치하고, 유닛마다 조종 가능한 행을 OMH HUD에 추가합니다. 에이전트를 대신 고르지 않고, 머지도 하지 않습니다.",
+      ja: "コーディングエージェントを指名すると、ulw-maestro はそのエージェント自身のインストール済みスキルからプロンプトを組み立ててディスパッチし、ユニットごとに操作できる行を OMH HUD に追加します。エージェントを代わりに選ぶことも、マージすることもありません。",
+      zh: "指定编码代理后，ulw-maestro 用该代理自身安装的技能组装提示词并派发，并为每个单元在 OMH HUD 中添加一行可操控的记录。它不会替你选代理，也不会合并。"
+    },
+    "ulwex.maestro.alt": {
+      en: "Illustration: ulw-maestro dispatching one unit to Claude Code (orange) and one to Codex (gray), with a resume handle per unit and both rows in the OMH HUD",
+      ko: "일러스트: ulw-maestro가 유닛 하나는 Claude Code(주황)에, 하나는 Codex(회색)에 디스패치하고, 유닛별 재개 핸들과 OMH HUD의 두 행을 보여줍니다",
+      ja: "イラスト：ulw-maestro が一つのユニットを Claude Code（オレンジ）に、もう一つを Codex（グレー）にディスパッチし、ユニットごとの再開ハンドルと OMH HUD の二行を表示",
+      zh: "示意图：ulw-maestro 把一个单元派发给 Claude Code（橙色），另一个派发给 Codex（灰色），并显示每个单元的恢复句柄和 OMH HUD 中的两行"
+    },
+
     /* ----------------------------------------------------------- families */
     "fam.kicker": { en: "Capability families", ko: "역량 패밀리", ja: "ファミリー", zh: "能力家族" },
     "fam.title": { en: "Start with the job.", ko: "할 일에서 시작합니다.", ja: "仕事から始める。", zh: "从要办的事开始。" },

@@ -425,6 +425,59 @@ Do not replace the resolved SHA with main. Execute the pinned protocol's OS-appr
 | ⚡ `ulw-qa` | 故意用狠场景攻击，坏哪修哪。 |
 | ⚡ `ulw-perf` | 先测出真正慢和贵的地方，再逐条修热路径。 |
 
+### 推荐组合
+
+在 Hermes 提示符里这样输入。`ulw-` 前缀选定 workflow，其余部分就是用日常语言
+写的请求。
+
+**1. 定形。** 想法还模糊时用 `ulw-interview`；要改什么已经清楚、但有风险时用
+`ulw-plan`。
+
+```text
+❯ ulw-interview: I want a CLI that tracks the ISS and warns me before it passes overhead
+❯ ulw-plan: analyze this project's circular dependencies and plan the refactor
+```
+
+**2. 构建。** `ulw-work` 把已确认的计划放进互不碰同一文件的并行车道执行。
+
+```text
+❯ ulw-work: run the accepted plan
+```
+
+**3. 收尾。** `ulw-loop` 会一直循环，直到你指定的关卡通过。
+
+```text
+❯ ulw-loop: keep going until npm test passes
+```
+
+<p align="center">
+  <img src="assets/omh-terminal-ulw-plan-refactor.png" alt="Hermes TUI 在一个小型 JavaScript 项目上回答 ulw-plan 提示：无环的目标依赖图、被否决的方案、按依赖顺序排列的六条车道、验收标准、计划清单，以及底部的 [OMH] HUD 行" width="900">
+</p>
+
+<p align="center">
+  <img src="assets/omh-slack-ulw-interview.png" alt="Slack 线程示意图：用户发布关于 ISS 过境提醒 CLI 的 ulw-interview 提示，Hermes 应用在线程中回复：共 6 轮中的第 1 轮、清晰度评分，以及一个带四个选项的问题；回复文字取自 TUI 实际运行" width="900">
+  <br><sub>一条真实的 ulw-interview 回复在 Slack 线程中的样子（示意图）</sub>
+</p>
+
+<p align="center">
+  <img src="assets/omh-slack-ulw-work.png" alt="根据一次真实 ulw-work 运行制作的 Slack 线程示意图：Hermes 锁定六条车道，每条一行，显示模型厂商图标、路由到的类别和模型（第一次 Lane A 在 claude-fable-5-1 上因 HTTP 400 失败，改派到 kimi-k3-ultrafast；B 到 E 在 kimi-k3-ultrafast 上运行；F 由 Hermes 自己的 deepseek 模型运行），最后是依赖检查的前后对比" width="900">
+  <br><sub>一次真实的 ulw-work 运行在 Slack 线程中的样子（示意图）：每条车道一行，显示路由到的类别和模型，并按模型厂商着色</sub>
+</p>
+
+### 把工作交给 Claude Code 和 Codex
+
+指定好编码代理之后，`ulw-maestro` 会用该代理自身安装的技能组装提示词并派发，
+并为每个单元在 OMH HUD 中添加一行，附带可恢复、可操控的会话。它不会替你选代理，
+也不会合并。
+
+```text
+❯ ulw-maestro: send the retry-queue fix to Claude Code and the lint cleanup to Codex, dispatch both now
+```
+
+<p align="center">
+  <img src="assets/omh-ulw-maestro-dispatch.svg" alt="示意图：ulw-maestro 把一个单元派发给 Claude Code（橙色），另一个派发给 Codex（灰色），并显示每个单元的恢复句柄和 OMH HUD 中的两行" width="900">
+</p>
+
 <br>
 
 ## OMH 提供什么

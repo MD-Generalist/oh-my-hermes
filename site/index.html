@@ -552,6 +552,88 @@
       </section>
       <!-- omh:ulw-site:end -->
 
+      <!-- ===================================================== ULW EXAMPLES -->
+      <section class="section section--tight" id="ulw-examples" aria-labelledby="ulwex-title">
+        <div class="section__head" data-reveal>
+          <p class="kicker" data-i18n="ulwex.kicker">Recommended set</p>
+          <h2 id="ulwex-title" data-i18n="ulwex.title">Shape it, build it, finish it.</h2>
+          <p class="section__lead" data-i18n="ulwex.lead">Type these at the Hermes prompt. ulw-interview or ulw-plan shapes the work, ulw-work runs the accepted plan, ulw-loop keeps going until your gate passes.</p>
+        </div>
+
+        <div class="terminal" data-reveal>
+          <div class="terminal__bar">
+            <span aria-hidden="true"></span><span aria-hidden="true"></span><span aria-hidden="true"></span>
+            <strong>hermes</strong>
+          </div>
+          <pre class="terminal__body"><code>❯ ulw-interview: I want a CLI that tracks the ISS and warns me before it passes overhead
+❯ ulw-plan: analyze this project's circular dependencies and plan the refactor
+❯ ulw-work: run the accepted plan
+❯ ulw-loop: keep going until npm test passes</code></pre>
+        </div>
+
+        <figure class="showcase" data-reveal>
+          <div class="showcase__frame">
+            <img
+              src="assets/omh-terminal-ulw-plan-refactor.png"
+              alt="Hermes TUI answering a ulw-plan prompt on a small JavaScript project: the target dependency graph with no cycles, rejected options, six lanes in dependency order, acceptance criteria, the plan checklist, and the [OMH] HUD line at the bottom"
+              data-i18n-attr="alt:ulwex.plan.alt"
+              loading="lazy"
+              decoding="async"
+            >
+          </div>
+        </figure>
+
+        <figure class="showcase" data-reveal>
+          <div class="showcase__frame">
+            <img
+              src="assets/omh-slack-ulw-interview.png"
+              alt="Illustration of a Slack thread: a user posts a ulw-interview prompt about an ISS pass-warning CLI and the Hermes app replies in the thread with round 1 of 6, a clarity score, and one question with four options; the reply text is the real one from the TUI run"
+              data-i18n-attr="alt:ulwex.slack.alt"
+              loading="lazy"
+              decoding="async"
+            >
+          </div>
+        </figure>
+
+        <p class="ev-note" data-reveal data-i18n="ulwex.slack.caption">A real ulw-interview reply, as it reads in a Slack thread (illustration).</p>
+
+        <figure class="showcase" data-reveal>
+          <div class="showcase__frame">
+            <img
+              src="assets/omh-slack-ulw-work.png"
+              alt="Illustration of a Slack thread built from a real ulw-work run: Hermes locks six lanes, one row per lane with the model-vendor glyph, the routed category and the model (the first Lane A attempt on claude-fable-5-1 failed with HTTP 400 and was re-dispatched on kimi-k3-ultrafast; lanes B to E ran on kimi-k3-ultrafast; Lane F ran on Hermes' own deepseek model), then the before/after dependency-check summary"
+              data-i18n-attr="alt:ulwex.slackwork.alt"
+              loading="lazy"
+              decoding="async"
+            >
+          </div>
+        </figure>
+
+        <p class="ev-note" data-reveal data-i18n="ulwex.slackwork.caption">A real ulw-work run, as it reads in a Slack thread (illustration): one row per lane with its routed category and model, colored by model vendor.</p>
+
+        <p class="section__lead" data-reveal data-i18n="ulwex.maestro">Name the coding agent and ulw-maestro builds each prompt from that agent's own installed skills, dispatches it, and adds a steerable row per unit to the OMH HUD. It never picks the agent for you, and it never merges.</p>
+
+        <div class="terminal" data-reveal>
+          <div class="terminal__bar">
+            <span aria-hidden="true"></span><span aria-hidden="true"></span><span aria-hidden="true"></span>
+            <strong>hermes</strong>
+          </div>
+          <pre class="terminal__body"><code>❯ ulw-maestro: send the retry-queue fix to Claude Code and the lint cleanup to Codex, dispatch both now</code></pre>
+        </div>
+
+        <figure class="showcase" data-reveal>
+          <div class="showcase__frame">
+            <img
+              src="assets/omh-ulw-maestro-dispatch.svg"
+              alt="Illustration: ulw-maestro dispatching one unit to Claude Code (orange) and one to Codex (gray), with a resume handle per unit and both rows in the OMH HUD"
+              data-i18n-attr="alt:ulwex.maestro.alt"
+              loading="lazy"
+              decoding="async"
+            >
+          </div>
+        </figure>
+      </section>
+
       <!-- ======================================================== FAMILIES -->
       <section class="section" id="capabilities" aria-labelledby="fam-title">
         <div class="section__head" data-reveal>

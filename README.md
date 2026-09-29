@@ -538,6 +538,61 @@ rest. Full catalog: [Workflow Reference](docs/WORKFLOWS.md).
 | ⚡ `ulw-perf` | Measures where it is actually slow or expensive, then fixes one hot path at a time. |
 <!-- omh:ulw-inventory:end -->
 
+### Recommended set
+
+Type these at the Hermes prompt. The `ulw-` prefix picks the workflow; the
+rest is your request in plain words.
+
+**1. Shape it.** `ulw-interview` when the idea is still fuzzy, `ulw-plan` when
+the change is known but risky.
+
+```text
+❯ ulw-interview: I want a CLI that tracks the ISS and warns me before it passes overhead
+❯ ulw-plan: analyze this project's circular dependencies and plan the refactor
+```
+
+**2. Build it.** `ulw-work` runs the accepted plan in parallel lanes that never
+edit the same file.
+
+```text
+❯ ulw-work: run the accepted plan
+```
+
+**3. Finish it.** `ulw-loop` keeps cycling until the gate you name passes.
+
+```text
+❯ ulw-loop: keep going until npm test passes
+```
+
+<p align="center">
+  <img src="assets/omh-terminal-ulw-plan-refactor.png" alt="Hermes TUI answering a ulw-plan prompt on a small JavaScript project: the target dependency graph with no cycles, rejected options, six lanes in dependency order, acceptance criteria, the plan checklist, and the [OMH] HUD line at the bottom" width="900">
+</p>
+
+<p align="center">
+  <img src="assets/omh-slack-ulw-interview.png" alt="Illustration of a Slack thread: a user posts a ulw-interview prompt about an ISS pass-warning CLI and the Hermes app replies in the thread with round 1 of 6, a clarity score, and one question with four options; the reply text is the real one from the TUI run" width="900">
+  <br><sub>A real ulw-interview reply, as it reads in a Slack thread (illustration)</sub>
+</p>
+
+<p align="center">
+  <img src="assets/omh-slack-ulw-work.png" alt="Illustration of a Slack thread built from a real ulw-work run: Hermes locks six lanes, one row per lane with the model-vendor glyph, the routed category and the model (the first Lane A attempt on claude-fable-5-1 failed with HTTP 400 and was re-dispatched on kimi-k3-ultrafast; lanes B to E ran on kimi-k3-ultrafast; Lane F ran on Hermes' own deepseek model), then the before/after dependency-check summary" width="900">
+  <br><sub>A real ulw-work run, as it reads in a Slack thread (illustration): one row per lane with its routed category and model, colored by model vendor</sub>
+</p>
+
+### Hand work to Claude Code and Codex
+
+Once you have named the coding agent, `ulw-maestro` builds each prompt from
+that agent's own installed skills, dispatches it, and adds a row per unit to
+the OMH HUD with a session you can resume and steer. It never picks the agent
+for you, and it never merges.
+
+```text
+❯ ulw-maestro: send the retry-queue fix to Claude Code and the lint cleanup to Codex, dispatch both now
+```
+
+<p align="center">
+  <img src="assets/omh-ulw-maestro-dispatch.svg" alt="Illustration: ulw-maestro dispatching one unit to Claude Code (orange) and one to Codex (gray), with a resume handle per unit and both rows in the OMH HUD" width="900">
+</p>
+
 <br>
 
 ## What OMH Adds

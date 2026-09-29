@@ -430,6 +430,60 @@ Do not replace the resolved SHA with main. Execute the pinned protocol's OS-appr
 | ⚡ `ulw-qa` | 일부러 험한 시나리오로 공격해 보고, 깨지는 곳을 고칩니다. |
 | ⚡ `ulw-perf` | 어디가 진짜 느리고 비싼지 측정한 뒤, 핫패스를 하나씩 고칩니다. |
 
+### 추천 조합
+
+Hermes 프롬프트에 이렇게 입력합니다. `ulw-` 접두어가 workflow를 고르고,
+나머지는 평범한 말로 쓴 요청입니다.
+
+**1. 모양 잡기.** 아이디어가 아직 흐릿하면 `ulw-interview`, 바꿀 내용은
+정해졌지만 위험하면 `ulw-plan`.
+
+```text
+❯ ulw-interview: I want a CLI that tracks the ISS and warns me before it passes overhead
+❯ ulw-plan: analyze this project's circular dependencies and plan the refactor
+```
+
+**2. 만들기.** `ulw-work`가 승인된 계획을 같은 파일을 건드리지 않는 병렬
+레인으로 실행합니다.
+
+```text
+❯ ulw-work: run the accepted plan
+```
+
+**3. 끝내기.** `ulw-loop`는 지정한 게이트가 통과할 때까지 계속 돕니다.
+
+```text
+❯ ulw-loop: keep going until npm test passes
+```
+
+<p align="center">
+  <img src="assets/omh-terminal-ulw-plan-refactor.png" alt="작은 JavaScript 프로젝트에서 ulw-plan 프롬프트에 답하는 Hermes TUI: 순환이 없는 목표 의존성 그래프, 기각한 선택지, 의존 순서대로 놓인 여섯 레인, 수용 기준, 계획 체크리스트, 하단의 [OMH] HUD 줄" width="900">
+</p>
+
+<p align="center">
+  <img src="assets/omh-slack-ulw-interview.png" alt="Slack 스레드 일러스트: 사용자가 ISS 통과 알림 CLI에 대한 ulw-interview 프롬프트를 올리고, Hermes 앱이 스레드에서 6라운드 중 1라운드, 명확도 점수, 선택지 네 개가 달린 질문 하나로 답합니다. 답변 문구는 TUI 실행에서 나온 실제 답변입니다" width="900">
+  <br><sub>실제 ulw-interview 답변을 Slack 스레드에서 본 모습 (일러스트)</sub>
+</p>
+
+<p align="center">
+  <img src="assets/omh-slack-ulw-work.png" alt="실제 ulw-work 실행으로 만든 Slack 스레드 일러스트: Hermes가 여섯 레인을 확정하고, 레인마다 모델 벤더 글리프, 라우팅된 카테고리, 모델을 한 줄로 보여줍니다(첫 Lane A 시도는 claude-fable-5-1에서 HTTP 400으로 실패해 kimi-k3-ultrafast로 재디스패치, B~E는 kimi-k3-ultrafast, F는 Hermes 자신의 deepseek 모델). 마지막에 의존성 검사 전후 요약이 나옵니다" width="900">
+  <br><sub>실제 ulw-work 실행을 Slack 스레드에서 본 모습 (일러스트): 레인마다 라우팅된 카테고리와 모델을 한 줄로, 모델 벤더별 색으로 표시</sub>
+</p>
+
+### Claude Code와 Codex에 일 맡기기
+
+코딩 에이전트를 직접 지정하면 `ulw-maestro`가 그 에이전트에 설치된 스킬로
+프롬프트를 구성해 디스패치하고, 유닛마다 이어서 조종할 수 있는 세션과 함께
+OMH HUD에 행을 추가합니다. 에이전트를 대신 고르지 않고, 머지도 하지 않습니다.
+
+```text
+❯ ulw-maestro: send the retry-queue fix to Claude Code and the lint cleanup to Codex, dispatch both now
+```
+
+<p align="center">
+  <img src="assets/omh-ulw-maestro-dispatch.svg" alt="일러스트: ulw-maestro가 유닛 하나는 Claude Code(주황)에, 하나는 Codex(회색)에 디스패치하고, 유닛별 재개 핸들과 OMH HUD의 두 행을 보여줍니다" width="900">
+</p>
+
 <br>
 
 ## OMH가 더하는 것
