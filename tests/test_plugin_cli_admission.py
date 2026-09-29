@@ -40,7 +40,7 @@ class PluginCliAdmissionTests(unittest.TestCase):
             )
 
     def test_maintenance_cli_starts_with_supported_and_unsupported_hosts(self) -> None:
-        for version in ("0.21.0", "0.22.0", "0.21.1"):
+        for version in ("0.21.0", "0.22.0", "0.21.1", "0.30.0"):
             for command in (["--help"], ["doctor"], ["update", "--help"]):
                 with self.subTest(version=version, command=command):
                     result = self.run_with_host(version, ["-m", "omh.cli", *command])
@@ -62,7 +62,7 @@ from omh.plugin_bundle.omh.host_compat import parse_range
 from omh.plugin_bundle.omh.metadata import PROVIDED_TOOLS
 
 assert SPECIALIST_DOMAIN_TRIGGERS and PROVIDED_TOOLS
-assert parse_range(">=0.21.1,<0.22.0")
+assert parse_range(">=0.21.1")
 
 class UntouchedContext:
     def __getattr__(self, name):
@@ -75,7 +75,7 @@ except RuntimeError:
 else:
     raise AssertionError("unsupported host registered")
 """
-        for version in ("0.21.0", "0.22.0"):
+        for version in ("0.21.0", "0.20.9"):
             with self.subTest(version=version):
                 result = self.run_with_host(version, ["-c", script])
                 self.assertEqual(result.returncode, 0, result.stderr)
@@ -122,12 +122,14 @@ else:
     def test_admission_reads_the_release_a_stamp_less_checkout_resolves(self) -> None:
         # The "0.0.0" placeholder is what a git checkout without an install
         # stamp reports as `__version__`; the release comes from version_info.
-        result = self.run_register_with_stamped_host("0.0.0", "0.21.5")
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(json.loads(result.stdout), {"admitted": True})
+        for release in ("0.21.5", "0.22.0", "0.30.0"):
+            with self.subTest(release=release):
+                result = self.run_register_with_stamped_host("0.0.0", release)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(json.loads(result.stdout), {"admitted": True})
 
     def test_admission_still_refuses_an_unsupported_release_behind_a_stamp(self) -> None:
-        for stamp, release in (("0.21.5", "0.22.0"), ("0.0.0", "0.21.0"), ("0.0.0", "unknown")):
+        for stamp, release in (("0.21.5", "0.21.0"), ("0.0.0", "0.21.0"), ("0.0.0", "unknown")):
             with self.subTest(stamp=stamp, release=release):
                 result = self.run_register_with_stamped_host(stamp, release)
                 self.assertEqual(result.returncode, 0, result.stderr)

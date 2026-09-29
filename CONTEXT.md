@@ -354,8 +354,9 @@ creation, so a TUI nobody has prompted in is named by no entry.
 This is a read-only coupling to a Hermes-private file shape, and part of the
 plugin's compatibility surface alongside the hooks and tools:
 `requires_hermes` in `src/plugin_bundle/omh/plugin.yaml` currently reads
-`">=0.21.1,<0.22.0"`, and widening that range now includes checking that the
-file, both field names, and the `surface` value still hold. If the shape
+`">=0.21.1"` (a floor only, so a new Hermes minor does not delist the
+plugin), and testing OMH against a new Hermes release includes checking that
+the file, both field names, and the `surface` value still hold. If the shape
 moves, the read must go quiet and the reference stay its own identity — never
 fall back to guessing which session is reading.
 _Avoid_: writing to it, treating it as a published API, reading a non-`tui`

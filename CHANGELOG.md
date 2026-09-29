@@ -4,6 +4,20 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **The plugin declares a Hermes floor, not a window.** `requires_hermes` is
+  now `">=0.21.1"`, and the in-process admission gate reads the same value, so
+  a new Hermes minor release no longer skips or refuses the plugin. Hosts older
+  than 0.21.1 are still refused before registration.
+- **`omh_gather_evidence` runs only inside the host working directory.**
+  `project_root` (and so `workdir`) must resolve to the host's working
+  directory or a path inside it, symlinks included. After a `-m unittest`
+  prefix only reporting flags (`-v`, `-q`, `-f`, `-b`, `-c`, `--locals`,
+  `-k PATTERN`) may follow, so `discover`, `-s`, `-t`, `-p`, and model-named
+  modules are refused; `git diff` refuses `--output`, `--ext-diff`,
+  `--textconv`, and `--no-index`. The `uv run` prefixes are gone from the
+  shipped allowlist, because `uv run` syncs and builds the project environment
+  before the named command starts.
+
 - **The Ultra-Skills section shows how to use the `ulw-` workflows.** Every
   README (en/ko/ja/zh) and the site now carry a recommended set of prompts
   typed at the Hermes prompt: `ulw-interview` or `ulw-plan` to shape the work,

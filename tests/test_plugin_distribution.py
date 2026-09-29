@@ -89,9 +89,12 @@ class PluginHermesCompatRangeTests(unittest.TestCase):
         from omh.plugin_bundle.omh.host_compat import declared_range, parse_range, version_satisfies
 
         requirement = declared_range(self.plugin_yaml)
-        self.assertEqual(requirement, ">=0.21.1,<0.22.0")
+        # A floor only: Hermes skips a plugin whose range excludes the running
+        # host, so an upper bound would delist the plugin on the next minor.
+        self.assertEqual(requirement, ">=0.21.1")
         self.assertTrue(parse_range(requirement))
-        for version, supported in (("0.21.1", True), ("0.21.0", False), ("0.22.0", False)):
+        for version, supported in (("0.21.1", True), ("0.21.5", True), ("0.22.0", True), ("0.30.0", True),
+                                   ("1.0.0", True), ("0.21.0", False), ("0.20.9", False)):
             with self.subTest(version=version):
                 self.assertEqual(version_satisfies(version, requirement), supported)
         inspection = inspect_plugin_bundle(self.paths)
@@ -179,7 +182,7 @@ class PluginHermesCompatMatrixTests(unittest.TestCase):
             ):
                 findings = plugin_compat.compat_matrix_drift()
                 self.assertTrue(findings)
-                self.assertTrue(all(">=0.21.1,<0.22.0" in finding for finding in findings))
+                self.assertTrue(all('">=0.21.1"' in finding for finding in findings))
                 if matrix:
                     self.assertIn("0.20.0", " ".join(findings))
                 root = Path(tmp)
@@ -209,12 +212,12 @@ class PluginHermesCompatMatrixTests(unittest.TestCase):
         from omh.install import plugin_compat
 
         matrix = tuple({**plugin_compat.HERMES_COMPAT_MATRIX[0], "version": version}
-                       for version in ("0.20.0", "0.21.1", "0.22.0"))
+                       for version in ("0.20.0", "0.21.1", "0.21.0"))
         with mock.patch.object(plugin_compat, "HERMES_COMPAT_MATRIX", matrix):
             findings = plugin_compat.compat_matrix_drift()
         self.assertEqual(len(findings), 2)
         self.assertIn("0.20.0", findings[0])
-        self.assertIn("0.22.0", findings[1])
+        self.assertIn("0.21.0", findings[1])
 
 
 class PluginHermesAdmissionTests(unittest.TestCase):
@@ -226,7 +229,7 @@ class PluginHermesAdmissionTests(unittest.TestCase):
                 sys.modules.pop(name, None)
 
     def test_in_process_admission_rejects_before_register(self) -> None:
-        for version in ("0.21.0", "0.22.0", "1.0.0", None, "invalid"):
+        for version in ("0.21.0", "0.20.9", "0.0.0", None, "invalid"):
             host = ModuleType("hermes_cli")
             if version is not None:
                 host.__version__ = version
@@ -242,7 +245,9 @@ class PluginHermesAdmissionTests(unittest.TestCase):
         from omh.install.plugin_pack import _register_smoke
         from omh.plugin_bundle.omh.host_compat import admission_error
 
-        self.assertIsNone(admission_error("0.21.1", self.bundle / "plugin.yaml"))
+        for version in ("0.21.1", "0.22.0", "0.30.0"):
+            with self.subTest(version=version):
+                self.assertIsNone(admission_error(version, self.bundle / "plugin.yaml"))
         host = ModuleType("hermes_cli")
         host.__version__ = "0.21.1"
         with patch_modules({"hermes_cli": host}):
@@ -275,7 +280,7 @@ class PluginHermesAdmissionTests(unittest.TestCase):
 
         canaries = ("sk-fixture-secret", "private prompt fixture", "/outside/plugin/private")
         host = ModuleType("hermes_cli")
-        host.__version__ = "0.22.0"
+        host.__version__ = "0.21.0"
         with mock.patch.dict(os.environ, dict(zip(("API_KEY", "PROMPT", "PRIVATE_PATH"), canaries))), \
                 patch_modules({"hermes_cli": host}):
             plugin = load_installed_plugin(self.bundle)
@@ -283,8 +288,8 @@ class PluginHermesAdmissionTests(unittest.TestCase):
                 plugin.register(FakeHermesContext())
         error = str(raised.exception)
         self.assertRegex(error, r'^omh plugin requires Hermes "[^"\n]+"; running Hermes \d+\.\d+\.\d+$')
-        self.assertIn(">=0.21.1,<0.22.0", error)
-        self.assertIn("0.22.0", error)
+        self.assertIn('">=0.21.1"', error)
+        self.assertIn("running Hermes 0.21.0", error)
         self.assertLessEqual(len(error), 300)
         for canary in canaries:
             self.assertNotIn(canary, error)
@@ -1322,6 +1327,11 @@ print(json.dumps(observed, ensure_ascii=False))
             self.assertFalse(context_brief["message"]["raw_prompt_echoed"])
             self.assertNotIn("secret-token-123", json.dumps(context_brief, sort_keys=True))
 
+            # The probe is bounded to the host working directory; bind it to this fixture.
+            installed_runtime_paths = __import__(f"{module.__name__}.runtime_paths", fromlist=["runtime_cwd"])
+            cwd_patch = mock.patch.object(installed_runtime_paths, "runtime_cwd", return_value=root)
+            cwd_patch.start()
+            self.addCleanup(cwd_patch.stop)
             evidence_handler = ctx.tools["omh_gather_evidence"]["args"][2]
             evidence = json.loads(
                 evidence_handler(

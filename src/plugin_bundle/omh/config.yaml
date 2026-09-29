@@ -10,7 +10,8 @@ group_chat_activity:
 claim_boundary: "Prepared handoffs are not execution, review, CI, merge-readiness, or merge evidence."
 evidence:
   # Token-prefix allowlist for explicit local verification probes.
-  # These commands are run with shell=False and bounded to the requested project_root.
+  # These commands are run with shell=False and bounded to a project_root that is the
+  # host working directory or inside it; `-m unittest` takes only reporting flags.
   allowlist_prefixes:
     - "omh --help"
     - "omh doctor"
@@ -24,8 +25,4 @@ evidence:
     - "python3 -m unittest"
     - "python -m compileall"
     - "python3 -m compileall"
-    - "uv run python -m unittest"
-    - "uv run python -m compileall"
-    - "uv run python -m omh.cli docs workflows --check"
-    - "uv run python -m omh.cli harness validate"
     - "git diff --check"
