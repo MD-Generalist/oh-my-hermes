@@ -20,7 +20,12 @@ from omh.commands import setup as setup_commands
 from omh.commands.main import build_parser
 from omh.commands.language import LANGUAGE_CODES, MESSAGES
 from omh.capabilities.families import CONCEPTUAL_WORKFLOW_SURFACES, capability_family_projection
-from omh.config_adapter import ensure_external_dir, external_dirs
+from omh.config_adapter import (
+    ensure_external_dir,
+    external_dirs,
+    remove_childless_containers,
+    remove_plugin_omh_home,
+)
 from omh.maintenance.doctor import _identity_conflicts_check
 from omh.maintenance.update_check import DEFAULT_UPDATE_CHECK_MODE
 from omh.paths import resolve_paths
@@ -12845,6 +12850,8 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
                     "display.skin",
                     "memory.provider",
                     "plugins.enabled",
+                    # Written because this store is not `~/.omh` (#1960).
+                    "plugins.entries.omh.settings.omh_home",
                 },
             )
             self.assertEqual(config_path.read_text(encoding="utf-8"), after_setup)
@@ -12875,6 +12882,16 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
             self.assertIn("hermes_config_writes", state)
             del state["hermes_config_writes"]
             state_path.write_text(json.dumps(state), encoding="utf-8", newline="")
+            # Nor did such an install name its store to the plugin: setup has
+            # written `plugins.entries.omh.settings.omh_home` only since #1960,
+            # and without a record that value is kept as the person's.
+            unbound = remove_plugin_omh_home(config_path.read_text(encoding="utf-8"), omh_home.resolve().as_posix())
+            self.assertTrue(unbound.changed, unbound.message)
+            config_path.write_text(
+                remove_childless_containers(unbound.text, ["plugins.entries"]).text,
+                encoding="utf-8",
+                newline="",
+            )
 
             status, stdout, stderr = run_cli(base + ["uninstall"])
 

@@ -48,11 +48,13 @@ from ..config_adapter import (
     display_skin_selection,
     ensure_omh_skin,
     ensure_plugin_enabled,
+    ensure_plugin_omh_home,
     ensure_tui_interface,
     external_dir_registered,
     external_dirs,
     maybe_set_memory_provider,
     memory_provider_selection,
+    plugin_omh_home_setting,
     read_config,
     remove_external_dir,
     update_config,
@@ -97,6 +99,7 @@ from ..menubar_app import is_managed_menubar_install, setup_menubar_app, uninsta
 from ..mcp.host_config import install_mcp_host_config
 from ..mcp_bridge import MCP_HOST_CONFIG_RECIPE_HOSTS
 from ..paths import OmhPaths, managed_command_venv_dir, managed_current_workflow_pack_dir, managed_generation_for_executable
+from ..plugin_bundle.omh import runtime_paths
 from ..plugin_bundle.omh.metadata import MEMORY_PROVIDER_NAME
 from ..plugin_bundle.omh.provider_detection import (
     LINKED_SOURCE_CONFIG,
@@ -617,7 +620,7 @@ def _sync_hermes_profiles(args: argparse.Namespace) -> list[dict[str, object]]:
                 entry["plugin_update_command"] = HERMES_PLUGIN_UPDATE_COMMAND
             install_tui_widget(profile_paths.hermes_home, dry_run=bool(args.dry_run))
             install_skin(profile_paths.hermes_home, dry_run=bool(args.dry_run))
-            applied = _apply_result(clone)
+            applied = _apply_result(clone, bind_omh_home=False)
             entry["registration"] = applied["registration"]
             entry["retired_external_dirs"] = applied["retired_external_dirs"]
             entry["registered_dir"] = applied["registered_dir"]
@@ -1936,8 +1939,17 @@ def cmd_apply(args: argparse.Namespace) -> int:
     return 0
 
 
-def _apply_result(args: argparse.Namespace) -> dict[str, object]:
+def _apply_result(args: argparse.Namespace, *, bind_omh_home: bool = True) -> dict[str, object]:
+    """Write every managed key into this home's Hermes config, in one mutation.
+
+    `bind_omh_home` is off only for a bot-profile home: there the store is
+    the profile's own choice, through its `settings.omh_home` or its `.env`
+    `OMH_HOME` (#1679), and a setting written here would outrank the second.
+    """
     paths = _paths(args)
+    # The store the plugin in this home would bind with nothing naming one.
+    # The default install reaches it already and stays byte-identical.
+    binds_by_default = paths.omh_home == runtime_paths.unset_launch_omh_home(paths.hermes_home)
     memory_mode = str(getattr(args, "memory_mode", "") or "") or "review-first"
     # One mutation, run against the text `update_config` just read and run
     # again on a retry, so a route write landing mid-pass makes this pass
@@ -2039,6 +2051,20 @@ def _apply_result(args: argparse.Namespace) -> dict[str, object]:
         # have it. Claims the slot only when it is free; `set_memory_provider`
         # refuses when another product holds it, because Hermes runs exactly one.
         memory_provider = maybe_set_memory_provider(display_sections.text, MEMORY_PROVIDER_NAME, memory_mode)
+        # Last, and unset-only. Without it the plugin in a home installed at
+        # any store but `~/.omh` binds `~/.omh` unless Hermes is started
+        # with `OMH_HOME` exported, and reads another install's manifest
+        # (#1960).
+        if bind_omh_home and not binds_by_default:
+            plugin_omh_home = ensure_plugin_omh_home(memory_provider.text, paths.omh_home)
+        else:
+            plugin_omh_home = ConfigChange(
+                False,
+                "the plugin binds this store without a setting"
+                if binds_by_default
+                else "a bot profile names its own store",
+                memory_provider.text,
+            )
         applied.update(
             {
                 "external_dir": change,
@@ -2048,12 +2074,13 @@ def _apply_result(args: argparse.Namespace) -> dict[str, object]:
                 "skin_active": skin_active,
                 "display_sections": display_sections,
                 "memory_provider": memory_provider,
+                "plugin_omh_home": plugin_omh_home,
             }
         )
         return ConfigChange(
             any(step.changed for step in applied.values()) or bool(retired_external_dirs),
             change.message,
-            memory_provider.text,
+            plugin_omh_home.text,
         )
 
     try:
@@ -2070,6 +2097,7 @@ def _apply_result(args: argparse.Namespace) -> dict[str, object]:
     skin_active = applied["skin_active"]
     display_sections = applied["display_sections"]
     memory_provider = applied["memory_provider"]
+    plugin_omh_home = applied["plugin_omh_home"]
     # The record of what this pass added, carried forward from any earlier
     # one. `omh uninstall` reads it to reverse exactly the keys OMH wrote and
     # leave every value the person has since changed; without it, three of
@@ -2078,7 +2106,7 @@ def _apply_result(args: argparse.Namespace) -> dict[str, object]:
     state_before, _state_error = read_state_result(paths)
     config_writes = managed_config_writes(
         current,
-        memory_provider.text,
+        plugin_omh_home.text,
         config_path=paths.hermes_config_path,
         previous=(state_before or {}).get(MANAGED_CONFIG_WRITES_STATE_KEY),
     )
@@ -2105,6 +2133,7 @@ def _apply_result(args: argparse.Namespace) -> dict[str, object]:
             or skin_active.changed
             or display_sections.changed
             or memory_provider.changed
+            or plugin_omh_home.changed
         ),
         "message": change.message,
         "config": str(paths.hermes_config_path),
@@ -2144,6 +2173,11 @@ def _apply_result(args: argparse.Namespace) -> dict[str, object]:
             "changed": memory_provider.changed,
             "message": memory_provider.message,
             "selected": memory_provider_selection(memory_provider.text),
+        },
+        "plugin_omh_home": {
+            "changed": plugin_omh_home.changed,
+            "message": plugin_omh_home.message,
+            "selected": plugin_omh_home_setting(plugin_omh_home.text),
         },
         "managed_config_writes": config_writes,
     }

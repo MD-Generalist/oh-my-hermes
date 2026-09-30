@@ -1423,7 +1423,10 @@ class ManagedWorkflowRegistrationTests(unittest.TestCase):
             applied: list[Namespace] = []
             captured_results: list[dict[str, object]] = []
 
-            def apply_result(profile_args: Namespace) -> dict[str, object]:
+            def apply_result(profile_args: Namespace, *, bind_omh_home: bool = True) -> dict[str, object]:
+                # A profile keeps its own store choice (#1679), so the sync
+                # never asks for the primary's binding to be written (#1960).
+                self.assertFalse(bind_omh_home)
                 applied.append(profile_args)
                 # The three keys the sync copies onto the profile row; the
                 # real `_apply_result` always returns them (#1857).

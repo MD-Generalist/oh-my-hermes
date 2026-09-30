@@ -25,6 +25,14 @@ plugins:
         omh_home: ~/omh-stores/profile-a
 ```
 
+`omh setup --omh-home X` writes this setting into the Hermes home it
+installs when X is not `~/.omh`, so the plugin loaded there binds X without
+`OMH_HOME` exported to Hermes; `omh update` adds it to an existing install,
+and `omh uninstall` removes it while it still names X. A value already there
+is never replaced, and a bot profile's config is never given one: its store
+stays its own choice. `omh doctor` warns (`plugin_omh_home_binding`) when the
+plugin in the Hermes home would bind a store other than the one it checked.
+
 Two trusted profiles may explicitly name the same directory. That shares OMH
 records and home-wide ledgers; it does not make them separate stores. Existing
 memory principal/admission checks still apply within shared stores. Different
