@@ -216,7 +216,10 @@ class EfficiencyContractTests(unittest.TestCase):
         # 72,000 -> 74,000: the tail sentence grew to carry the reply rule
         # (user's words, host's voice, record terms stay in records); the
         # ten core bodies measure 72,222.
-        self.assertLess(core["skill_body"]["bytes"], 74_000)
+        # 74,000 -> 76,000: the same sentence names the user's language and
+        # what the persona owns (tone, speech level, endings, progress
+        # updates); the ten core bodies measure 74,195.
+        self.assertLess(core["skill_body"]["bytes"], 76_000)
         # 815,000 -> 825,000: one new installable body (`web-research`) plus the
         # sentence that split `best-practice-research`'s boundary in two. Set to
         # restore the ~10k headroom this gate is meant to carry rather than to
@@ -411,7 +414,10 @@ class EfficiencyContractTests(unittest.TestCase):
         # host's voice, these lines never quoted); the rail sat at 897.
         # 1050 -> 1260: one line scoping OMH skills to requested work; the
         # rail measured 1253.
-        self.assertLessEqual(len(primer_context), 1260)
+        # 1260 -> 1380: the reply line names the language, speech level and
+        # endings, and progress updates the persona owns; the rail measured
+        # 1377.
+        self.assertLessEqual(len(primer_context), 1380)
         self.assertLessEqual(len(awareness_primer_markdown()), AWARENESS_PRIMER_MARKDOWN_CHAR_LIMIT)
         self.assertLessEqual(max(workflow_context_lengths.values()), AWARENESS_WORKFLOW_CONTEXT_CHAR_LIMIT)
         self.assertIn("Hermes-native workflow", primer_context)
@@ -439,6 +445,20 @@ class EfficiencyContractTests(unittest.TestCase):
         # the compact one every turn, the markdown one in skills and docs.
         self.assertIn("never quoted to the user", awareness_primer_markdown())
         self.assertIn("never quoted to the user", awareness_primer_context())
+        # The reply rule names what the persona owns, not only "the host's own
+        # voice": that phrase alone left a casual-register Korean persona
+        # answering in English in its interim progress lines (miku,
+        # 2026-09-30). Language, speech level and endings, progress updates,
+        # and OMH's structure-only role each have to survive an edit.
+        for primer in (awareness_primer_markdown(), awareness_primer_context()):
+            for fragment in (
+                "Reply in the user's language",
+                "SOUL.md persona owns tone, speech level, and sentence endings",
+                "progress updates included",
+                "OMH shapes structure and content only",
+            ):
+                with self.subTest(fragment=fragment):
+                    self.assertIn(fragment, primer)
         self.assertEqual(combined.count("## Workflow Lane"), len(workflow_skill_names))
         self.assertEqual(combined.count("## OMH Awareness Primer"), 1)
         common_rail = next(

@@ -128,8 +128,16 @@ CONCEPTUAL_AWARENESS_SURFACES = ("request-to-handoff", "executor selection", "co
 # compact rail measured 1253 after the line (re-derived from the producer,
 # standing headroom kept as above). Paid once per session, in the system
 # prompt section.
-AWARENESS_PRIMER_CONTEXT_CHAR_LIMIT = 1260
-AWARENESS_PRIMER_MARKDOWN_CHAR_LIMIT = 3400
+# 1260 -> 1380 and 3400 -> 3460: the reply line names what the persona owns
+# -- the user's language, tone, speech level and sentence endings, progress
+# updates included -- and says OMH shapes structure and content only. "The
+# host's own voice" alone named none of them, and a casual-register Korean
+# persona (miku, deepseek-v4.1-flash-ultrafast, 2026-09-30) kept its voice in
+# the final answer while 13 of 17 interim progress lines in one session came
+# out in English. The compact rail measured 1377 and the markdown 3452
+# (re-derived from the producers, standing headroom kept as above).
+AWARENESS_PRIMER_CONTEXT_CHAR_LIMIT = 1380
+AWARENESS_PRIMER_MARKDOWN_CHAR_LIMIT = 3460
 AWARENESS_WORKFLOW_CONTEXT_CHAR_LIMIT = 1500
 ROLE_CONTEXT_CHAR_LIMIT = 2600
 # Per-request budgets: text Hermes can send on every turn of a session with OMH
@@ -278,7 +286,12 @@ PRE_LLM_CALL_CONTEXT_CHAR_LIMIT = 5662
 # producer.
 # 6902 -> 6917: the same +15 from the work-context openings. Re-derived
 # from the producer.
-PRE_LLM_CALL_CONTEXT_FALLBACK_CHAR_LIMIT = 6917
+# 6917 -> 7041: the primer's reply line now names the language, speech level,
+# endings, and progress updates the persona owns (+124 with its join), and it
+# rides the fenced context on this fallback. The section-host limit above does
+# not move: nothing new is injected per turn there. Re-derived from the
+# producer.
+PRE_LLM_CALL_CONTEXT_FALLBACK_CHAR_LIMIT = 7041
 # 340000 -> 349637: three capability-skill sections were added by the domain
 # skill pack (`backend`, `rust`, `native-debugging`), on top of the
 # `llm-app-dev` section that landed on main under the old ceiling. Each section

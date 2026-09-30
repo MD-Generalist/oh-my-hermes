@@ -1171,9 +1171,13 @@ class RouterContentTests(unittest.TestCase):
             # refusal; every skill carries the sentence because every skill
             # has a stop condition.
             "offer the next action as a question rather than declaring what will not be done",
-            # The reply is written in the user's words and the host's voice;
-            # OMH's record vocabulary stays in records and tool calls.
-            "the host's own voice",
+            # The reply is written in the user's language and the host's
+            # voice, the persona owns speech level and endings in progress
+            # updates too, and OMH's record vocabulary stays in records and
+            # tool calls.
+            "Reply in the user's language and own words, in the host's own voice",
+            "tone, speech level, and sentence endings, progress updates included",
+            "OMH shapes structure and content only",
         )
         templates = {template.name: template.content for template in builtin_skill_templates()}
         rendered_files = {

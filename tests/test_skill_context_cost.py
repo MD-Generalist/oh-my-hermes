@@ -38,7 +38,11 @@ class SkillContextCostTests(unittest.TestCase):
         # member list is stamped into every lane body; with `release-cut` and
         # `agent-instructions` already there, repeated bytes measure 111,136.
         # ~2.5% headroom kept.
-        self.assertLess(profile["repeated"]["bytes"], 114_000)
+        # 114,000 -> 119,000: the tail reply rule now names the user's
+        # language and what the persona owns (tone, speech level, endings,
+        # progress updates) on every body; repeated bytes measure 116,378.
+        # ~2.3% headroom kept.
+        self.assertLess(profile["repeated"]["bytes"], 119_000)
 
     def test_ulw_context_reports_bounded_static_body_and_progressive_references(self) -> None:
         payload = skill_context_cost_payload()
