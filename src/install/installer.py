@@ -15,6 +15,7 @@ from ..paths import (
     command_entry_belongs_to_managed_install,
     managed_command_bin_dir,
     managed_command_current_dir,
+    managed_current_workflow_pack_dir,
     managed_command_generations_dir,
     managed_command_self_update_state_path,
     managed_command_filenames,
@@ -181,7 +182,7 @@ def install_skill_pack(
         # serving `name: ultrawork` long after the catalog had moved to
         # `ulw-ultrawork`. Shedding full-only skills stays an explicit act -
         # `omh skill-profile reconcile --to core`.
-        installed = _installed_skill_names(paths.skills_dir)
+        installed = _installed_skill_names(paths.skills_dir) | _active_generation_skill_names(paths.skills_dir)
         refreshable = {
             template.name
             for template in all_templates
@@ -394,6 +395,33 @@ def _remove_empty_category_directories(skills_dir: Path) -> None:
         if any(entry.iterdir()):
             continue
         entry.rmdir()
+
+
+def _active_generation_skill_names(skills_dir: Path) -> set[str]:
+    """Skills the active generation serves, when ``skills_dir`` is a new one.
+
+    A staged `omh update` renders into a fresh, empty candidate generation and
+    only then switches the shared `current` pointer to it. Reading the refresh
+    set from the candidate alone therefore saw nothing installed, so a core
+    install silently lost every full-only skill it had kept (the nine ULW
+    engines, for one) although update never narrows an install. The pack
+    behind `current` is what the host serves right now, so it is the install
+    this update has to carry forward.
+    """
+    # Only a pack inside a managed generation has a predecessor behind
+    # `current`; a named `--omh-home` or project pack is its own install.
+    generations = managed_command_generations_dir()
+    current = managed_current_workflow_pack_dir()
+    if generations is None or current is None or not current.is_dir():
+        return set()
+    try:
+        if skills_dir.resolve().parent.parent != generations.resolve():
+            return set()
+        if current.resolve() == skills_dir.resolve():
+            return set()
+    except OSError:
+        return set()
+    return _installed_skill_names(current)
 
 
 def _installed_skill_names(skills_dir: Path) -> set[str]:
