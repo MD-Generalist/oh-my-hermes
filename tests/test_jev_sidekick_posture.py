@@ -1156,6 +1156,7 @@ def _group_member_names(paths: OmhPaths, group_name: str) -> list[str]:
             "skill_freshness",
             "skills_dir",
             "skill:",
+            "route_hint_skills",
             "guidance_projection",
         ),
         "runtime": ("runtime_artifacts", "workflow_state", "runtime_state"),

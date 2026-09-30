@@ -27,7 +27,7 @@ from ..local_store import can_write_dir, read_json_object
 from ..install.guidance_projection import build_guidance_projection_status, catalog_revision
 from ..install.hook_integrity import HOOK_HOST_TARGET, VALID_HOOK_EVENTS, build_hook_integrity_status
 from ..install.identity_conflicts import build_identity_conflict_report
-from ..install.installer import installed_skill_directories
+from ..install.installer import installed_skill_directories, installed_skill_names
 from ..install.plugin_bundle_import_scan import describe_findings, scan_bundle_core_imports
 from ..install.plugin_loader_observation import observe_real_loader_registration
 from ..install.skill_registration import (
@@ -46,6 +46,8 @@ from ..paths import (
     managed_command_self_update_state_path,
     managed_current_workflow_pack_dir,
 )
+from ..plugin_bundle.omh.installed_skills import installed_skill_names as hint_installed_skill_names
+from ..plugin_bundle.omh.installed_skills import skill_not_installed
 from ..plugin_bundle.omh.memory_dreaming import read_dreaming_state, read_latest_consolidation
 from ..workflows.memory import (
     _OPEN_MAX_DAYS,
@@ -190,6 +192,7 @@ def run_doctor(paths: OmhPaths) -> list[Check]:
         )
         checks.append(_skill_freshness_check(paths, manifest))
     checks.append(Check("skills_dir", paths.skills_dir.exists(), f"{paths.skills_dir}"))
+    checks.append(_route_hint_skills_check(paths))
     runtime_writable = can_write_dir(paths.runtime_dir, probe_name=".doctor-write-test")
     checks.append(Check("runtime_artifacts", runtime_writable, f"{paths.runtime_dir} writable"))
     workflow_state_writable = can_write_dir(paths.workflow_state_dir, probe_name=".doctor-write-test")
@@ -2411,6 +2414,59 @@ def _skill_freshness_check(paths: OmhPaths, manifest: dict) -> Check:
         f"{len(stale)} managed skill(s) do not match the catalog this omh renders ({detail}): {listed}",
         remediation="Run `omh update` to regenerate the managed skills from the current package catalog.",
         next_action="Run `omh update`, then `omh doctor` again.",
+    )
+
+
+def _route_hint_skills_check(paths: OmhPaths) -> Check:
+    """Do the skills the per-turn route hint can name resolve to installed skills?
+
+    The plugin cuts the route hint and the skill-candidate line to the skills
+    the install manifest records (`plugin_bundle/omh/installed_skills.py`),
+    and falls back to the whole catalog when it cannot read that record. This
+    check asks the plugin's own reader, so it sees what the hint sees, and
+    compares the answer with the skill directories on disk. It fires when a
+    manifest is missing or unreadable beside a partial install, and when the
+    manifest still records a skill whose directory is gone (#1954): in both
+    the model is told to `skill_view` a name that returns not found.
+
+    A warning, not a block: the hint only suggests, and a model can recover
+    from a missing skill. Whether a running Hermes loaded a plugin that
+    filters at all is not observed here.
+    """
+    on_disk = set(installed_skill_names(paths.skills_dir))
+    if not on_disk:
+        return Check(
+            "route_hint_skills",
+            True,
+            f"no OMH skills installed under {paths.skills_dir}; nothing for route hints to name",
+            observed=False,
+        )
+    hint_view = hint_installed_skill_names(paths.omh_home)
+    catalog = [template.name for template in builtin_skill_templates()]
+    nameable = [name for name in catalog if not skill_not_installed(name, hint_view)]
+    missing = sorted(omh_skill_install_path(name).split("/")[-1] for name in nameable if name not in on_disk)
+    if not missing:
+        return Check(
+            "route_hint_skills",
+            True,
+            f"route hints can name {len(nameable)} skill(s), all installed",
+        )
+    listed = ", ".join(missing[:5]) + (", ..." if len(missing) > 5 else "")
+    if hint_view is None:
+        cause = (
+            f"the install manifest {paths.manifest_path} is missing or unreadable, so route hints fall back "
+            "to the whole catalog"
+        )
+    else:
+        cause = f"the install manifest {paths.manifest_path} records skills whose directories are gone"
+    return Check(
+        "route_hint_skills",
+        True,
+        f"{cause}; they can name {len(missing)} skill(s) that are not installed: {listed}",
+        severity="warning",
+        remediation="Run `omh update` to rewrite the install manifest from the skills on disk.",
+        next_action="Run `omh update`, then `omh doctor` again.",
+        detail={"not_installed": missing},
     )
 
 

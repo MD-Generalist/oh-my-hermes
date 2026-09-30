@@ -17,6 +17,7 @@ from ..awareness import (
     awareness_primer_context,
     awareness_route_hint,
     awareness_route_hint_context_from_payload,
+    route_hint_for_installed_skills,
 )
 from ..context_brief import build_context_brief
 from ..degradation import (
@@ -32,6 +33,7 @@ from ..awareness_delivery import claim_route_guidance_delivery, record_awareness
 from ..context_budget_plan import context_budget_continuation, render_context_budget
 from ..host_context import record_active_main_agent_model
 from ..host_observation import observe_plugin_hook_call
+from ..installed_skills import installed_skill_names
 from ..kanban_board_reader import conversation_session_ids, kanban_db_path, read_kanban_lanes
 from ..omh_roles import extract_role_marker, role_context_payload
 from ..dispatch_outcomes import unacknowledged_outcomes
@@ -560,10 +562,19 @@ def pre_llm_call(**kwargs) -> dict[str, object] | None:
     )
     message_matches_awareness = False
     degraded: list[tuple[str, str]] = []
+    # The skills this home installed. The route hint and the candidate line
+    # rank the whole catalog, and a `--core` home holds ten of its skills, so
+    # both are cut to this set before they are rendered (#1954). `None` --
+    # the set could not be read -- renders the whole catalog, as before.
+    # `route_hint_payload` itself stays unfiltered: its direct-invocation
+    # hint records that the person named a workflow, installed or not.
+    installed_skills = installed_skill_names(omh_home) if include_awareness else None
     if include_awareness:
         if is_first_turn:
             route_hint_payload = awareness_route_hint(request_message)
-            route_hint_context = awareness_route_hint_context_from_payload(route_hint_payload)
+            route_hint_context = awareness_route_hint_context_from_payload(
+                route_hint_for_installed_skills(route_hint_payload, installed_skills)
+            )
             message_matches_awareness = bool(route_hint_context)
             route_degradation = route_hint_payload.get("degradation")
             if isinstance(route_degradation, dict):
@@ -581,7 +592,9 @@ def pre_llm_call(**kwargs) -> dict[str, object] | None:
                 degraded.append((COMPONENT_LOCALIZED_ROUTING_TEXT, match_error))
         if message_matches_awareness and route_hint_payload is None:
             route_hint_payload = awareness_route_hint(request_message)
-            route_hint_context = awareness_route_hint_context_from_payload(route_hint_payload)
+            route_hint_context = awareness_route_hint_context_from_payload(
+                route_hint_for_installed_skills(route_hint_payload, installed_skills)
+            )
         if route_hint_context:
             route_fingerprint = hashlib.sha256(route_hint_context.encode("utf-8")).hexdigest()
             if not claim_route_guidance_delivery(
@@ -663,7 +676,9 @@ def pre_llm_call(**kwargs) -> dict[str, object] | None:
     # notice gets none. A session is shown a given candidate set once; the
     # line comes back only when the set changes.
     if include_awareness:
-        candidates = skill_candidates_for_turn(request_message, route_hint_payload=route_hint_payload)
+        candidates = skill_candidates_for_turn(
+            request_message, route_hint_payload=route_hint_payload, installed=installed_skills
+        )
         if claim_candidate_line(session_id, candidates):
             context_parts.append(skill_candidate_line(candidates))
 

@@ -4,6 +4,18 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **The per-turn route hint names only skills this install holds.** On a
+  `--core` install the `[OMH Route Hint]` block and the "Skills that may fit
+  this request" line ranked the whole catalog, so they told the model to
+  `skill_view` skills that were not on disk (`selected=workflow-learning`,
+  `omh-content-operator`). The plugin now reads the installed set from the
+  install manifest, cached on its mtime, and leaves out every catalog skill
+  the manifest does not record. A hint whose selected workflow is missing is
+  dropped and the next ranked hint becomes `selected=`; with none left, no
+  route block is sent. A full install, or a home whose manifest cannot be
+  read, renders the same bytes as before. `omh doctor` gains a
+  `route_hint_skills` warning that names the skills a hint could still send
+  that are not on disk. (#1954)
 - **`install.ps1` resolves the latest release on Windows PowerShell 5.1
   again.** On 5.1 the no-redirect `HEAD` to `/releases/latest` can throw a
   `NullReferenceException`, and that exception has no `Response`. The error
