@@ -13,6 +13,7 @@ downloaded, and no network is reachable from them.
 
 from __future__ import annotations
 
+import shutil
 import subprocess
 import sys
 import unittest
@@ -21,6 +22,18 @@ from tempfile import TemporaryDirectory
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 INSTALLER = PROJECT_ROOT / "install.sh"
+
+# The only system commands the installer and the stubs are given. Putting
+# `/usr/bin` itself on PATH hands the search every interpreter the host ships:
+# `install.sh` probes `python3.14` by name before `python3.12`, so on a host
+# with `/usr/bin/python3.14` (Fedora 44, reported in #1955) that one was chosen
+# ahead of the stubs and the case measured the machine instead of the
+# selection. `uv` is left out for the same reason: a host `uv` lists its own
+# interpreters as candidates.
+SYSTEM_TOOLS = (
+    "sh", "awk", "sed", "grep", "tr", "tail", "uname", "dirname", "readlink",
+    "ln", "mkdir", "cp", "chmod", "curl", "wget",
+)
 
 # Answers the version probe and nothing else: a 3.9 that would be chosen by
 # presence alone and must not be.
@@ -62,6 +75,12 @@ class InstallerPythonSelectionTests(unittest.TestCase):
         self.root = Path(self._tmp.name)
         self.bin = self.root / "bin"
         self.bin.mkdir(parents=True)
+        self.tools = self.root / "tools"
+        self.tools.mkdir()
+        for name in SYSTEM_TOOLS:
+            found = shutil.which(name, path="/usr/bin:/bin")
+            if found is not None:
+                (self.tools / name).symlink_to(found)
 
     def _stub(self, name: str, body: str) -> Path:
         path = self.bin / name
@@ -74,7 +93,7 @@ class InstallerPythonSelectionTests(unittest.TestCase):
         # interpreter or PATH, or the case under test is not the one running.
         env = {
             "HOME": str(self.root),
-            "PATH": f"{self.bin}:/usr/bin:/bin",
+            "PATH": f"{self.bin}:{self.tools}",
             # A local path, so no release lookup and no network.
             "OMH_PACKAGE_URL": str(self.root / "oh_my_hermes-0-py3-none-any.whl"),
             "OMH_LINK_COMMAND": "0",

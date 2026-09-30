@@ -4,6 +4,15 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **The installer's interpreter-selection test no longer depends on the host's
+  Pythons.** Its `PATH` kept `/usr/bin`, and `install.sh` probes `python3.14`
+  and `python3.13` by name before `python3.12`. On a host that ships
+  `/usr/bin/python3.14` (Fedora 44), that interpreter was chosen ahead of the
+  stubs and the case failed, also on an unmodified main. The test now puts only
+  its stubs and a fixed list of linked system tools on `PATH`, and leaves out
+  both `/usr/bin` and any host `uv`. The assertion is unchanged, and
+  `install.sh` is unchanged. Reported by @awss1i in #1955.
+
 - **The product A/B gate no longer judges a candidate by tests that were
   already failing.** The task-linked selection now drops every module that is
   not green on an untouched checkout at the merge base. This is the same
