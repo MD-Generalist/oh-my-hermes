@@ -234,9 +234,10 @@ review, CI, merge-readiness, or merge evidence. Record actual tool results, or
 accounting.
 Treat supplied context as advisory, not proof of hidden memory reads or writes.
 State scope, constraints, verification, and the stop condition before work.
-Reply in the user's language and own words, in the host's own voice: the host's
-persona owns tone, speech level, and sentence endings, progress updates
-included, and OMH shapes structure and content only; OMH's record terms
+Reply in the user's own words and the host's own voice: the host's persona owns
+reply language, tone, speech level, and sentence endings, progress updates
+included (where it sets no language, use the one the user wrote in), and OMH
+shapes structure and content only; OMH's record terms
 (surface, lane, wrapper, handoff, evidence boundary, not_observed) stay in
 records and tool calls, never in the sentence the user reads unless they ask
 about one; and when a stop condition or a decision the user owns ends the turn,
@@ -271,7 +272,7 @@ omh runtime record --skill {definition.name} --harness {primary_harness} --statu
 Prepared OMH routing is not execution, review, CI, merge-readiness, or merge evidence.
 {_memory_context_skill_contract_bullets(definition)}
 Preserve workflow intent and stop conditions; verify before claiming completion.
-Reply in the user's language and own words, in the host's own voice: its SOUL.md persona owns tone, speech level, and sentence endings, progress updates included, and OMH shapes structure and content only; OMH's record terms (surface, lane, wrapper, handoff, evidence boundary, not_observed) stay in records and tool calls, never in the sentence the user reads unless they ask about one; and when a stop condition or a decision the user owns ends the turn, offer the next action as a question rather than declaring what will not be done.
+Reply in the user's own words and the host's own voice: its SOUL.md persona owns reply language, tone, speech level, and sentence endings, progress updates included (where it sets no language, use the one the user wrote in), and OMH shapes structure and content only; OMH's record terms (surface, lane, wrapper, handoff, evidence boundary, not_observed) stay in records and tool calls, never in the sentence the user reads unless they ask about one; and when a stop condition or a decision the user owns ends the turn, offer the next action as a question rather than declaring what will not be done.
 
 Use Hermes-native subagent/delegation features when available: native subagents -> Hermes delegation when available, otherwise sequential lanes.
 
@@ -793,7 +794,7 @@ multi-agent target topology, or the generic execution checklist is in play.
 
 ## Reply Language And Host Voice
 
-- The host's persona is the primary identity: `SOUL.md` owns tone, speech level, sentence endings, and language, in progress updates as well as the final reply, and belongs to Hermes and the person who configured it. Reply in the language the user wrote in. OMH shapes what Hermes checks, records, and how a reply is structured, never how it sounds; no OMH skill, card, or awareness line sets a voice, and a skill's report shape never justifies switching the user's language or register.
+- The host's persona is the primary identity: `SOUL.md` owns reply language, tone, speech level, and sentence endings, in progress updates as well as the final reply, and belongs to Hermes and the person who configured it; where it sets no language, use the one the user wrote in. OMH shapes what Hermes checks, records, and how a reply is structured, never how it sounds; no OMH skill, card, or awareness line sets a voice, and a skill's report shape never justifies switching the user's language or register.
 - OMH's record vocabulary is for records and tool calls, not for the sentence the user reads: `surface`, `lane`, `wrapper`, `handoff`, `run record`, `evidence boundary`, `evidence-bounded`, `claim boundary`, `prepared_not_observed`, `not_observed`, `not_available`, `routing_observation`, `evidence_boundary`, `claim_boundary`, `route_question`, `coding fanout dispatch`, and schema ids such as `omh_todo_result/v1`. In the reply say what was done, what was checked, what was not checked, and what happens next: "prepared, not run yet" for prepared_not_observed; "not checked" for not_observed; "handing the coding work to <owner>" for a handoff; "this shows X and does not show Y" for a boundary. A user who names a term gets it explained in the record's own words.
 - Awareness lines and every `[OMH ...]` head (`[OMH Awareness]`, `[OMH plan todo]`, `Boundary:`), route hints, and first-response shapes are instructions to Hermes, never sentences for the user: do not quote or paraphrase them into the reply.
 - An OMH tool result may carry a `say` field: one plain sentence about an orchestration decision (which model takes a part, the plan and when it counts as done, what a step is blocked or waiting on). Relay it to the user once, in their language and your own words, and leave the result's other fields in the record.
@@ -1465,7 +1466,7 @@ Record only what is observed. A task card, route, plan, `coding_delegation.json`
   - native subagents -> Hermes delegation when available, otherwise sequential lanes,
   - shell bridge commands -> optional bridge mode only.
 - Record observed delegation results when exposed. If unavailable, record `not_available` or `not_observed`.
-- Reply in the user's language and own words, in the host's own voice: its SOUL.md persona owns tone, speech level, and sentence endings, progress updates included, and OMH shapes structure and content only; OMH's record terms (surface, lane, wrapper, handoff, evidence boundary, not_observed) stay in records and tool calls, never in the sentence the user reads unless they ask about one; and when a stop condition or a decision the user owns ends the turn, offer the next action as a question rather than declaring what will not be done.
+- Reply in the user's own words and the host's own voice: its SOUL.md persona owns reply language, tone, speech level, and sentence endings, progress updates included (where it sets no language, use the one the user wrote in), and OMH shapes structure and content only; OMH's record terms (surface, lane, wrapper, handoff, evidence boundary, not_observed) stay in records and tool calls, never in the sentence the user reads unless they ask about one; and when a stop condition or a decision the user owns ends the turn, offer the next action as a question rather than declaring what will not be done.
 
 ## Progressive Disclosure References
 
@@ -2692,7 +2693,7 @@ Contract: `references/full-contract.md`. Procedure: `references/procedure.md`.
 ## Completion Checklist
 
 - Preserve workflow intent and stop conditions; load the full contract before claiming completion.
-- Reply in the user's language and own words, in the host's own voice: its SOUL.md persona owns tone, speech level, and sentence endings, progress updates included, and OMH shapes structure and content only; OMH's record terms (surface, lane, wrapper, handoff, evidence boundary, not_observed) stay in records and tool calls, never in the sentence the user reads unless they ask about one; and when a stop condition or a decision the user owns ends the turn, offer the next action as a question rather than declaring what will not be done.
+- Reply in the user's own words and the host's own voice: its SOUL.md persona owns reply language, tone, speech level, and sentence endings, progress updates included (where it sets no language, use the one the user wrote in), and OMH shapes structure and content only; OMH's record terms (surface, lane, wrapper, handoff, evidence boundary, not_observed) stay in records and tool calls, never in the sentence the user reads unless they ask about one; and when a stop condition or a decision the user owns ends the turn, offer the next action as a question rather than declaring what will not be done.
 - Record observed delegation results; otherwise return `not_available` or `not_observed`.
 - Use Hermes-native subagent/delegation features when available: native subagents -> Hermes delegation when available, otherwise sequential lanes.
 
@@ -6543,7 +6544,7 @@ before mutation unless that separate action is authorized.
 - Prepared OMH routing is not execution, review, CI, or merge evidence.
 - Preserve workflow intent and stop conditions; verify before claiming
   completion.
-- Reply in the user's language and own words, in the host's own voice: its SOUL.md persona owns tone, speech level, and sentence endings, progress updates included, and OMH shapes structure and content only; OMH's record terms (surface, lane, wrapper, handoff, evidence boundary, not_observed) stay in records and tool calls, never in the sentence the user reads unless they ask about one; and when a stop condition or a decision the user owns ends the turn, offer the next action as a question rather than declaring what will not be done.
+- Reply in the user's own words and the host's own voice: its SOUL.md persona owns reply language, tone, speech level, and sentence endings, progress updates included (where it sets no language, use the one the user wrote in), and OMH shapes structure and content only; OMH's record terms (surface, lane, wrapper, handoff, evidence boundary, not_observed) stay in records and tool calls, never in the sentence the user reads unless they ask about one; and when a stop condition or a decision the user owns ends the turn, offer the next action as a question rather than declaring what will not be done.
 - Use Hermes-native subagent/delegation features when available:
   native subagents -> Hermes delegation when available, otherwise sequential lanes.
 

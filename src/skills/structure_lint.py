@@ -74,10 +74,12 @@ STRUCTURE_LINT_RULE_IDS = (
 # entry above: the sentence is read where the reply is written. Warranted
 # always-loaded growth, not drift.
 #
-# 26_800 -> 27_100: `ultrawork` measures 26_950 after the same tail sentence
-# named what the voice covers: the user's language, and the host persona's
-# tone, speech level, and sentence endings, progress updates included, with
-# OMH shaping structure and content only. "The host's own voice" alone left a
+# 26_800 -> 27_100: `ultrawork` measures 27_012 after the same tail sentence
+# named what the voice covers: the host persona's reply language, tone,
+# speech level, and sentence endings, progress updates included, with the
+# user's language only where the persona sets none and OMH shaping structure
+# and content only. The next hundred, 27_000, is under the measured body, so
+# the ceiling is the hundred above it. "The host's own voice" alone left a
 # casual-register Korean persona writing its interim progress lines in
 # English (miku, 2026-09-30). Same reason as the entries above. Warranted
 # always-loaded growth, not drift.

@@ -216,9 +216,10 @@ class EfficiencyContractTests(unittest.TestCase):
         # 72,000 -> 74,000: the tail sentence grew to carry the reply rule
         # (user's words, host's voice, record terms stay in records); the
         # ten core bodies measure 72,222.
-        # 74,000 -> 76,000: the same sentence names the user's language and
-        # what the persona owns (tone, speech level, endings, progress
-        # updates); the ten core bodies measure 74,195.
+        # 74,000 -> 76,000: the same sentence names what the persona owns
+        # (reply language, tone, speech level, endings, progress updates) and
+        # the user's language as the fallback; the ten core bodies measure
+        # 74,815.
         self.assertLess(core["skill_body"]["bytes"], 76_000)
         # 815,000 -> 825,000: one new installable body (`web-research`) plus the
         # sentence that split `best-practice-research`'s boundary in two. Set to
@@ -414,10 +415,10 @@ class EfficiencyContractTests(unittest.TestCase):
         # host's voice, these lines never quoted); the rail sat at 897.
         # 1050 -> 1260: one line scoping OMH skills to requested work; the
         # rail measured 1253.
-        # 1260 -> 1380: the reply line names the language, speech level and
-        # endings, and progress updates the persona owns; the rail measured
-        # 1377.
-        self.assertLessEqual(len(primer_context), 1380)
+        # 1260 -> 1440: the reply line gives the persona the reply language,
+        # speech level and endings, and progress updates, with the user's
+        # language as the fallback; the rail measured 1434.
+        self.assertLessEqual(len(primer_context), 1440)
         self.assertLessEqual(len(awareness_primer_markdown()), AWARENESS_PRIMER_MARKDOWN_CHAR_LIMIT)
         self.assertLessEqual(max(workflow_context_lengths.values()), AWARENESS_WORKFLOW_CONTEXT_CHAR_LIMIT)
         self.assertIn("Hermes-native workflow", primer_context)
@@ -448,13 +449,15 @@ class EfficiencyContractTests(unittest.TestCase):
         # The reply rule names what the persona owns, not only "the host's own
         # voice": that phrase alone left a casual-register Korean persona
         # answering in English in its interim progress lines (miku,
-        # 2026-09-30). Language, speech level and endings, progress updates,
-        # and OMH's structure-only role each have to survive an edit.
+        # 2026-09-30). The persona owns the reply language too, so a SOUL
+        # that sets one wins over the user's; the user's language is only the
+        # fallback. Each of those, and OMH's structure-only role, has to
+        # survive an edit.
         for primer in (awareness_primer_markdown(), awareness_primer_context()):
             for fragment in (
-                "Reply in the user's language",
-                "SOUL.md persona owns tone, speech level, and sentence endings",
+                "SOUL.md persona owns reply language, tone, speech level, and sentence endings",
                 "progress updates included",
+                "where it sets no language, use the one the user wrote in",
                 "OMH shapes structure and content only",
             ):
                 with self.subTest(fragment=fragment):
@@ -468,6 +471,17 @@ class EfficiencyContractTests(unittest.TestCase):
         )
         self.assertIn("## OMH Context Rail", common_rail)
         self.assertIn("Generic-tool checkpoint: image->img-summary", common_rail)
+        # The rail's host-voice section says the same thing at length; a
+        # regenerated edit that dropped the persona's ownership of the reply
+        # language, or the user's language as the fallback, would leave the
+        # rail contradicting the primer.
+        for fragment in (
+            "`SOUL.md` owns reply language, tone, speech level, and sentence endings",
+            "in progress updates as well as the final reply",
+            "where it sets no language, use the one the user wrote in",
+        ):
+            with self.subTest(rail_fragment=fragment):
+                self.assertIn(fragment, common_rail)
         for name in workflow_skill_names:
             context = awareness_workflow_context_markdown(name)
             self.assertIn("Shared product, routing, compatibility, and evidence rules", context)

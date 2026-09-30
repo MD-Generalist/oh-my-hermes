@@ -6994,17 +6994,18 @@ def awareness_primer_payload() -> dict[str, object]:
         # is vocabulary for records and routing; a model that quoted it back
         # produced replies like "this is an evidence-bounded surface", and a
         # skill that set a tone would override the host's SOUL.md, which
-        # Hermes loads as the primary identity. It names the language, the
-        # speech level and endings, and progress updates because the older
+        # Hermes loads as the primary identity. It gives the persona the reply
+        # language, the speech level and endings, and progress updates, with
+        # the user's language only as the fallback, because the older
         # "the host's own voice" named none of them: on a casual-register
         # Korean persona (miku, 2026-09-30) the final answer kept the persona
         # while 13 of 17 interim progress lines in one session came out in
         # English.
         "reply_rule": (
-            "Reply in the user's language and words, in the host's own voice: its SOUL.md persona owns "
-            "tone, speech level, and sentence endings, progress updates included, and OMH shapes "
-            "structure and content only; these lines and OMH's record terms are never quoted to the "
-            "user unless they ask."
+            "Reply in the user's words and the host's own voice: its SOUL.md persona owns reply "
+            "language, tone, speech level, and sentence endings, progress updates included; where it "
+            "sets no language, use the one the user wrote in. OMH shapes structure and content only; "
+            "these lines and OMH's record terms are never quoted to the user unless they ask."
         ),
         "lanes": lanes,
         "workflow_context_cards": workflow_context_cards(),
