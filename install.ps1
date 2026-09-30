@@ -717,6 +717,61 @@ function Get-OmhRedirectLocation {
     return ''
 }
 
+function Get-OmhPropertyValue {
+    # StrictMode 3.0 makes reading an absent property a terminating error, and
+    # what Invoke-WebRequest returns or throws differs by PowerShell version:
+    # Windows PowerShell 5.1 can throw a NullReferenceException, which has no
+    # Response at all (#1953).
+    param([object]$Object, [string]$Name)
+    if ($null -eq $Object) { return $null }
+    $OmhProperty = $Object.PSObject.Properties[$Name]
+    if (-not $OmhProperty) { return $null }
+    try {
+        return $OmhProperty.Value
+    } catch {
+        return $null
+    }
+}
+
+function Get-OmhFinalResponseUri {
+    # Where a followed redirect ended. Windows PowerShell 5.1's HttpWebResponse
+    # carries it as ResponseUri; PowerShell 7's HttpResponseMessage carries it
+    # on the request it finally sent.
+    param([object]$Response)
+    $OmhBaseResponse = Get-OmhPropertyValue $Response 'BaseResponse'
+    $OmhFinalUri = Get-OmhPropertyValue $OmhBaseResponse 'ResponseUri'
+    if ($null -eq $OmhFinalUri) {
+        $OmhFinalUri = Get-OmhPropertyValue (Get-OmhPropertyValue $OmhBaseResponse 'RequestMessage') 'RequestUri'
+    }
+    if ($null -eq $OmhFinalUri) { return '' }
+    return [string]$OmhFinalUri
+}
+
+function Resolve-OmhLatestReleaseLocation {
+    # GitHub answers /releases/latest with a 302 whose Location carries the
+    # newest tag, so "latest" costs one header read and no API token. Only the
+    # redirect target is fetched. Returns '' when no path produced a URL.
+    param([string]$Url)
+    $OmhLocation = ''
+    try {
+        $OmhResponse = Invoke-WebRequest -Uri $Url -Method Head -MaximumRedirection 0 -UseBasicParsing -ErrorAction Stop
+        $OmhLocation = Get-OmhRedirectLocation $OmhResponse
+    } catch {
+        $OmhLocation = Get-OmhRedirectLocation (Get-OmhPropertyValue $_.Exception 'Response')
+    }
+    if ($OmhLocation) { return $OmhLocation }
+
+    # Windows PowerShell 5.1 can fail the no-redirect request without handing
+    # back the 302, so follow the redirect and read where it landed: the same
+    # URL and the same tag shape, without the API's anonymous rate limit.
+    try {
+        $OmhResponse = Invoke-WebRequest -Uri $Url -Method Head -UseBasicParsing -ErrorAction Stop
+        return Get-OmhFinalResponseUri $OmhResponse
+    } catch {
+        return ''
+    }
+}
+
 # ---------------------------------------------------------------------------
 # Main flow
 # ---------------------------------------------------------------------------
@@ -734,17 +789,7 @@ try {
             }
             'stable' {
                 if (-not $OmhVersion) {
-                    # GitHub answers /releases/latest with a 302 whose Location
-                    # carries the newest tag, so "latest" costs one header read
-                    # and no API token. Only the redirect target is fetched.
-                    $OmhLatestLocation = ''
-                    try {
-                        $OmhLatestResponse = Invoke-WebRequest -Uri $OmhRepoLatestUrl -Method Head -MaximumRedirection 0 -ErrorAction Stop
-                        $OmhLatestLocation = Get-OmhRedirectLocation $OmhLatestResponse
-                    } catch {
-                        $OmhLatestError = $_.Exception.Response
-                        $OmhLatestLocation = Get-OmhRedirectLocation $OmhLatestError
-                    }
+                    $OmhLatestLocation = Resolve-OmhLatestReleaseLocation $OmhRepoLatestUrl
                     if ($OmhLatestLocation -match '/releases/tag/v([0-9]+\.[0-9]+\.[0-9]+)/?$') {
                         $OmhVersion = $Matches[1]
                     } else {

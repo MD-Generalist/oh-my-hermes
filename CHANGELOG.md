@@ -4,6 +4,31 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **The per-turn route hint names only skills this install holds.** On a
+  `--core` install the `[OMH Route Hint]` block and the "Skills that may fit
+  this request" line ranked the whole catalog, so they told the model to
+  `skill_view` skills that were not on disk (`selected=workflow-learning`,
+  `omh-content-operator`). The plugin now reads the installed set from the
+  install manifest, cached on its mtime, and leaves out every catalog skill
+  the manifest does not record. A hint whose selected workflow is missing is
+  dropped and the next ranked hint becomes `selected=`; with none left, no
+  route block is sent. A full install, or a home whose manifest cannot be
+  read, renders the same bytes as before. `omh doctor` gains a
+  `route_hint_skills` warning that names the skills a hint could still send
+  that are not on disk. (#1954)
+- **`install.ps1` resolves the latest release on Windows PowerShell 5.1
+  again.** On 5.1 the no-redirect `HEAD` to `/releases/latest` can throw a
+  `NullReferenceException`, and that exception has no `Response`. The error
+  handler read `$_.Exception.Response` directly, which is a terminating error
+  under `Set-StrictMode -Version 3.0`. The installer therefore stopped with
+  "The property 'Response' cannot be found on this object" before printing
+  anything. The handler now reads that property through a guarded accessor.
+  When no `Location` comes back, the installer follows the redirect and reads
+  the final URL: `ResponseUri` on 5.1, `RequestMessage.RequestUri` on
+  PowerShell 7. The same tag check applies to that URL. If both requests fail,
+  the "could not resolve the latest release" diagnostic prints as before.
+  Windows CI runs the new behavioural cases and their pre-fix mutation under
+  both hosts. (#1953)
 - **The installer's interpreter-selection test no longer depends on the host's
   Pythons.** Its `PATH` kept `/usr/bin`, and `install.sh` probes `python3.14`
   and `python3.13` by name before `python3.12`. On a host that ships
@@ -29,6 +54,18 @@ All notable changes will be documented here.
   units in the batch completed. A failed or blocked unit still exits 1 and an
   interrupt still exits 130; both outrank the busy code. `already_completed`
   and `not_selected` skips still exit 0. (#1932)
+- **The `codestral` calibration block now has a live measurement.** It was
+  one of four family blocks marked "live benchmark validation pending". Four
+  arms of 30 evaluation instances on `codestral-2508` at `high` (two without
+  the block, two with it) show no measurable effect either way: 9 / 60
+  passes with the block against 5 / 60 without, and +1,607 tokens per task,
+  bootstrap CI95 [−2,451, +5,788]. The block is kept, and the
+  `MODEL_OPTI.md` section now records the numbers, including that the rule
+  written before the first three arms failed narrowly and a pooled rule was
+  added before the fourth. `mistral`, `llama` and `solar` stay pending.
+  The benchmark's pairing test now checks that the calibration block is the
+  only difference between the two prompts; before, extra text before or
+  after the block, or a changed separator, still passed it. (#1056)
 - **English one-word replies now decline the route question.** The
   `one_word_reply` verdict accepted only the engine-entry approval
   vocabulary, which holds one English word (`lgtm`) against thirteen Korean

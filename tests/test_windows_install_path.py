@@ -88,7 +88,7 @@ class WindowsInstallerRedirectResponseTests(unittest.TestCase):
         self.assertNotIn("$OmhLatestResponse.Headers['Location']", powershell)
         self.assertNotIn("$OmhLatestError.Headers['Location']", powershell)
         self.assertEqual(
-            len(re.findall(r"\bGet-OmhRedirectLocation\s+\$\w+", powershell)),
+            len(re.findall(r"\bGet-OmhRedirectLocation\s+[$(]", powershell)),
             2,
             "both redirect paths must call the capability-based accessor",
         )
@@ -99,6 +99,32 @@ class WindowsInstallerRedirectResponseTests(unittest.TestCase):
         # absent property a terminating error, so the exit guard must probe it.
         self.assertNotIn("$MyInvocation.MyCommand.Path", powershell)
         self.assertIn("PSObject.Properties['Path']", powershell)
+
+    def test_latest_release_error_path_never_reads_an_absent_response(self) -> None:
+        powershell = INSTALL_PS1.read_text(encoding="utf-8")
+
+        # Issue #1953: Windows PowerShell 5.1 throws a NullReferenceException
+        # for the no-redirect HEAD, and that exception has no Response. Under
+        # StrictMode the direct read ended the installer inside its own catch.
+        self.assertNotIn(".Exception.Response", powershell)
+        self.assertIn("Get-OmhPropertyValue $_.Exception 'Response'", powershell)
+        # The fallback follows the redirect and reads the final URI on both hosts.
+        self.assertIn("'ResponseUri'", powershell)
+        self.assertIn("'RequestMessage') 'RequestUri'", powershell)
+
+    def test_latest_release_behaviour_runs_on_both_windows_hosts(self) -> None:
+        # The behavioural cases can only execute on Windows CI. Pin that the
+        # suite and its mutation run under Windows PowerShell 5.1, the host
+        # #1953 broke, as well as PowerShell 7.
+        workflow = (REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+        self.assertTrue((REPO_ROOT / "tests" / "powershell" / "Test-OmhLatestRelease.ps1").is_file())
+        for shell in ("pwsh", "powershell"):
+            for suffix in ("", " -InjectRegression"):
+                with self.subTest(shell=shell, suffix=suffix):
+                    self.assertIn(
+                        f"shell: {shell}\n        run: ./tests/powershell/Test-OmhLatestRelease.ps1{suffix}\n",
+                        workflow,
+                    )
 
 
 class WindowsInstallerContractParityTests(unittest.TestCase):
