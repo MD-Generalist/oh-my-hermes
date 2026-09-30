@@ -73,7 +73,17 @@ STRUCTURE_LINT_RULE_IDS = (
 # the closing brief rule gained "in the user's words". Same reason as the
 # entry above: the sentence is read where the reply is written. Warranted
 # always-loaded growth, not drift.
-STRUCTURE_LINT_SKILL_BODY_BYTE_CEILING = 26_800
+#
+# 26_800 -> 27_100: `ultrawork` measures 27_012 after the same tail sentence
+# named what the voice covers: the host persona's reply language, tone,
+# speech level, and sentence endings, progress updates included, with the
+# user's language only where the persona sets none and OMH shaping structure
+# and content only. The next hundred, 27_000, is under the measured body, so
+# the ceiling is the hundred above it. "The host's own voice" alone left a
+# casual-register Korean persona writing its interim progress lines in
+# English (miku, 2026-09-30). Same reason as the entries above. Warranted
+# always-loaded growth, not drift.
+STRUCTURE_LINT_SKILL_BODY_BYTE_CEILING = 27_100
 _PICKER_SAFE_TRIGGER = re.compile(r"^[0-9A-Za-z\uac00-\ud7a3][0-9A-Za-z\uac00-\ud7a3 _.-]*$")
 _FRONTMATTER = re.compile(r'^---\nname: (.+)\ndescription: (.+)\nmetadata:\n(.*?)\n---\n', re.DOTALL)
 _JSON_STRING = re.compile(r'"(?:[^"\\\x00-\x1f]|\\["\\/bfnrt]|\\u[0-9A-Fa-f]{4})*"')

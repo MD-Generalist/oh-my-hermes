@@ -365,7 +365,10 @@ class RouterContentTests(unittest.TestCase):
         # compact index rather than a second catalog.
         # 13,000 -> 13,300: the router tail carries the reply rule (user's
         # words, host's voice, record terms stay in records); 13,047 measured.
-        self.assertLess(len(router.content.encode("utf-8")), 13_300)
+        # 13,300 -> 13,600: the same tail gives the persona the reply
+        # language, speech level, endings, and progress updates, with the
+        # user's language as the fallback; 13,329 measured.
+        self.assertLess(len(router.content.encode("utf-8")), 13_600)
         self.assertIn("best-effort Hermes prompt guidance", router.content)
         self.assertIn("does not override Hermes core routing", router.content)
         self.assertIn(router_keyword_summary(), router.content)
@@ -448,7 +451,10 @@ class RouterContentTests(unittest.TestCase):
         # compact index rather than a second catalog.
         # 13,000 -> 13,300: the router tail carries the reply rule (user's
         # words, host's voice, record terms stay in records); 13,047 measured.
-        self.assertLess(len(router.content.encode("utf-8")), 13_300)
+        # 13,300 -> 13,600: the same tail gives the persona the reply
+        # language, speech level, endings, and progress updates, with the
+        # user's language as the fallback; 13,329 measured.
+        self.assertLess(len(router.content.encode("utf-8")), 13_600)
         # 24,500 -> 25,300: workflow-registry.md carries one row per routable
         # workflow, so the `web-research` split and the `codebase-uml` row
         # together took it past the old ceiling; one row per new skill, and
@@ -1172,8 +1178,13 @@ class RouterContentTests(unittest.TestCase):
             # has a stop condition.
             "offer the next action as a question rather than declaring what will not be done",
             # The reply is written in the user's words and the host's voice;
+            # the persona owns the reply language, speech level, and endings,
+            # progress updates too, the user's language is the fallback, and
             # OMH's record vocabulary stays in records and tool calls.
-            "the host's own voice",
+            "Reply in the user's own words and the host's own voice",
+            "owns reply language, tone, speech level, and sentence endings, progress updates included",
+            "where it sets no language, use the one the user wrote in",
+            "OMH shapes structure and content only",
         )
         templates = {template.name: template.content for template in builtin_skill_templates()}
         rendered_files = {

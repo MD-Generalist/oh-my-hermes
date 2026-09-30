@@ -4,6 +4,21 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **OMH's reply rule says the persona owns the voice, progress updates
+  included.** The awareness rail and every generated skill's tail said to
+  reply "in the host's own voice" and named nothing that voice covers. On a
+  casual-register Korean persona (`deepseek-v4.1-flash-ultrafast` on Slack
+  with interim messages on) the final answer kept the persona while 13 of 17
+  interim progress lines in one session came out in English. The line now
+  says the host's `SOUL.md` persona owns the reply language, tone, speech
+  level, and sentence endings, progress updates included; where the persona
+  sets no language, the reply uses the one the user wrote in; OMH shapes
+  structure and content only. The rail reference's host-voice section says
+  the same and adds that a skill's report shape never justifies switching
+  language or register. Nothing new is injected per turn: the compact rail
+  line changes in place (1241 -> 1434 chars, paid once per session in the
+  system-prompt section).
+
 - **The per-turn route hint names only skills this install holds.** On a
   `--core` install the `[OMH Route Hint]` block and the "Skills that may fit
   this request" line ranked the whole catalog, so they told the model to
