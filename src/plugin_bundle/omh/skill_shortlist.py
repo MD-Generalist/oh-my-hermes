@@ -230,6 +230,18 @@ def _index() -> _Index | None:
         return None
 
 
+def catalog_skill_names() -> frozenset[str] | None:
+    """Every catalog skill's canonical name and label, or `None` without a sidecar."""
+    index = _index()
+    if index is None:
+        return None
+    return frozenset(name for skill in index.skills for name in (skill.name, skill.label))
+
+
+def _installed(skill: _Skill, installed: frozenset[str] | None) -> bool:
+    return installed is None or skill.name in installed or skill.label in installed
+
+
 def _fold(value: str) -> str:
     normalized = unicodedata.normalize("NFKC", value).casefold()
     decomposed = unicodedata.normalize("NFKD", normalized)
@@ -344,7 +356,9 @@ def hangul_ranking(message: str) -> tuple[tuple[str, float], ...]:
     return tuple(scored)
 
 
-def hangul_skill_candidates(message: str) -> tuple[tuple[str, str], ...]:
+def hangul_skill_candidates(
+    message: str, *, installed: frozenset[str] | None = None
+) -> tuple[tuple[str, str], ...]:
     """Up to three (skill label, situation) pairs from the Hangul ranking, or none.
 
     Admission: a skill in the ranking's head scores at least
@@ -352,7 +366,8 @@ def hangul_skill_candidates(message: str) -> tuple[tuple[str, str], ...]:
     eight skills' Hangul triggers use -- sit in two words of the message, or
     in one at `HANGUL_ADMISSION_SINGLE_WORD_SCORE`. Two bigrams inside one
     word are often a spelling accident ("다이어트" and "다이어그램"). Listed are the ranked skills at that score
-    with an anchor of their own, never a `_NEVER_LISTED` one.
+    with an anchor of their own, never a `_NEVER_LISTED` one, and only an
+    `installed` one (see `skill_candidates`).
     """
     index = _index()
     if index is None:
@@ -385,7 +400,7 @@ def hangul_skill_candidates(message: str) -> tuple[tuple[str, str], ...]:
     listed = [
         (by_name[name].label, by_name[name].situation)
         for name, score in ranking
-        if score >= HANGUL_ADMISSION_SCORE_FLOOR and anchored(name)
+        if score >= HANGUL_ADMISSION_SCORE_FLOOR and anchored(name) and _installed(by_name[name], installed)
     ]
     return tuple(listed[:MAX_CANDIDATES])
 
@@ -404,7 +419,7 @@ def _conversational(message: str) -> bool:
     )
 
 
-def skill_candidates(message: str) -> tuple[tuple[str, str], ...]:
+def skill_candidates(message: str, *, installed: frozenset[str] | None = None) -> tuple[tuple[str, str], ...]:
     """Up to three (skill label, situation) pairs for a request that reads as work.
 
     Admission, all of it read from the catalog: the message must share an
@@ -415,6 +430,12 @@ def skill_candidates(message: str) -> tuple[tuple[str, str], ...]:
     high: everyday English shares single words with the catalog constantly.
     Listed are the ranked skills that clear the floor with an anchor of their
     own; never a `jev-*` skill or `ulw-maestro` (`_NEVER_LISTED`).
+
+    `installed` (canonical names and labels, `installed_skills`) keeps a skill
+    this home does not hold off the list; `None` lists the whole catalog.
+    Admission still reads the whole catalog: whether a message reads as work
+    does not depend on what is installed, and a core install then lists the
+    installed skills further down rather than going quiet.
     """
     index = _index()
     if index is None:
@@ -445,13 +466,16 @@ def skill_candidates(message: str) -> tuple[tuple[str, str], ...]:
     listed = [
         (by_name[name].label, by_name[name].situation)
         for name, score in ranking
-        if score >= index.score_floor and anchored(name)
+        if score >= index.score_floor and anchored(name) and _installed(by_name[name], installed)
     ]
     return tuple(listed[:MAX_CANDIDATES])
 
 
 def skill_candidates_for_turn(
-    message: str, *, route_hint_payload: dict[str, object] | None = None
+    message: str,
+    *,
+    route_hint_payload: dict[str, object] | None = None,
+    installed: frozenset[str] | None = None,
 ) -> tuple[tuple[str, str], ...]:
     """The candidates this turn's line names, or none.
 
@@ -472,10 +496,10 @@ def skill_candidates_for_turn(
         return ()
     text = executable_routing_text(message)
     if not _conversational(text):
-        candidates = skill_candidates(text)
+        candidates = skill_candidates(text, installed=installed)
         if candidates:
             return candidates
-    return hangul_skill_candidates(text)
+    return hangul_skill_candidates(text, installed=installed)
 
 
 # The last candidate set each session was shown, so a run of work turns that
@@ -535,6 +559,7 @@ __all__ = [
     "HANGUL_ADMISSION_SCORE_FLOOR",
     "HANGUL_ADMISSION_SINGLE_WORD_SCORE",
     "MAX_CANDIDATES",
+    "catalog_skill_names",
     "claim_candidate_line",
     "hangul_ranking",
     "hangul_skill_candidates",

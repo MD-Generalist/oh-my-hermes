@@ -5,6 +5,7 @@ import hashlib
 import re
 import unicodedata
 
+from .installed_skills import skill_not_installed
 from .reference_regions import executable_routing_text
 from .degradation import (
     COMPONENT_LOCALIZED_ROUTING_TEXT,
@@ -6725,6 +6726,63 @@ def awareness_route_hint_context_from_payload(payload: dict[str, object]) -> str
             lines.append(f"  not_evidence_yet={not_evidence}.")
     lines.append("Boundary: " + str(payload.get("claim_boundary", "")))
     return "\n".join(lines)
+
+
+def route_hint_for_installed_skills(
+    payload: dict[str, object], installed: frozenset[str] | None
+) -> dict[str, object]:
+    """The route hint with every catalog skill this home did not install left out (#1954).
+
+    A hint whose selected workflow is not installed is dropped whole, and the
+    next hint -- the next candidate in the order the rules ranked them --
+    becomes `selected=`. Keeping the hint and blanking its workflow would
+    still send its lane, next action and first-response shape, all of which
+    describe the missing skill; promoting an adjacent workflow instead would
+    select something no rule matched, with no next action of its own. When no
+    hint is left the payload reads `no_hint`, so no route block is rendered.
+    Adjacent workflows are filtered per hint, and the top-level list is
+    re-derived from the hints that remain, the way the builder derives it.
+
+    `mentioned_workflows` and `not_executed` are left as they are: they echo
+    what the message itself named, not what to load. A payload with nothing
+    left out is returned unchanged, so a full install, or an install whose
+    set could not be read (`installed` is `None`), renders the same bytes.
+    """
+    if installed is None or payload.get("status") != "hinted":
+        return payload
+    raw_hints = payload.get("hints", [])
+    kept: list[object] = []
+    changed = False
+    for hint in raw_hints if isinstance(raw_hints, list) else []:
+        if not isinstance(hint, dict):
+            kept.append(hint)
+            continue
+        if skill_not_installed(str(hint.get("workflow", "")), installed):
+            changed = True
+            continue
+        adjacent = [str(item) for item in hint.get("adjacent_workflows", [])]
+        loadable = [item for item in adjacent if not skill_not_installed(item, installed)]
+        if len(loadable) != len(adjacent):
+            changed = True
+            hint = {**hint, "adjacent_workflows": loadable}
+        kept.append(hint)
+    if not changed:
+        return payload
+    hints = [hint for hint in kept if isinstance(hint, dict)]
+    primary = hints[0] if hints else {}
+    primary_next_action = str(primary.get("next_action", ""))
+    filtered = dict(payload)
+    filtered["status"] = "hinted" if hints else "no_hint"
+    filtered["hints"] = kept
+    filtered["selected_workflow"] = str(primary.get("workflow", ""))
+    filtered["primary_workflow"] = str(primary.get("workflow", ""))
+    filtered["primary_next_action"] = primary_next_action
+    filtered["primary_next_action_label"] = _next_action_label(primary_next_action) if primary_next_action else ""
+    filtered["primary_coding_route_decision"] = primary.get("coding_route_decision")
+    filtered["adjacent_workflows"] = _unique_strings(
+        str(item) for hint in hints for item in hint.get("adjacent_workflows", [])
+    )
+    return filtered
 
 
 def awareness_primer_payload() -> dict[str, object]:
