@@ -405,6 +405,7 @@ def execute_one(
     # second time, and overwriting `verification` would drop the first
     # run's minutes out of the wall clock entirely.
     gate_seconds = 0.0
+    merge_base_verdicts: dict[tuple[str, str], bool] = {}
     with TemporaryDirectory(prefix="omh-product-ab-scratch-") as scratch_text:
         scratch = Path(scratch_text)
         with repo_lib.candidate_workspace(
@@ -440,6 +441,7 @@ def execute_one(
                         scratch=scratch,
                         task=task,
                         timeout=int(timeouts["verification"]),
+                        merge_base_verdicts=merge_base_verdicts,
                     )
                     gate_seconds += float(verification.get("seconds") or 0.0)
                     repairs = int(manifest["execution"].get("omh_repair_attempts", 0))
@@ -464,6 +466,7 @@ def execute_one(
                             scratch=scratch,
                             task=task,
                             timeout=int(timeouts["verification"]),
+                            merge_base_verdicts=merge_base_verdicts,
                         )
                         gate_seconds += float(verification.get("seconds") or 0.0)
             claim = grading.completion_claim(workspace)
@@ -573,19 +576,39 @@ def _run_gate(
     scratch: Path,
     task: Mapping[str, Any],
     timeout: int,
+    merge_base_verdicts: dict[tuple[str, str], bool] | None = None,
 ) -> dict[str, Any]:
     """The corpus checks plus the task-linked postcondition, resolved per run.
 
     The corpus checks are the task's pinned criteria, which the candidate has
     already run green by the time the gate sees them. The task-linked command
     is derived from what this candidate actually changed -- the pre-existing
-    tests that directly import its edited files -- so the gate can disagree
-    with a candidate whose edits broke the code those tests exercise. It is
-    re-resolved on every gate run because a repair turn changes the diff.
+    tests that directly import its edited files, less any already red at the
+    merge base -- so the gate can disagree with a candidate whose edits broke
+    the code those tests exercise. It is re-resolved on every gate run because
+    a repair turn changes the diff; `merge_base_verdicts` is shared across
+    those runs so each module runs at the merge base once.
     """
 
+    merge_base = str(task["merge_base"])
+    known = {} if merge_base_verdicts is None else merge_base_verdicts
+
+    def green_at_merge_base(modules: Sequence[str]) -> list[str]:
+        return grading.green_at_merge_base(
+            python_executable=python_executable,
+            repository=workspace,
+            merge_base=merge_base,
+            modules=modules,
+            root=scratch,
+            timeout=timeout,
+            known=known,
+        )
+
     linked = arms.task_linked_postcondition(
-        workspace, str(task["merge_base"]), list(task.get("test_paths") or [])
+        workspace,
+        merge_base,
+        list(task.get("test_paths") or []),
+        green_at_merge_base=green_at_merge_base,
     )
     commands = list(task["verification_commands"])
     if linked["command"]:

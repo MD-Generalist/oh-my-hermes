@@ -4,6 +4,14 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **The product A/B gate no longer judges a candidate by tests that were
+  already failing.** The task-linked selection now drops every module that is
+  not green on an untouched checkout at the merge base. This is the same
+  verdict the corpus demands of the regression set. The record lists dropped
+  modules under `red_at_merge_base_test_paths`. Before this, 10 of 40 tasks
+  selected a module that was red before any change, so the gate could send a
+  correct run to repair. The pull request's own test files stay excluded as
+  target tests. The corpus and its digest are unchanged. (#1896)
 - **A fanout dispatch that found a unit busy exits 75, not 0.** When another
   dispatch holds a unit's repair loop, `omh coding fanout dispatch` skips the
   unit as `repair_in_flight` and spawns nothing for it. That run used to exit

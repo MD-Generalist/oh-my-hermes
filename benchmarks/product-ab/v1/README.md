@@ -499,6 +499,31 @@ resolved selection under `verification_gate.task_linked_postcondition`. It is
 still a regression check -- on an untouched checkout it selects nothing -- so
 the disclosure below stands.
 
+Two filters keep that selection to checks a correct fix can pass (#1896):
+
+- **Red at the merge base is out.** Every selected module is run on its own on
+  an untouched checkout at the merge base, the same `run_modules` verdict the
+  corpus probe demands of the regression set, and a module that does not read
+  `green` there is dropped and listed under `red_at_merge_base_test_paths`. A
+  failure that predates the candidate cannot be the candidate's regression; on
+  the 2026-09-27 probe, 10 of 40 tasks selected such a module. Each module's
+  merge-base verdict is computed once per run and reused by the repair turn's
+  gate. That merge-base run is the bench measuring its own baseline, as the
+  corpus probe does, so it is not charged to the arm's `verification_gate_seconds`,
+  which times only the gate's commands.
+- **A test the pull request edits is a target test, never a regression
+  check.** Its paths (`test_paths`) stay out of the selection and are listed
+  under `excluded_test_paths`. Excluding was chosen over re-labelling them as
+  target tests inside the gate, because the gate runs only merge-base copies of
+  these files, and those assert the old behaviour. Running them would push a
+  correct fix back toward that behaviour. The one test left that turns red on
+  the pull request's source change alone, the drift registry's honesty test on
+  PR-1162/1163/1166, is not one the pull request edits. It reads those
+  excluded files as data and goes green once the count literals in them are
+  updated, as the real pull request did. It stays selected: the change it
+  demands is part of a complete fix, and the failure names the file and the
+  number.
+
 **The gate never runs the hidden validator, and on every admitted task it
 passes on an untouched checkout, so it can catch regressions, never a missing
 fix.** That follows from how the corpus is built, not from chance: the probe
