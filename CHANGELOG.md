@@ -4,6 +4,19 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **`install.ps1` resolves the latest release on Windows PowerShell 5.1
+  again.** On 5.1 the no-redirect `HEAD` to `/releases/latest` can throw a
+  `NullReferenceException`, and that exception has no `Response`. The error
+  handler read `$_.Exception.Response` directly, which is a terminating error
+  under `Set-StrictMode -Version 3.0`. The installer therefore stopped with
+  "The property 'Response' cannot be found on this object" before printing
+  anything. The handler now reads that property through a guarded accessor.
+  When no `Location` comes back, the installer follows the redirect and reads
+  the final URL: `ResponseUri` on 5.1, `RequestMessage.RequestUri` on
+  PowerShell 7. The same tag check applies to that URL. If both requests fail,
+  the "could not resolve the latest release" diagnostic prints as before.
+  Windows CI runs the new behavioural cases and their pre-fix mutation under
+  both hosts. (#1953)
 - **The product A/B gate no longer judges a candidate by tests that were
   already failing.** The task-linked selection now drops every module that is
   not green on an untouched checkout at the merge base. This is the same
