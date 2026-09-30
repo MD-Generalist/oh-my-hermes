@@ -417,3 +417,90 @@ receipts and analyses are archived outside git at
 Results describe this pinned corpus, OMH version, Hermes version, gateway,
 model id and conditions only. They do not establish universal model
 superiority.
+
+### 2026-09-29 `codestral-2508` four-arm evaluation (issue #1056)
+
+The `codestral` family block (`HIGH_EFFORT_CALIBRATIONS["codestral"]`, #1055)
+measured against no block. Same pinned evaluation corpus (30 instances, digest
+`c4ea899a8e727fcc531776e56306ff0e83d129e2248fe4362614b3d186fa7b33`),
+`hermes_current_session` path, `codestral-2508` on Mistral's API through a
+Hermes custom provider (`--current-session-provider mistral`), omh 3.0.0 at
+`0075338c` (calibration text read in-process from that checkout), Hermes Agent
+0.21.5 (2026.9.24) with a fresh `HERMES_HOME` and no plugins, targeted manifest
+with that one live entry at `high`. The account's tier served Codestral only:
+Mistral Large was refused and Medium and Small allowed zero requests, so the
+`mistral` family is not measured here.
+
+Codestral rejects a top-level `reasoning_effort` at any value (HTTP 400,
+"reasoning_effort is not enabled for this model", including `none`), and
+Hermes sends it whenever `--reasoning` is set, which this harness always does.
+Every arm therefore ran with the provider's `base_url` at
+`http://api.mistral.ai/v1` and `HTTP_PROXY` pointing at a loopback proxy that
+deleted that one field from each `/v1/chat/completions` body and forwarded the
+request over HTTPS; Hermes still saw the `api.mistral.ai` host, so none of its
+local-endpoint behavior applied. The field was removed from every chat request
+in every arm.
+
+Arms ran sequentially on 2026-09-29 UTC: A1 baseline (13:42 to 13:47Z), A2
+optimized (13:47 to 13:52Z), A3 optimized again for same-text drift
+(13:52 to 13:56Z), then A4 baseline again (13:59 to 14:11Z). A4 was added after
+A1 to A3 were read, with its pooled decision rule written before it ran. Not
+counterbalanced within an arm. Only validator passes count as success. Every
+record reports `cost_usd` 0.
+
+| Arm | What the prompt carries | Passed | Total tokens | Mean tokens | Tool calls | API turns |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| A1 baseline | bare contract, no calibration | 4 / 30 | 671,854 | 22,395 | 130 | 122 |
+| A2 optimized | `HIGH_EFFORT_CALIBRATIONS["codestral"]` | 3 / 30 | 813,221 | 27,107 | 153 | 142 |
+| A3 optimized | same as A2, repeated | 6 / 30 | 680,631 | 22,688 | 144 | 121 |
+| A4 baseline | same as A1, repeated | 1 / 30 | 725,578 | 24,186 | 140 | 131 |
+
+Tool calls and API turns are out-of-harness observations read from the Hermes
+`sessions` table for each arm's window. No session compacted in any arm. In A4,
+five chat requests hit an upstream connection reset before any response
+headers and Hermes resent them, which is why A4 took twice as long; wall clock
+is not compared.
+
+Per template (passes out of 3 / tokens over the 3 seeds):
+
+| Template (class) | A1 baseline | A2 optimized | A3 optimized | A4 baseline |
+| --- | ---: | ---: | ---: | ---: |
+| RENAME (edit) | 0 / 56,700 | 0 / 87,413 | 0 / 73,253 | 0 / 63,262 |
+| BUGFIX (edit) | 2 / 98,662 | 1 / 122,595 | 2 / 62,289 | 1 / 91,514 |
+| PRECEDENCE (read) | 0 / 65,360 | 0 / 78,998 | 0 / 73,624 | 0 / 70,903 |
+| CALLFLOW (read) | 0 / 100,469 | 0 / 103,232 | 0 / 79,078 | 0 / 56,106 |
+| REFERENCES (search) | 0 / 60,132 | 0 / 66,404 | 0 / 61,087 | 0 / 65,682 |
+| PREDICATE (search) | 0 / 62,938 | 0 / 47,726 | 0 / 63,979 | 0 / 57,643 |
+| DEFINITION (lsp) | 0 / 60,299 | 0 / 49,753 | 0 / 56,384 | 0 / 72,666 |
+| DIAGNOSTICS (lsp) | 0 / 30,890 | 0 / 112,064 | 0 / 84,438 | 0 / 134,845 |
+| SCALE (routing) | 2 / 76,903 | 1 / 66,311 | 2 / 60,662 | 0 / 59,111 |
+| EXPLICIT (routing) | 0 / 59,501 | 1 / 78,725 | 2 / 65,837 | 0 / 53,846 |
+
+Paired token deltas per instance (10,000-sample bootstrap, seed 20260813):
+
+| Pair (b − a) | Mean Δ tokens | CI95 | b > a |
+| --- | ---: | ---: | ---: |
+| A2 − A1 (block vs none) | +4,712 | [−1,954, +11,665] | 19 / 30 |
+| A3 − A2 (block, same text twice) | −4,420 | [−9,856, +819] | 13 / 30 |
+| A4 − A1 (no block, same text twice) | +1,791 | [−3,945, +7,641] | 12 / 30 |
+| mean(A2, A3) − mean(A1, A4) | +1,607 | [−2,451, +5,788] | 16 / 30 |
+
+Every pass in every arm is in `BUGFIX`, `SCALE` or `EXPLICIT`, and 6 to 10
+records per arm fail with `invalid_final_json`: this model often leaves no
+valid answer file, so it sits far below the 18 / 30 ceiling other models reach
+on this corpus. Pass rate separates nothing (McNemar p = 1.0 for A1 vs A2,
+0.25 for each same-text repeat). The rule written before A1 (A2 not below A1
+on passes, and A2 − A1 tokens no larger than the A3 − A2 drift) failed
+narrowly on both counts, 3 vs 4 passes and +4,712 against 4,420, while each
+condition's own repeat moved as far (3 to 6 passes, 4 to 1 passes). Pooled over
+both runs of each condition, the block passed 9 / 60 against 5 / 60 and its
+token cost has a CI spanning zero, which meets the pooled rule: no measurable
+effect either way, and the block is kept. Not measured: the composer block (no
+fanout in this harness), efforts below `high` (the block does not fire there),
+and any claim beyond this corpus. Records, manifests, the proxy and the
+analysis scripts are archived outside git and linked from the pull request
+that added this section.
+
+Results describe this pinned corpus, OMH version, Hermes version, provider,
+model id and conditions only. They do not establish universal model
+superiority.

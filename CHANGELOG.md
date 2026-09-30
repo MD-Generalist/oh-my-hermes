@@ -20,6 +20,18 @@ All notable changes will be documented here.
   units in the batch completed. A failed or blocked unit still exits 1 and an
   interrupt still exits 130; both outrank the busy code. `already_completed`
   and `not_selected` skips still exit 0. (#1932)
+- **The `codestral` calibration block now has a live measurement.** It was
+  one of four family blocks marked "live benchmark validation pending". Four
+  arms of 30 evaluation instances on `codestral-2508` at `high` (two without
+  the block, two with it) show no measurable effect either way: 9 / 60
+  passes with the block against 5 / 60 without, and +1,607 tokens per task,
+  bootstrap CI95 [−2,451, +5,788]. The block is kept, and the
+  `MODEL_OPTI.md` section now records the numbers, including that the rule
+  written before the first three arms failed narrowly and a pooled rule was
+  added before the fourth. `mistral`, `llama` and `solar` stay pending.
+  The benchmark's pairing test now checks that the calibration block is the
+  only difference between the two prompts; before, extra text before or
+  after the block, or a changed separator, still passed it. (#1056)
 - **English one-word replies now decline the route question.** The
   `one_word_reply` verdict accepted only the engine-entry approval
   vocabulary, which holds one English word (`lgtm`) against thirteen Korean
