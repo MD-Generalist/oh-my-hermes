@@ -527,7 +527,10 @@ Rules, all applied at freeze time:
   lock on that unit, taken without waiting, so a second concurrent dispatch
   skips it as `repair_in_flight` instead of numbering the same attempt or
   running a second executor in the worktree; a dispatcher that dies releases
-  the lock. The exit code reflects only the units this dispatch selected: a
+  the lock. A dispatch that skipped a unit this way spawned nothing for it and
+  exits 75 (`EX_TEMPFAIL`, retry later), even when its other units completed;
+  any failed or blocked unit outranks it and the batch exits 1, and an
+  interrupt still exits 130. The exit code reflects only the units this dispatch selected: a
   selected unit that ends blocked (including one skipped because an earlier
   dispatch blocked it) exits 1, while an unselected unit's blocked history is
   still carried on its record for `show` and `brief` and does not set the

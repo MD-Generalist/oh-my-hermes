@@ -8,7 +8,7 @@ run that claims completion and fails that check is a false completion.
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping, MutableMapping, Sequence
 import json
 from pathlib import Path
 import re
@@ -204,6 +204,43 @@ def run_modules(
             "classification": "timeout",
         }
     return _summarize(completed.returncode, completed.stderr, len(modules))
+
+
+def green_at_merge_base(
+    *,
+    python_executable: str,
+    repository: Path,
+    merge_base: str,
+    modules: Sequence[str],
+    root: Path,
+    timeout: int,
+    known: MutableMapping[tuple[str, str], bool],
+) -> list[str]:
+    """The modules that read green on an untouched checkout at the merge base.
+
+    The rule the corpus probe applies to the regression set -- `run_modules`
+    at the merge base must read `green` -- applied one module at a time, so a
+    red module can be named and left out rather than rejecting the whole
+    selection. A module already red before any change cannot tell whether the
+    candidate broke it (#1896: ten of forty tasks selected one).
+
+    `known` carries each verdict across gate runs of one task: a repair turn
+    changes the candidate's diff, never the merge base.
+    """
+
+    missing = [module for module in modules if (merge_base, module) not in known]
+    if missing:
+        with repo_lib.candidate_workspace(repository, merge_base, root, "merge-base") as base:
+            for module in missing:
+                result = run_modules(
+                    python_executable=python_executable,
+                    workspace=base,
+                    scratch=root / "merge-base-scratch",
+                    modules=[module],
+                    timeout=timeout,
+                )
+                known[(merge_base, module)] = result["status"] == "green"
+    return [module for module in modules if known[(merge_base, module)]]
 
 
 def _summarize(returncode: int, output: str, module_count: int) -> dict[str, Any]:

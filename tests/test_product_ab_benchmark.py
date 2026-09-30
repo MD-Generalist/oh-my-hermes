@@ -1400,11 +1400,14 @@ class ArmTests(unittest.TestCase):
         self.assertEqual(result["checks"][0]["exit_code"], 3)
         self.assertEqual(result["checks"][1]["classification"], "not_observed")
 
-    def _task_linked_workspace(self, root: Path) -> tuple[Path, str]:
+    def _task_linked_workspace(
+        self, root: Path, extra: dict[str, str] | None = None
+    ) -> tuple[Path, str]:
         """A tiny checkout: one module, a direct test, a test the task owns."""
 
         workspace = root / "ws"
         files = {
+            **(extra or {}),
             "pkg/__init__.py": "",
             "pkg/mod.py": "def value():\n    return 1\n",
             "tests/test_mod.py": (
@@ -1458,6 +1461,71 @@ class ArmTests(unittest.TestCase):
             [("python -c 'pass'", "passed"), ("python -m unittest tests/test_mod.py", "failed")],
         )
         self.assertEqual(result["status"], "failed")
+        self.assertNotIn("red_at_merge_base_test_paths", linked)
+
+    def test_a_module_red_at_the_merge_base_is_dropped_from_the_task_linked_selection(self) -> None:
+        """#1896: a module already red before any change cannot judge the candidate.
+
+        `tests/test_broken.py` imports the edited module and fails at the merge
+        base. A correct candidate cannot turn it green, so the gate keeps it
+        out, as the corpus keeps a red regression set out, and records why.
+        """
+
+        broken = (
+            "import unittest\nfrom pkg.mod import value\n\n\n"
+            "class B(unittest.TestCase):\n    def test_broken(self):\n        self.assertEqual(value(), 9)\n"
+        )
+        with TemporaryDirectory() as root:
+            workspace, base = self._task_linked_workspace(
+                Path(root), extra={"tests/test_broken.py": broken}
+            )
+            (workspace / "pkg" / "mod.py").write_text(
+                "def value():\n    # a correct, behaviour-preserving edit\n    return 1\n", encoding="utf-8"
+            )
+            result = runner._run_gate(
+                python_executable=sys.executable,
+                workspace=workspace,
+                scratch=Path(root) / "scratch",
+                task={
+                    "merge_base": base,
+                    "test_paths": ["tests/test_hidden.py"],
+                    "verification_commands": ["python -c 'pass'"],
+                },
+                timeout=120,
+            )
+        linked = result["task_linked_postcondition"]
+        self.assertEqual(linked["selected_test_paths"], ["tests/test_mod.py"])
+        self.assertEqual(linked["red_at_merge_base_test_paths"], ["tests/test_broken.py"])
+        self.assertEqual(linked["excluded_test_paths"], ["tests/test_hidden.py"])
+        self.assertEqual(result["status"], "passed")
+
+    def test_the_merge_base_baseline_runs_each_module_once_per_task(self) -> None:
+        """The repair turn re-resolves the gate; the merge base has not moved."""
+
+        with TemporaryDirectory() as root:
+            workspace, base = self._task_linked_workspace(Path(root))
+            (workspace / "pkg" / "mod.py").write_text("def value():\n    return 1  # edit\n", encoding="utf-8")
+            known: dict = {}
+            calls: list[list[str]] = []
+            real = runner.grading.run_modules
+
+            def counting(**kwargs):  # noqa: ANN003, ANN202
+                calls.append(list(kwargs["modules"]))
+                return real(**kwargs)
+
+            task = {"merge_base": base, "test_paths": ["tests/test_hidden.py"], "verification_commands": []}
+            with mock.patch.object(runner.grading, "run_modules", side_effect=counting):
+                for _ in range(2):
+                    runner._run_gate(
+                        python_executable=sys.executable,
+                        workspace=workspace,
+                        scratch=Path(root) / "scratch",
+                        task=task,
+                        timeout=120,
+                        merge_base_verdicts=known,
+                    )
+        self.assertEqual(calls, [["tests/test_mod.py"]])
+        self.assertEqual(known, {(base, "tests/test_mod.py"): True})
 
     def test_an_untouched_checkout_adds_no_task_linked_command(self) -> None:
         with TemporaryDirectory() as root:
