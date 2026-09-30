@@ -1774,10 +1774,11 @@ FULL_PROFILE_SKILL_BODY_REVIEWED_EXCEPTION_CHARS = 0
 # above removes. So it takes the same policy: the measurement plus
 # `FULL_PROFILE_SKILL_BODY_HEADROOM_PERCENT`, rounded UP to the next multiple
 # of `FULL_PROFILE_SKILL_BODY_REPEATED_CEILING_STEP_CHARS` (10,000, about a
-# tenth of the measurement). The 15,786 chars of headroom hold about ten
-# median lane members, while a renderer change that stamps one more shared
-# sentence longer than about 120 chars into every body, or a few skills that
-# copy other skills' own sections, still fails.
+# tenth of the measurement). The 12,258 chars of headroom (130,000 - 117,742)
+# hold about eight median lane members, while a renderer change that stamps
+# one more shared sentence longer than about 86 chars into every one of the
+# 142 bodies, or a few skills that copy other skills' own sections, still
+# fails.
 #
 # The measurement is also a floor: `tests/test_per_turn_budgets.py` fails when
 # the producer reads below `FULL_PROFILE_SKILL_BODY_REPEATED_MEASURED_CHARS`,
