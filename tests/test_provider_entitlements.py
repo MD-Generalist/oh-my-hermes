@@ -79,6 +79,10 @@ class ParityTests(unittest.TestCase):
         # Retired 2026-09-23 when GPT-6 Sol took both GPT-5.6 tiers' slots.
         "gpt-5.6-sol": ("openai-codex", "openai"),
         "gpt-5.6-terra": ("openai-codex", "openai"),
+        # Retired 2026-10-01: xAI serves the alias as Grok Build 0.1.
+        "grok-code-fast": ("xai", "openrouter"),
+        # Retired 2026-10-01 when GPT-6.1 Sol took every GPT-6 Sol slot.
+        "gpt-6-sol": ("openai-codex", "openai"),
     }
 
     def _catalog_families(self) -> dict[str, tuple[str, ...]]:

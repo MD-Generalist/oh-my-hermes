@@ -207,6 +207,23 @@ class ExecutorPromptingTests(unittest.TestCase):
                 for rule in overlay["rules"]:
                     self.assertNotIn("without ending the turn", rule)
 
+    def test_gpt_6_1_sol_inherits_the_sol_codex_overlay_by_decision(self) -> None:
+        # Owner decision (2026-10-01): GPT-6.1 Sol takes every GPT-6 Sol slot,
+        # the `-sol` Codex handoff overlay included; this test names the id
+        # so the inheritance is reviewed rather than a suffix accident.
+        for model in ("gpt-6.1-sol", "openai/gpt-6.1-sol", "openai-codex/gpt-6.1-sol"):
+            with self.subTest(model=model):
+                payload = build_coding_delegation_payload(
+                    "Implement src/example.py",
+                    executor_target="codex",
+                    main_agent_model=model,
+                )
+                overlay = payload["executor_handoff"]["executor_prompting_contract"]["throughput_overlay"]
+                self.assertEqual(overlay["mode"], "gpt_sol_codex_handoff")
+                self.assertEqual(overlay["eval_strategy"], "single_cell_internal_parallel")
+                for rule in overlay["rules"]:
+                    self.assertNotIn("without ending the turn", rule)
+
     def test_gpt_sol_codex_handoff_adds_eval_batching_guidance(self) -> None:
         payload = build_coding_delegation_payload(
             "Implement src/example.py",

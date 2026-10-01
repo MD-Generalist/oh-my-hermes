@@ -28,7 +28,7 @@ invisible in the public table — which is the point of the gate.
 Effort is rendered from the catalog, never assumed, and always on the entry
 that declares it. The hand-written table used a trailing token for a row whose
 entries all shared an effort, which reads shorter but cannot be read back: in
-`Claude Opus 5.5, GPT-6 Sol (medium)` the token could belong to the row or to
+`Claude Opus 5.5, GPT-6.1 Sol (medium)` the token could belong to the row or to
 Sol alone, and for `last_resort.any` it then belonged to Sol alone. One rule --
 `Label (effort)` per entry, nothing at all for an entry that declares none --
 is longer on the uniform rows and unambiguous on every row, which is what lets
@@ -78,6 +78,8 @@ MODEL_DISPLAY_LABELS: Final[dict[str, str]] = {
     "gpt-6-astra": "GPT-6 Astra",
     "gpt-6-luna": "GPT-6 Luna",
     "gpt-6-sol": "GPT-6 Sol",
+    "gpt-6.1-sol": "GPT-6.1 Sol",
+    "grok-build-0.1": "Grok Build 0.1",
     "grok-code-fast": "Grok Code Fast",
     "kimi-k3": "Kimi K3",
     "qwen3-coder": "Qwen3-Coder",

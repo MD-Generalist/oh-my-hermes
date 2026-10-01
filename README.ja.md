@@ -341,7 +341,7 @@ OMH には次の編集可能な順序付き recommendation chain が含まれて
 | カテゴリ alias | 用途 | 編集可能な recommendation 順序 |
 | --- | --- | --- |
 | `ultrabrain` | 最も深い推論 | GPT-6 Astra (xhigh) |
-| `deep` | 強力なデフォルト層 | GPT-6 Sol、次に DeepSeek Flash (V4.1) (high) |
+| `deep` | 強力なデフォルト層 | GPT-6.1 Sol、次に DeepSeek Flash (V4.1) (high) |
 | `architect` | アーキテクチャ・システム設計 | Claude Fable 5.1、次に GPT-6 Astra、次に Kimi K3 (xhigh) |
 | `unspecified-high` | デフォルト作業モデル | Kimi K3、次に Claude Opus 5.5 (medium) |
 | `unspecified-low` | 低コストのフォールバック | GLM 5.3、次に DeepSeek Flash (V4.1)、次に Claude Opus 5.5 (low) |

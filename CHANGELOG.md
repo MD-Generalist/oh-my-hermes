@@ -4,6 +4,44 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **GPT-6.1 Sol, Claude Sonnet 5.5, and Grok Build 0.1 are registered, and
+  four stale price rows are corrected.** A sweep of every shipped family
+  against vendor docs and the Hermes upstream catalog (2026-10-01) found
+  three models OMH did not register.
+  - GPT-6.1 Sol (`gpt-6.1-sol`, released 2026-09-29) takes every slot
+    GPT-6 Sol held, at the effort each slot carried: `deep` head `high`,
+    the shared last resort `medium`, the main-role suggestion `high`, and
+    every Maestro Codex row (owner decision). GPT-6 Sol leaves the shipped
+    chains and stays recognized, priced, and provider-mapped. 6.1 Sol has
+    no `none` rung, so `off` and `minimal` are raised to `low` on record;
+    the five Maestro Codex rows that named no effort now name `medium`,
+    because the Codex client's default for 6.1 Sol is `low` and leaving
+    the effort unset would have lowered them silently. `gpt-6.1-sol-pro` is
+    a declared pro-mode projection. Price 2/10 with cached input at 5% of
+    input. The calibration is GPT-6 Astra's override text, byte for byte:
+    the vendor's Codex client gives 6.1 Sol Astra's base prompt.
+    Editorial and unmeasured for 6.1 Sol.
+  - Claude Sonnet 5.5 (`claude-sonnet-5-5`, released 2026-09-28) gets an
+    exact contract. Its declared spellings are the Bedrock id and
+    OpenRouter's dotted id. A no-thinking rung is raised to `low`, because
+    `disabled` is HTTP 400 on this model, and `omh_delegate_route` refuses
+    that rung for it. It is priced at 2/10. It joins no chain (owner
+    decision). Its high-effort block adds one clause to the Claude block:
+    once the checks pass, start no further review rounds and no reviewer
+    sub-agents. Anthropic measured that instruction at `max` effort as
+    cutting session cost by about a third with no change in quality.
+    It is unmeasured in OMH.
+  - Grok Build 0.1 (`grok-build-0.1`) takes the `x_platform_data` slot.
+    xAI retired Grok Code Fast on 2026-05-15 and lists `grok-code-fast-1`,
+    `grok-code-fast`, and `grok-code-fast-1-0825` as Build 0.1 aliases, so
+    on xAI's API the slot already ran it. Both ids are now priced at the
+    Build 0.1 list rate of 1/2, with cached input at a fifth of input; the
+    old 0.2/1.5 rate under-reported runs on xAI's API after the reroute.
+  - Corrected list prices: Kimi K3 0.6/2.5 → 3/15 (it was the K2-era rate);
+    Kimi K3 Ultrafast 0.3/1.25 → 3/15, carrying the base rate because
+    Moonshot publishes no tier rate; Gemini 3.1 Pro 1.25/10 → 2/12 (it was
+    Gemini 2.5 Pro's rate).
+
 - **Update takes back a bot profile's store setting once its `.env` names
   one.** Setup and update give a storeless bot profile
   `plugins.entries.omh.settings.omh_home` under a non-default primary store

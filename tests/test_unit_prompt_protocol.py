@@ -17,6 +17,7 @@ from omh.coding.unit_prompt_protocol import (  # noqa: E402
     HIGH_EFFORT_CALIBRATIONS,
     HIGH_EFFORT_TIER,
     MAIN_AGENT_COMPOSITION_CALIBRATIONS,
+    MODEL_HIGH_EFFORT_CALIBRATIONS,
     PROMPT_CACHE_COMPOSITION_PROTOCOL,
     REVIEW_ROLE_PROTOCOL,
     STRUCTURAL_SEARCH_DISCIPLINE_GUIDANCE,
@@ -270,7 +271,10 @@ class CalibrationSelectionTests(unittest.TestCase):
             "brain",
         )
         prompt = build_unit_prompt(unit, _GOAL)
-        self.assertIn(HIGH_EFFORT_CALIBRATIONS["gpt"], prompt)
+        # The codex brain chain head is GPT-6.1 Sol at `high` (2026-10-01),
+        # whose exact-model override replaces the `gpt` family block.
+        self.assertIn(MODEL_HIGH_EFFORT_CALIBRATIONS["gpt-6.1-sol"], prompt)
+        self.assertNotIn(HIGH_EFFORT_CALIBRATIONS["gpt"], prompt)
 
     def test_high_effort_claude_brain_gets_claude_calibration(self) -> None:
         unit = _contract_unit(

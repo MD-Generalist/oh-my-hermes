@@ -764,11 +764,11 @@ Rules, all applied at freeze time:
   so a frozen contract names the exact basis it was resolved from; the
   file's presence is the opt-in, and codex/claude-only contracts stay
   byte-identical across machines that have not created it. The built-in
-  `codex` table names `gpt-6-sol` in every category GPT-6 Astra does not
-  head; the Codex client repository's model catalog lists 0.155.0 as Sol's
-  minimum client version (official-client, openai/codex `models.json`; the
-  catalog the backend serves does not carry the field), so run Codex CLI
-  0.155.0 or later for those rows or override them. Edit it with
+  `codex` table names `gpt-6.1-sol` in every category GPT-6 Astra does not
+  head; the Codex client repository's model catalog lists 0.153.0 as its
+  minimum client version (official-client, openai/codex `models.json`, read
+  2026-10-01), so run Codex CLI 0.153.0 or later for those rows or override
+  them. Edit it with
   `omh coding category-maestro set <profile> <category> <model[:effort]>...`
   (the tail after the last colon is the effort only when it is a known level
   — off/minimal/low/medium/high/xhigh/max/auto — so colon-tagged model ids

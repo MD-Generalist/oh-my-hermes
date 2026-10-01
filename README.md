@@ -402,7 +402,7 @@ credential, dispatch, or execution evidence:
 | Category alias | What it is for | Editable recommendation order |
 | --- | --- | --- |
 | `ultrabrain` | Deepest reasoning | GPT-6 Astra (xhigh) |
-| `deep` | Strong default tier | GPT-6 Sol, then DeepSeek Flash (V4.1) (high) |
+| `deep` | Strong default tier | GPT-6.1 Sol, then DeepSeek Flash (V4.1) (high) |
 | `architect` | Architecture and system design | Claude Fable 5.1, then GPT-6 Astra, then Kimi K3 (xhigh) |
 | `unspecified-high` | Default working model | Kimi K3, then Claude Opus 5.5 (medium) |
 | `unspecified-low` | Cheaper fallback | GLM 5.3, then DeepSeek Flash (V4.1), then Claude Opus 5.5 (low) |

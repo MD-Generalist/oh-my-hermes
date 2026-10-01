@@ -131,7 +131,7 @@ class GeneratedChainTableTests(unittest.TestCase):
         self.assertEqual(
             main.order,
             "Kimi K3, Claude Fable 5.1, Claude Opus 5.5, "
-            "GPT-6 Astra (`xhigh`), GPT-6 Sol (`high`)",
+            "GPT-6 Astra (`xhigh`), GPT-6.1 Sol (`high`)",
         )
 
     def test_every_declared_effort_is_annotated_on_its_own_entry(self) -> None:
