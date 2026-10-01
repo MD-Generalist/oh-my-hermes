@@ -163,7 +163,7 @@ HERMES_MIXTURE_CATEGORY_CHAINS: dict[str, tuple[tuple[str, str], ...]] = {
 # value must be a plain identifier token so a crafted "model name" can never
 # smuggle structure into config.yaml via a later omh_delegate_route write.
 MIXTURE_CHAIN_OVERRIDES_SCHEMA_VERSION = "mixture_chain_overrides/v1"
-_CHAIN_TOKEN_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$")
+_CHAIN_TOKEN_RE = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9._/-]|:(?=[A-Za-z0-9])){0,127}$")
 
 
 def mixture_chain_overrides_path(omh_home: str | Path | None = None) -> Path:

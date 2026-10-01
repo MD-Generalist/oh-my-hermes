@@ -30,6 +30,10 @@ from omh.plugin_bundle.omh.hermes_delegation import (
     effective_mixture_category_chains,
     load_delegation_route_provenance,
     load_mixture_chain_overrides,
+    is_provider_id_token,
+    parse_mixture_chain_overrides,
+    parse_model_price_overrides,
+    parse_provider_entitlements,
     mixture_category_for,
     mixture_chain_overrides_path,
     parse_model_provider_routes,
@@ -648,6 +652,37 @@ class MixtureChainOverridesTest(unittest.TestCase):
                     effective_mixture_category_chains(tmp, Path(tmp) / "hermes"),
                     HERMES_MIXTURE_CATEGORY_CHAINS,
                 )
+
+    def test_named_provider_tokens_apply_across_routing_documents(self):
+        token = "custom:cli-proxy"
+        self.assertTrue(is_provider_id_token(token))
+        self.assertEqual(parse_mixture_chain_overrides({
+            "schema_version": "mixture_chain_overrides/v1",
+            "categories": {"quick": [{"model": token, "reasoning_effort": "low"}]},
+        }), ({"quick": ((token, "low"),)}, "applied"))
+        routes, status = parse_model_provider_routes({
+            "schema_version": "model_provider_routes/v1",
+            "models": {token: {"provider": token, "model": token}},
+        })
+        self.assertEqual((routes, status), ({token: (token, token)}, "applied"))
+        entitlements, status = parse_provider_entitlements({
+            "schema_version": "provider_entitlements/v1", "providers": {token: "gateway"},
+        })
+        self.assertEqual(status, "applied")
+        self.assertEqual(entitlements["providers"], {token: "gateway"})
+        self.assertEqual(parse_model_price_overrides({
+            "schema_version": "model_price_overrides/v1",
+            "models": {token: {"input_per_mtok": 1, "output_per_mtok": 2}},
+        })[1], "applied")
+
+        for invalid in ("custom: cli-proxy", "custom:", "custom::cli-proxy", "custom:cli-proxy!", "a" * 129):
+            with self.subTest(invalid=invalid):
+                self.assertFalse(is_provider_id_token(invalid))
+                self.assertTrue(parse_model_provider_routes({
+                    "schema_version": "model_provider_routes/v1",
+                    "models": {"safe": {"provider": invalid, "model": "safe"}},
+                })[1].startswith("invalid:"))
+        self.assertTrue(is_provider_id_token("a" * 128))
 
     def test_provider_routes_reject_non_string_scalars(self):
         routes, status = parse_model_provider_routes(
