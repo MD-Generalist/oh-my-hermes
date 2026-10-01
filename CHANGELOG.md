@@ -16,6 +16,20 @@ All notable changes will be documented here.
   workspace that points outside shows its in-workspace spelling; resolving
   links would stat named files, which the receipt never does. (#1813)
 
+- **Windows fanout dispatch stays unconfined, now as a measured finding.**
+  Both native ways to give `omh coding fanout dispatch` a write fence on
+  Windows without a dependency were built and run on the Windows CI runner,
+  and neither holds the contract. A write-restricted token refuses writes
+  outside the unit root but also denies the child its own default-security
+  named pipes, so Node's piped `child_process` fails with `EPERM`. That is
+  how every coding owner CLI runs its tools. Low integrity keeps the pipes
+  working, but any Low process on the host can write every Low-labelled root,
+  including another unit's worktree and `AppData\LocalLow`, and owner state
+  would have to be labelled Low for good. Behaviour does not change: Windows
+  still dispatches unconfined and records
+  `no_os_confinement_backend_on_this_platform`. `docs/FANOUT.md` records what
+  was measured and what was not. (#1357)
+
 - **Bot profiles under a non-default primary OMH home bind the primary's
   store.** `omh setup --omh-home X` recorded `plugins.entries.omh.settings.omh_home`
   in the primary Hermes home only, so a bot profile that named no store of its
