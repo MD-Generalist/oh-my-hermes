@@ -570,6 +570,15 @@ def _profile_clone(args: argparse.Namespace, primary: OmhPaths, profile_dir: Pat
     return clone
 
 
+def _profile_env_names_omh_home(profile_dir: Path) -> bool:
+    """Whether a profile chose its store through its `.env` `OMH_HOME` (#1679).
+
+    Names only, never the value: the choice is the profile's whatever it
+    says, and a setting written beside it would outrank it.
+    """
+    return bool(env_key_names(profile_dir, allowed=("OMH_HOME",)))
+
+
 def _sync_hermes_profiles(args: argparse.Namespace) -> list[dict[str, object]]:
     """Apply the managed OMH registration to every bot-profile home.
 
@@ -620,7 +629,7 @@ def _sync_hermes_profiles(args: argparse.Namespace) -> list[dict[str, object]]:
                 entry["plugin_update_command"] = HERMES_PLUGIN_UPDATE_COMMAND
             install_tui_widget(profile_paths.hermes_home, dry_run=bool(args.dry_run))
             install_skin(profile_paths.hermes_home, dry_run=bool(args.dry_run))
-            applied = _apply_result(clone, bind_omh_home=False)
+            applied = _apply_result(clone, bind_omh_home=not _profile_env_names_omh_home(profile_dir))
             entry["registration"] = applied["registration"]
             entry["retired_external_dirs"] = applied["retired_external_dirs"]
             entry["registered_dir"] = applied["registered_dir"]
@@ -1942,9 +1951,12 @@ def cmd_apply(args: argparse.Namespace) -> int:
 def _apply_result(args: argparse.Namespace, *, bind_omh_home: bool = True) -> dict[str, object]:
     """Write every managed key into this home's Hermes config, in one mutation.
 
-    `bind_omh_home` is off only for a bot-profile home: there the store is
-    the profile's own choice, through its `settings.omh_home` or its `.env`
-    `OMH_HOME` (#1679), and a setting written here would outrank the second.
+    `bind_omh_home` is off only for a bot-profile home whose `.env` names
+    `OMH_HOME`: that is the profile's own choice of store (#1679), and a
+    setting written here would outrank it. A profile that chose through its
+    own `settings.omh_home` is kept by the unset-only writer, and one that
+    chose neither is given the primary's store, which its managed skills,
+    widget and skin already come from (#1967).
     """
     paths = _paths(args)
     # The store the plugin in this home would bind with nothing naming one.
@@ -2062,7 +2074,7 @@ def _apply_result(args: argparse.Namespace, *, bind_omh_home: bool = True) -> di
                 False,
                 "the plugin binds this store without a setting"
                 if binds_by_default
-                else "a bot profile names its own store",
+                else "a bot profile names its own store in its .env OMH_HOME",
                 memory_provider.text,
             )
         applied.update(

@@ -60,6 +60,7 @@ from ..workflows.memory import (
     scan_project_memory_records,
 )
 from ..plugin_bundle.omh.metadata import MEMORY_PROVIDER_NAME
+from ..plugin_bundle.omh.provider_detection import env_key_names
 from ..plugin_observations import (
     PLUGIN_HOST_ACTIVE_OBSERVATION_EVENTS,
     latest_plugin_host_observation,
@@ -425,6 +426,7 @@ def run_doctor(paths: OmhPaths) -> list[Check]:
                 ),
                 _plugin_enabled_check(paths),
                 _plugin_omh_home_binding_check(paths, config_text),
+                *_profile_omh_home_binding_checks(paths),
                 _plugin_desktop_half_check(paths),
                 _awareness_delivery_check(paths),
             ]
@@ -2350,6 +2352,49 @@ def _plugin_omh_home_binding_check(paths: OmhPaths, config_text: str) -> Check:
         severity="warning",
         next_action=repair,
     )
+
+
+def _profile_omh_home_binding_checks(paths: OmhPaths) -> list[Check]:
+    """A bot profile that names no store, under a primary whose store is not `~/.omh`.
+
+    Its managed skills, widget and skin come from the primary's store, but
+    with neither a `settings.omh_home` nor an `.env` `OMH_HOME` its plugin
+    binds `~/.omh` when the profile runs as its own Hermes process, and is
+    refused in a multiplexed one (#1967). A profile that named any store
+    chose it (#1679) and is not reported. One row per affected profile,
+    named after it, as `_external_dir_ambiguity_checks` does; a warning with
+    `ok=True`, because the primary home does not share the finding.
+    """
+    unset = runtime_paths.unset_launch_omh_home()
+    if paths.omh_home == unset:
+        return []
+    checks: list[Check] = []
+    for name, profile_dir in hermes_profile_dirs(paths.hermes_home):
+        config_path = _profile_paths(paths, profile_dir).hermes_config_path
+        try:
+            found, _value = runtime_paths.omh_home_setting(read_config(config_path))
+        except runtime_paths.RuntimeBindingError:
+            # A setting the plugin's scan refuses is still the profile's own.
+            found = True
+        if found or env_key_names(profile_dir, allowed=("OMH_HOME",)):
+            continue
+        checks.append(
+            Check(
+                f"plugin_omh_home_binding:{name}",
+                True,
+                (
+                    f"bot profile {name} names no OMH home, so its plugin binds {unset} "
+                    f"while its managed skills come from {paths.omh_home}"
+                ),
+                severity="warning",
+                next_action=(
+                    f"Run `omh --omh-home {paths.omh_home} --hermes-home {paths.hermes_home} update` to record "
+                    f"`plugins.entries.omh.settings.omh_home` in {config_path}, or name the profile's own store "
+                    f"there or as `OMH_HOME` in {profile_dir / '.env'}."
+                ),
+            )
+        )
+    return checks
 
 
 def _plugins_enabled_extension_check(paths: OmhPaths, config_text: str, config_present: bool) -> Check:

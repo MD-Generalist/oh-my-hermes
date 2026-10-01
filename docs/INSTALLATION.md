@@ -29,9 +29,14 @@ plugins:
 installs when X is not `~/.omh`, so the plugin loaded there binds X without
 `OMH_HOME` exported to Hermes; `omh update` adds it to an existing install,
 and `omh uninstall` removes it while it still names X. A value already there
-is never replaced, and a bot profile's config is never given one: its store
-stays its own choice. `omh doctor` warns (`plugin_omh_home_binding`) when the
-plugin in the Hermes home would bind a store other than the one it checked.
+is never replaced. A bot profile that already names a store, through this
+setting or through `OMH_HOME` in its own `.env`, keeps it untouched; a profile
+that names neither is given X too, because its managed skills, widget and skin
+come from X, and with a default primary nothing is written to a profile.
+`omh doctor` warns (`plugin_omh_home_binding`) when the plugin in the Hermes
+home would bind a store other than the one it checked, and
+(`plugin_omh_home_binding:<profile>`) for each profile that names no store
+under a primary that is not `~/.omh`.
 Once recorded, the setting outranks an exported `OMH_HOME` for that Hermes
 home, and setup does not move it. To switch stores, remove or edit the
 setting and run setup with the new `--omh-home`, or run `omh uninstall`
