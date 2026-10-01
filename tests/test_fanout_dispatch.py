@@ -3715,7 +3715,7 @@ class FanoutBriefCliTests(unittest.TestCase):
             by_unit = {entry["unit_id"]: entry for entry in brief["units"]}
             core = by_unit["core"]
             self.assertEqual(core["owner"], "codex")
-            self.assertEqual(core["model"], "gpt-6-sol")
+            self.assertEqual(core["model"], "gpt-6.1-sol")
             self.assertEqual(core["status"], "completed")
             self.assertEqual(core["session_ref"], "unknown")
             self.assertEqual(core["tokens_total"], "unknown")
@@ -3735,7 +3735,7 @@ class FanoutBriefCliTests(unittest.TestCase):
             paths = OmhPaths(omh_home=root / ".omh", hermes_home=root / ".hermes")
             units = [
                 # The codex brain chain is a single entry since GPT-6 Sol took
-                # both GPT-5.6 slots (2026-09-23), so the alternative is held
+                # both GPT-5.6 slots (2026-09-23; GPT-6.1 Sol since 2026-10-01), so the alternative is held
                 # on the Claude Code brain chain (Fable 5.1 -> opus).
                 {"unit_id": "core", "title": "Core", "owner": "claude-code", "file_scope": ["src/r/"], "role": "brain"},
                 {"unit_id": "docs", "title": "Docs", "owner": "codex", "file_scope": ["docs/"], "role": "docs"},
@@ -3766,7 +3766,7 @@ class FanoutBriefCliTests(unittest.TestCase):
             # separator around a parenthetical.
             self.assertIn("claude-code (claude-fable-5-1 high, alt: opus)", stdout)
             self.assertNotIn(" — (", stdout)
-            self.assertNotIn("(gpt-6-sol, alt:", stdout)
+            self.assertNotIn("(gpt-6.1-sol, alt:", stdout)
 
     def test_brief_degrades_silently_for_v1_routes(self) -> None:
         # A persisted v1 route carries no chain[]: the alternative must be

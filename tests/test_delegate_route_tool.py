@@ -801,6 +801,22 @@ class DelegateRouteToolTest(unittest.TestCase):
         self.assertEqual(result["status"], "routed")
         result = self._call(action="set", model="anthropic.claude-opus-5", reasoning_effort="none")
         self.assertEqual(result["status"], "routed")
+        # Sonnet 5.5 joined on 2026-10-01 (its migration guide: `disabled` is
+        # a 400; `between_tools` is a request no Hermes build sends). Sonnet 5
+        # and the bare `sonnet` word, which Claude Code resolves to Sonnet 4.5
+        # off the Anthropic API, keep the no-thinking rung.
+        for model in (
+            "claude-sonnet-5-5",
+            "anthropic/claude-sonnet-5.5",
+            "anthropic.claude-sonnet-5-5",
+            "us.anthropic.claude-sonnet-5-5",
+        ):
+            result = self._call(action="set", model=model, reasoning_effort="none")
+            self.assertEqual(result["status"], "error", model)
+            self.assertIn("always thinks", result["error"])
+        for model in ("claude-sonnet-5", "sonnet"):
+            result = self._call(action="set", model=model, reasoning_effort="none")
+            self.assertEqual(result["status"], "routed", model)
         # Opus 5.5 at a documented rung is untouched by the guard.
         result = self._call(action="set", model="claude-opus-5-5", reasoning_effort="low")
         self.assertEqual(result["status"], "routed")

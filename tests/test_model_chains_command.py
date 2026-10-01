@@ -89,7 +89,7 @@ class ModelChainsSetTests(unittest.TestCase):
                 _base(root) + ["model-chains", "set", "deep", "--clear"], output_json=False
             )
             self.assertEqual((status, stderr), (0, ""))
-            self.assertIn("deep: gpt-6-sol:high, deepseek-flash:high (default)", stdout)
+            self.assertIn("deep: gpt-6.1-sol:high, deepseek-flash:high (default)", stdout)
             document = json.loads(_chains_path(root).read_text(encoding="utf-8"))
             self.assertNotIn("deep", document["categories"])
 

@@ -105,18 +105,16 @@ _FABLE_51 = _candidate(
     ("ccapi", "anthropic", "openrouter"),
     reasoning="Editorial most-capable Claude recommendation; not a benchmark claim.",
 )
-# GPT-6 Sol (2026-09-22) holds every slot GPT-5.6 Sol and GPT-5.6 Terra held
-# (owner decision, 2026-09-23), each at the effort that slot already carried:
-# medium in the shared last resort, high at the head of `deep` and in the
-# main-role suggestions. The Codex client repository's model catalog names
-# Sol as the upgrade for both 5.6 tiers (the served catalog does not push it
-# yet), no GPT-6 Terra exists, and Sol's list price is at or below Terra's
-# on every documented rate, so the cost-tier reason Terra held `deep` for
-# (#1313, about Astra's price) does not separate the two. Editorial and
-# unmeasured; both 5.6 ids left the shipped chains under the
-# superseded-generation rule (owner decision, 2026-09-11).
+# GPT-6.1 Sol (2026-09-29) holds every slot GPT-6 Sol held (owner decision,
+# 2026-10-01), each at the effort that slot already carried: medium in the
+# shared last resort, high at the head of `deep` and in the main-role
+# suggestions. Every one of those rungs is on its ladder, which unlike GPT-6
+# Sol's has no `none`. GPT-6 Sol itself had taken the slots of GPT-5.6 Sol and
+# GPT-5.6 Terra on 2026-09-23. Same list price as GPT-6 Sol with a cheaper
+# cache read. Editorial and unmeasured; GPT-6 Sol left the shipped chains
+# under the superseded-generation rule (owner decision, 2026-09-11).
 _SOL = _candidate(
-    "gpt-6-sol",
+    "gpt-6.1-sol",
     "gpt",
     ("openai-codex", "openai"),
     reasoning_effort="medium",
@@ -160,8 +158,14 @@ _GLM_53_FLASH = _candidate(
     ("zai", "openrouter", "opencode"),
     reasoning="Editorial fast alternative; not a benchmark claim.",
 )
+# Grok Build 0.1 holds the X-platform slot Grok Code Fast held (owner
+# decision, 2026-10-01). xAI retired Grok Code Fast on 2026-05-15 and lists
+# `grok-code-fast-1`, the bare `grok-code-fast`, and `grok-code-fast-1-0825`
+# as aliases of `grok-build-0.1` (docs.x.ai model page and may-15-retirement
+# guide, read 2026-10-01), so on xAI's API the old slot already ran this
+# model; the chain now names the id xAI serves.
 _GROK = _candidate(
-    "grok-code-fast",
+    "grok-build-0.1",
     "grok",
     ("xai", "openrouter"),
     reasoning="Editorial X-platform domain affinity; not a benchmark claim.",
@@ -752,8 +756,8 @@ def _active_spellings(active: Mapping[str, str]) -> set[str]:
     """Every spelling a confirmed-active model answers to.
 
     As recorded, unqualified, and — when the provider serves a dated snapshot
-    (`gpt-6-sol-YYYY-MM-DD`) — the base alias it is a snapshot of, so the
-    chain entry `gpt-6-sol` still counts the model as available and the
+    (`gpt-6.1-sol-YYYY-MM-DD`) — the base alias it is a snapshot of, so the
+    chain entry `gpt-6.1-sol` still counts the model as available and the
     route keeps the id as served.
     """
     model_id = active["model_id"]

@@ -335,7 +335,7 @@ OMH에는 다음과 같이 편집 가능한 순서형 recommendation chain이 �
 | 카테고리 alias | 용도 | 편집 가능한 recommendation 순서 |
 | --- | --- | --- |
 | `ultrabrain` | 가장 깊은 추론 | GPT-6 Astra (xhigh) |
-| `deep` | 강력한 기본 티어 | GPT-6 Sol, 다음 DeepSeek Flash (V4.1) (high) |
+| `deep` | 강력한 기본 티어 | GPT-6.1 Sol, 다음 DeepSeek Flash (V4.1) (high) |
 | `architect` | 아키텍처·시스템 설계 | Claude Fable 5.1, 다음 GPT-6 Astra, 다음 Kimi K3 (xhigh) |
 | `unspecified-high` | 기본 작업 모델 | Kimi K3, 다음 Claude Opus 5.5 (medium) |
 | `unspecified-low` | 저비용 폴백 | GLM 5.3, 다음 DeepSeek Flash (V4.1), 다음 Claude Opus 5.5 (low) |

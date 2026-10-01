@@ -42,19 +42,28 @@ _EVIDENCE_BOUNDARY = (
 
 
 # Anthropic models that cannot disable thinking: the Fable-tier generation
-# (Fable 5.x and its Mythos sibling) and Opus 5.5. A thinking-off request is
-# a 400 on Mythos 5.1 and on Opus 5.5 (Anthropic's whats-new-opus-5-5, read
-# 2026-09-23) and is dropped silently on Fable 5.1, so an effort that means
+# (Fable 5.x and its Mythos sibling), Opus 5.5, and Sonnet 5.5. A
+# thinking-off request is a 400 on Mythos 5.1, on Opus 5.5 (Anthropic's
+# whats-new-opus-5-5, read 2026-09-23), and on Sonnet 5.5 (its migration
+# guide, read 2026-10-01: the API's one thinking-off mode, `between_tools`,
+# is a different request no Hermes build sends), and is dropped silently on
+# Fable 5.1, so an effort that means
 # "no thinking" never reaches delegation.reasoning_effort for these models.
-# Opus 5 still accepts it, so the Opus entries name the 5.5 generation only;
-# the dotted spelling is a gateway's (OpenRouter's `anthropic/claude-opus-5.5`).
+# Opus 5 and Sonnet 5 still accept it, so the Opus and Sonnet entries name
+# the 5.5 generation only; the dotted spellings are a gateway's (OpenRouter's
+# `anthropic/claude-opus-5.5`, `anthropic/claude-sonnet-5.5`). The bare
+# `sonnet` word is deliberately absent: Claude Code resolves it to Sonnet 4.5
+# on Bedrock, Google Cloud, and Foundry, where thinking-off is accepted.
 # Matched on the alias and on the wire id's model segment, after a Bedrock
 # `anthropic.` vendor prefix and any regional prefix before it
 # (`us.anthropic.claude-opus-5-5`). This guard refuses on the model name
 # alone, so it also covers regional ids the core contract table does not
 # declare; core routing raises the no-thinking rung on the spellings it does.
 _NO_THINKING_EFFORTS = frozenset({"none", "off", "false", "disabled"})
-_ALWAYS_THINKING_CLAUDE_PREFIXES = ("claude-fable-", "claude-mythos-", "claude-opus-5-5", "claude-opus-5.5")
+_ALWAYS_THINKING_CLAUDE_PREFIXES = (
+    "claude-fable-", "claude-mythos-", "claude-opus-5-5", "claude-opus-5.5", "claude-sonnet-5-5",
+    "claude-sonnet-5.5",
+)
 
 
 def _always_thinking_claude(model: str) -> bool:

@@ -178,14 +178,24 @@ EXECUTOR_MODEL_OPTIONS: Final[dict[str, tuple[dict[str, object], ...]]] = {
             "reasoning_efforts": ("low", "medium", "high", "xhigh", "max"),
         },
         {
-            # GPT-6 Sol (2026-09-22) takes every chain slot the two GPT-5.6
-            # tiers held (owner decision, 2026-09-23). The efforts are the
-            # Codex client catalog's ladder from the exact contract's
-            # `surface_efforts`: no `none`, and the Codex-only `ultra` rung
-            # left out. The label claims no default: the Codex catalog ranks
-            # Astra first.
+            # GPT-6.1 Sol (2026-09-29) takes every chain slot GPT-6 Sol held
+            # (owner decision, 2026-10-01). The efforts are the Codex client
+            # catalog's ladder from the exact contract's `surface_efforts`:
+            # no `none`, and the Codex-only `ultra` rung left out. The label
+            # claims no default.
+            "model_id": "gpt-6.1-sol",
+            "label": "GPT-6.1 Sol (coding workhorse)",
+            "tier": "frontier",
+            "recommended_roles": ("brain", "implementation", "docs", "review", "research", "design_visual"),
+            "reasoning_efforts": ("low", "medium", "high", "xhigh", "max"),
+        },
+        {
+            # GPT-6 Sol left every shipped chain on 2026-10-01 (superseded by
+            # GPT-6.1 Sol). The row stays for the reason the GPT-5.6 rows
+            # below stay: it is this catalog's authority over the effort of
+            # an explicit `--model gpt-6-sol`. Its ladder is unchanged.
             "model_id": "gpt-6-sol",
-            "label": "GPT-6 Sol (coding workhorse)",
+            "label": "GPT-6 Sol (previous Sol generation)",
             "tier": "frontier",
             "recommended_roles": ("brain", "implementation", "docs", "review", "research", "design_visual"),
             "reasoning_efforts": ("low", "medium", "high", "xhigh", "max"),
@@ -372,31 +382,33 @@ def _CLAUDE_FRONTIER_CHAIN(effort: str) -> tuple[dict[str, str], ...]:
 
 BUILTIN_CATEGORY_MODELS: Final[dict[str, dict[str, tuple[dict[str, str], ...]]]] = {
     # Codex: the same GPT generation the Hermes lane ships. GPT-6 Astra heads
-    # the full-depth categories on its own. GPT-6 Sol holds every slot the
-    # two GPT-5.6 tiers held (owner decision, 2026-09-23, the
-    # superseded-generation rule): `deep` was Terra over 5.6 Sol and is now
-    # Sol alone at high, the same single-entry shape as ultrabrain and
-    # architect, and every lighter category names Sol at the effort the tier
-    # already wanted (Astra lists at 5x Sol, so it never heads a cost-tier
-    # slot). Sol needs Codex CLI 0.155.0 or later (the client repository's
-    # catalog). Editorial and unmeasured.
+    # the full-depth categories on its own. GPT-6.1 Sol holds every slot GPT-6
+    # Sol held (owner decision, 2026-10-01, the superseded-generation rule;
+    # GPT-6 Sol had itself taken the two GPT-5.6 tiers' slots on 2026-09-23):
+    # `deep` is Sol alone at high, the same single-entry shape as ultrabrain
+    # and architect, and every lighter category names Sol at the effort the
+    # tier already wanted (Astra lists at 5x Sol, so it never heads a
+    # cost-tier slot). The five categories that used to leave the effort to
+    # the CLI (`""`) now name `medium`: the Codex catalog defaulted GPT-6 Sol
+    # to `medium` but defaults GPT-6.1 Sol to `low`, so an empty effort would
+    # have lowered those slots silently. Editorial and unmeasured.
     "codex": {
         "ultrabrain": ({"model_id": "gpt-6-astra", "reasoning_effort": "xhigh"},),
-        "deep": ({"model_id": "gpt-6-sol", "reasoning_effort": "high"},),
+        "deep": ({"model_id": "gpt-6.1-sol", "reasoning_effort": "high"},),
         "architect": ({"model_id": "gpt-6-astra", "reasoning_effort": "xhigh"},),
-        "unspecified-high": ({"model_id": "gpt-6-sol", "reasoning_effort": ""},),
-        "unspecified-low": ({"model_id": "gpt-6-sol", "reasoning_effort": ""},),
-        "quick": ({"model_id": "gpt-6-sol", "reasoning_effort": "low"},),
-        "writing": ({"model_id": "gpt-6-sol", "reasoning_effort": ""},),
-        "visual-engineering": ({"model_id": "gpt-6-sol", "reasoning_effort": ""},),
-        "artistry": ({"model_id": "gpt-6-sol", "reasoning_effort": ""},),
+        "unspecified-high": ({"model_id": "gpt-6.1-sol", "reasoning_effort": "medium"},),
+        "unspecified-low": ({"model_id": "gpt-6.1-sol", "reasoning_effort": "medium"},),
+        "quick": ({"model_id": "gpt-6.1-sol", "reasoning_effort": "low"},),
+        "writing": ({"model_id": "gpt-6.1-sol", "reasoning_effort": "medium"},),
+        "visual-engineering": ({"model_id": "gpt-6.1-sol", "reasoning_effort": "medium"},),
+        "artistry": ({"model_id": "gpt-6.1-sol", "reasoning_effort": "medium"},),
         # The three appended categories keep this profile's rule: Sol at the
         # effort the tier wants, and Astra only where the category is about
         # depth rather than cost. deep-work is the one that earns Astra here,
         # and Sol does not trail it -- same shape as ultrabrain and architect
         # above, for the same reason.
-        "capable": ({"model_id": "gpt-6-sol", "reasoning_effort": "medium"},),
-        "simple-work": ({"model_id": "gpt-6-sol", "reasoning_effort": "low"},),
+        "capable": ({"model_id": "gpt-6.1-sol", "reasoning_effort": "medium"},),
+        "simple-work": ({"model_id": "gpt-6.1-sol", "reasoning_effort": "low"},),
         "deep-work": ({"model_id": "gpt-6-astra", "reasoning_effort": "high"},),
     },
     # Claude Code: every frontier category runs the owner-ordered Claude chain

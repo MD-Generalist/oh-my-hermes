@@ -61,9 +61,9 @@ HERMES_MIXTURE_CATEGORY_CHAINS: dict[str, tuple[tuple[str, str], ...]] = {
     # documented rung, not a nearest-match guess. The alias is the vendor's
     # served pointer id (`deepseek-flash`); the first-party API rejects the
     # versioned spelling, and the versioned contract sits behind the pointer
-    # as a declared projection. GPT-6 Sol heads it at the effort GPT-5.6
-    # Terra held there (owner decision, 2026-09-23; editorial, unmeasured).
-    "deep": (("gpt-6-sol", "high"), ("deepseek-flash", "high")),
+    # as a declared projection. GPT-6.1 Sol heads it at the effort GPT-6 Sol
+    # held there (owner decision, 2026-10-01; editorial, unmeasured).
+    "deep": (("gpt-6.1-sol", "high"), ("deepseek-flash", "high")),
     # Architecture/system-design lanes: full-depth effort across three
     # provider ecosystems. Fable and Kimi appear in other chains only at
     # low/high, so at xhigh `mixture_category_for` labels them architect;
@@ -342,7 +342,7 @@ HERMES_MIXTURE_ALIAS_PROVIDER_FAMILIES: dict[str, tuple[str, ...]] = {
     # answered rather than unknown. The parity gate lists it explicitly.
     "claude-mythos-5-1": ("ccapi", "anthropic", "openrouter"),
     "gpt-6-astra": ("openai-codex", "openai"),
-    "gpt-6-sol": ("openai-codex", "openai"),
+    "gpt-6.1-sol": ("openai-codex", "openai"),
     "gpt-6-luna": ("openai-codex", "openai"),
     "deepseek-flash": ("deepseek", "openrouter", "opencode"),
     # Recognition-only: the versioned spelling of the Flash pointer above
@@ -364,7 +364,11 @@ HERMES_MIXTURE_ALIAS_PROVIDER_FAMILIES: dict[str, tuple[str, ...]] = {
     "gpt-5.6-terra": ("openai-codex", "openai"),
     "glm-5.3": ("zai", "openrouter", "opencode"),
     "glm-5.3-flash": ("zai", "openrouter", "opencode"),
+    "grok-build-0.1": ("xai", "openrouter"),
+    # Retired on 2026-10-01: xAI lists it as an alias of grok-build-0.1.
     "grok-code-fast": ("xai", "openrouter"),
+    # Retired on 2026-10-01 under the same rule (superseded by gpt-6.1-sol).
+    "gpt-6-sol": ("openai-codex", "openai"),
     "gemini-3.1-pro": ("google", "gemini", "openrouter"),
     "qwen3-coder": ("qwen-oauth", "openrouter", "opencode"),
 }
@@ -373,7 +377,10 @@ HERMES_MIXTURE_ALIAS_PROVIDER_FAMILIES: dict[str, tuple[str, ...]] = {
 # from declared aliases so a newly documented child contract stops inheriting
 # stale provider/category metadata until its own rows are added here.
 EXACT_MODEL_CONTRACT_ALIASES: frozenset[str] = frozenset(
-    {"gpt-6-astra", "gpt-6-sol", "gpt-6-luna", "claude-opus-5-5", "deepseek-v4.1-flash", "jev-1.13.0"}
+    {
+        "gpt-6-astra", "gpt-6-sol", "gpt-6.1-sol", "gpt-6-luna", "claude-opus-5-5", "claude-sonnet-5-5",
+        "deepseek-v4.1-flash", "jev-1.13.0",
+    }
 )
 
 # Standalone mirror of coding.model_contracts' bounded declared projections.
@@ -386,6 +393,8 @@ DECLARED_MODEL_ALIAS_PROJECTIONS: dict[str, tuple[str, str, str]] = {
     "gpt-6-astra-pro": ("gpt-6-astra", "pro", "standard"),
     "gpt-6-astra-pro-fast": ("gpt-6-astra", "pro", "fast"),
     "gpt-6-astra-pro-flex": ("gpt-6-astra", "pro", "flex"),
+    # GPT-6.1 Sol's pro reasoning mode; no `-fast` / `-flex` row.
+    "gpt-6.1-sol-pro": ("gpt-6.1-sol", "pro", "standard"),
     # DeepSeek's first-party API names the current Flash generation
     # `deepseek-flash` (api-docs.deepseek.com, 2026-09-10); today that is
     # DeepSeek-V4.1-Flash. The pointer moves with the next Flash release, so
@@ -396,6 +405,8 @@ DECLARED_MODEL_ALIAS_PROJECTIONS: dict[str, tuple[str, str, str]] = {
     # second spellings of the same model at the contract's mode and tier.
     "anthropic.claude-opus-5-5": ("claude-opus-5-5", "thinking", "standard"),
     "claude-opus-5.5": ("claude-opus-5-5", "thinking", "standard"),
+    "anthropic.claude-sonnet-5-5": ("claude-sonnet-5-5", "thinking", "standard"),
+    "claude-sonnet-5.5": ("claude-sonnet-5-5", "thinking", "standard"),
     # TypeSafe publishes two aliases for Jev (docs.typesafe.ai/models,
     # 2026-09-21); both point at `jev-1.13.0` today and both move on the next
     # release, so each is a declared projection with a read date.
@@ -1253,7 +1264,17 @@ APPROX_PRICE_PER_MTOK: dict[str, tuple[float, float]] = {
     # /api/docs/pricing, read 2026-09-23): 2/10, no promotion mark; cached
     # input 0.20 (the default tenth). Cache write, long-context, and
     # service-tier rates stay documented in `src/coding/model_contracts.py`.
+    # The id left the shipped chains on 2026-10-01 and stays priced for
+    # overrides.
     "gpt-6-sol": (2.0, 10.0),
+    # OpenAI list price (developers.openai.com/api/docs/models/gpt-6.1-sol and
+    # /api/docs/pricing, read 2026-10-01): 2/10, no promotion mark; cached
+    # input 0.10 is 5% of input, not the default tenth (APPROX_CACHE_READ_RATIO).
+    # Cache write, long-context, and service-tier rates stay documented in
+    # `src/coding/model_contracts.py`. `gpt-6.1-sol-pro` has no row: it
+    # inherits this one through its declared projection (pro mode bills at
+    # the selected model's standard rates).
+    "gpt-6.1-sol": (2.0, 10.0),
     # Anthropic first-party list prices (docs.claude.com pricing, 2026-09):
     # Opus 5 5/25, Sonnet 5 2/10, Fable 5 and 5.1 10/50; Mythos 5.1 shares
     # Fable 5.1's per-token price. Earlier entries here were stale.
@@ -1266,9 +1287,18 @@ APPROX_PRICE_PER_MTOK: dict[str, tuple[float, float]] = {
     "claude-fable-5-1": (10.0, 50.0),
     "claude-mythos-5-1": (10.0, 50.0),
     "claude-sonnet-5": (2.0, 10.0),
+    # Anthropic list price (platform.claude.com pricing, read 2026-10-01):
+    # Sonnet 5.5 2/10, cache read 0.20 (the default tenth). The same page
+    # says Sonnet 5's 2/10 launch price is now its standard price and the
+    # scheduled move to 3/15 will not occur, so the row above stands.
+    "claude-sonnet-5-5": (2.0, 10.0),
     "claude-haiku-4-5": (1.0, 5.0),
-    # Moonshot AI list price (platform.moonshot.cn pricing, 2026-08):
-    "kimi-k3": (0.6, 2.5),
+    # Moonshot AI list price (platform.kimi.ai/docs/pricing/chat, read
+    # 2026-10-01): 3/15, cache-hit input 0.30 (the default tenth). The earlier
+    # 0.6/2.5 was the K2-era rate and under-reported K3 input fivefold and
+    # output sixfold. Cache write (6.00 at a 5-minute TTL, 3.00 at 1 hour,
+    # the same page) has no column here.
+    "kimi-k3": (3.0, 15.0),
     # Zhipu AI list price (docs.z.ai pricing, 2026-08):
     "glm-5.2": (0.6, 2.2),
     # Z.ai list price for the 5.3 generation (docs.z.ai pricing, 2026-08).
@@ -1311,19 +1341,32 @@ APPROX_PRICE_PER_MTOK: dict[str, tuple[float, float]] = {
     "deepseek-v3.2": (0.28, 0.42),
     # Zhipu AI speed-tier ballpark (docs.z.ai pricing, 2026-08):
     "glm-5.2-ultrafast": (0.3, 1.2),
-    # Speed-tier ballpark mirrors the glm pattern (roughly half the base
-    # model's list price); editable approximation, not billing evidence.
-    "kimi-k3-ultrafast": (0.3, 1.25),
-    # Google AI Studio list price (ai.google.dev/pricing, 2026-08):
-    "gemini-3.1-pro": (1.25, 10.0),
+    # The Ultrafast serving of K3 (a gateway tier, not a Moonshot product)
+    # publishes no tier rate, so
+    # this row carries the base model's documented list price
+    # (platform.kimi.ai/docs/pricing/chat, read 2026-10-01) -- the
+    # `glm-5.3-ultrafast` shape -- instead of the halved ballpark it carried
+    # before, which halved a base rate that was itself stale.
+    "kimi-k3-ultrafast": (3.0, 15.0),
+    # Google list price (ai.google.dev/gemini-api/docs/pricing, read
+    # 2026-10-01): Gemini 3.1 Pro Preview 2/12 up to 200K prompt tokens, 4/18
+    # above. The earlier 1.25/10 was Gemini 2.5 Pro's rate on the same page.
+    "gemini-3.1-pro": (2.0, 12.0),
     # Alibaba Cloud Model Studio list price (alibabacloud.com pricing, 2026-08):
     "qwen3-coder": (0.4, 1.6),
     # Upstage list price (upstage.ai pricing, 2026-08):
     "solar-pro2": (0.15, 0.60),
-    # xAI list price (docs.x.ai pricing, 2026-08). The catalog shipped
-    # this model with a provider family and no rate, so every run on it
-    # reported no cost at all.
-    "grok-code-fast": (0.2, 1.5),
+    # xAI list price (docs.x.ai/developers/models/grok-build-0.1, read
+    # 2026-10-01): 1/2 below 200K prompt tokens, 2/4 at or above; cached input
+    # 0.20, a fifth of input (APPROX_CACHE_READ_RATIO below). The page's
+    # alias list is `grok-code-fast-1`, `grok-code-fast`, and
+    # `grok-code-fast-1-0825`; xAI retired Grok Code Fast on 2026-05-15, so
+    # a run on the old spelling against xAI's API is billed at this rate and
+    # its earlier 0.2/1.5 (the retired model's) under-reported it. Other
+    # routes may map the old id elsewhere: the Hermes retirement map sends
+    # `grok-code-fast-1` to `grok-4.3` (observed in the Hermes source).
+    "grok-build-0.1": (1.0, 2.0),
+    "grok-code-fast": (1.0, 2.0),
     # TypeSafe list price (docs.typesafe.ai/models, 2026-09): input $0.042
     # per Mtok, output free. The zero is the published rate, not a missing
     # one -- this model is never a chain member, but a machine-level override
@@ -1349,6 +1392,11 @@ APPROX_CACHE_READ_RATIO: dict[str, float] = {
     # the tier would price cached input at the generic tenth.
     "deepseek-v4.1-flash": 0.02,
     "deepseek-v4.1-flash-ultrafast": 0.02,
+    # Grok Build 0.1 cached input 0.20 against 1.00 input below 200K, and
+    # 0.40 against 2.00 above (docs.x.ai/developers/models/grok-build-0.1,
+    # read 2026-10-01); the retired alias bills at the same rate.
+    "grok-build-0.1": 0.2,
+    "grok-code-fast": 0.2,
     # Z.ai lists GLM-5.3 cached input at $0.26 against $1.4 input, and
     # GLM-5.3-Flash cached input at $0.03 against $0.15 input (docs.z.ai
     # pricing, read 2026-09-24). The Ultrafast serving of GLM-5.3 carries the
@@ -1358,6 +1406,9 @@ APPROX_CACHE_READ_RATIO: dict[str, float] = {
     "glm-5.3": 0.186,
     "glm-5.3-flash": 0.2,
     "glm-5.3-ultrafast": 0.186,
+    # GPT-6.1 Sol: "Cached input tokens are priced at 5% of the uncached input
+    # token rate" (developers.openai.com model page, read 2026-10-01).
+    "gpt-6.1-sol": 0.05,
 }
 _DEFAULT_CACHE_READ_RATIO = 0.1
 

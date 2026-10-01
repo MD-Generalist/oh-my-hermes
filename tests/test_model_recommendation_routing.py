@@ -30,7 +30,7 @@ def _active(alias: str, provider: str, family: str) -> dict[str, object]:
 
 _KIMI = _active("kimi-k3", "apitopia", "kimi")
 _OPUS = _active("claude-opus-5-5", "ccapi", "claude")
-_GROK = _active("grok-code-fast", "xai", "grok")
+_GROK = _active("grok-build-0.1", "xai", "grok")
 _GEMINI = _active("gemini-3.1-pro", "google", "gemini")
 # Shipped chain members (the superseded GLM 5.2 Ultrafast and Fable 5
 # entries left the chains on 2026-09-11): the quick head and the Claude
@@ -129,12 +129,12 @@ class HermesRecommendationRoutingTests(unittest.TestCase):
         # served rather than the catalog spelling. Both 5.6 ids left the
         # shipped chains on 2026-09-23, so the rule is held on the id that
         # now heads `deep`; the date is a shape, not a published snapshot.
-        dated = _active("gpt-6-sol-2026-09-22", "openai", "gpt")
+        dated = _active("gpt-6.1-sol-2026-09-29", "openai", "gpt")
         recommendation = resolve_model_recommendation(owner="hermes", active_models=[dated], category="deep")
         self.assertEqual(recommendation["status"], "resolved")
-        self.assertEqual(recommendation["selected"]["model_alias"], "gpt-6-sol")
-        self.assertEqual(recommendation["selected"]["model_id"], "gpt-6-sol-2026-09-22")
-        qualified = _active("openai/gpt-6-sol-2026-09-22", "openai", "gpt")
+        self.assertEqual(recommendation["selected"]["model_alias"], "gpt-6.1-sol")
+        self.assertEqual(recommendation["selected"]["model_id"], "gpt-6.1-sol-2026-09-29")
+        qualified = _active("openai/gpt-6.1-sol-2026-09-29", "openai", "gpt")
         self.assertEqual(
             resolve_model_recommendation(owner="hermes", active_models=[qualified], category="deep")["status"],
             "resolved",
@@ -142,14 +142,14 @@ class HermesRecommendationRoutingTests(unittest.TestCase):
         # An explicit request for the base is met by its confirmed snapshot;
         # a request pinned to a date is not met by an unpinned base.
         self.assertEqual(
-            resolve_model_recommendation(owner="hermes", active_models=[dated], explicit_model="gpt-6-sol")["status"],
+            resolve_model_recommendation(owner="hermes", active_models=[dated], explicit_model="gpt-6.1-sol")["status"],
             "resolved",
         )
         self.assertEqual(
             resolve_model_recommendation(
                 owner="hermes",
-                active_models=[_active("gpt-6-sol", "openai", "gpt")],
-                explicit_model="gpt-6-sol-2026-09-22",
+                active_models=[_active("gpt-6.1-sol", "openai", "gpt")],
+                explicit_model="gpt-6.1-sol-2026-09-29",
             )["status"],
             "choice_required",
         )
@@ -203,9 +203,9 @@ class HermesRecommendationRoutingTests(unittest.TestCase):
             active_models=[_OPUS, _GROK],
         )
 
-        self.assertEqual(route["selected_model"], "xai/grok-code-fast")
+        self.assertEqual(route["selected_model"], "xai/grok-build-0.1")
         self.assertEqual(route["recommendation"]["source"], "recommendation_chain")
-        self.assertEqual(route["recommendation"]["projection"]["binding"], "xai/grok-code-fast")
+        self.assertEqual(route["recommendation"]["projection"]["binding"], "xai/grok-build-0.1")
         outcomes = {entry["stage"]: entry["outcome"] for entry in route["attempted"]}
         self.assertEqual(outcomes["domain_affinity"], "reordered")
         self.assertEqual(outcomes["recommendation_chain"], "selected")
@@ -241,13 +241,13 @@ class HermesRecommendationRoutingTests(unittest.TestCase):
         self.assertEqual(
             chain,
             [
-                "xai/grok-code-fast",
+                "xai/grok-build-0.1",
                 "apitopia/kimi-k3",
                 "google/gemini-3.1-pro",
                 "ccapi/claude-opus-5-5",
             ],
         )
-        self.assertEqual(route["selected_model"], "xai/grok-code-fast")
+        self.assertEqual(route["selected_model"], "xai/grok-build-0.1")
         affinity = next(
             entry for entry in route["attempted"] if entry["stage"] == "domain_affinity"
         )
@@ -360,7 +360,7 @@ class HermesRecommendationRoutingTests(unittest.TestCase):
                     {
                         "source": "omo",
                         "provider": "xai",
-                        "model_id": "grok-code-fast",
+                        "model_id": "grok-build-0.1",
                         "variant": "",
                         "timestamp": "",
                         "status": "confirmed_active",
@@ -415,7 +415,7 @@ class HermesRecommendationRoutingTests(unittest.TestCase):
             )
         self.assertEqual(code, 0)
         self.assertEqual(missing_code, 0)
-        self.assertEqual(json.loads(stdout)["selected_model"], "xai/grok-code-fast")
+        self.assertEqual(json.loads(stdout)["selected_model"], "xai/grok-build-0.1")
         self.assertEqual(json.loads(missing_stdout)["status"], "choice_required")
 
 

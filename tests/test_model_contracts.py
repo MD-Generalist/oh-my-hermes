@@ -1141,25 +1141,22 @@ class Gpt6SolContractTests(unittest.TestCase):
                 if kind is not None:
                     self.assertEqual(change["kind"], kind)
 
-    def test_hermes_recommendation_chain_head_applies_the_contract(self) -> None:
-        # No named model: Sol is reached as the head of `deep`.
-        for effort, selected, kind in (
-            ("none", "none", None),
-            ("off", "none", "vendor_spelling"),
-            ("minimal", "low", EFFORT_FLOOR_KIND),
-        ):
-            route = resolve_model_route(
-                "hermes",
-                requested_effort=effort,
-                requested_category="deep",
-                active_models=("gpt-6-sol",),
-            )
-            with self.subTest(effort=effort):
-                self.assertEqual(route["provenance"], "recommendation_chain_head")
-                self.assertEqual(route["selected_model"], "gpt-6-sol")
-                self.assertEqual(route["selected_reasoning_effort"], selected)
-                change = route.get("effort_change")
-                self.assertEqual(change["kind"] if change else None, kind)
+    def test_the_retired_id_is_no_longer_a_chain_head(self) -> None:
+        # GPT-6.1 Sol took every GPT-6 Sol slot (owner decision, 2026-10-01):
+        # `deep` names the new id, so a machine confirming only the old one
+        # is not reached through the shipped chain.
+        from omh.coding.model_recommendations import SHIPPED_MODEL_RECOMMENDATIONS
+
+        for section in ("categories", "role_suggestions", "domain_affinities", "last_resort"):
+            for slot, chain in SHIPPED_MODEL_RECOMMENDATIONS[section].items():
+                aliases = [candidate["model_alias"] for candidate in chain]
+                with self.subTest(section=section, slot=slot):
+                    self.assertNotIn("gpt-6-sol", aliases)
+        self.assertEqual(SHIPPED_MODEL_RECOMMENDATIONS["categories"]["deep"][0]["model_alias"], "gpt-6.1-sol")
+        route = resolve_model_route(
+            "hermes", requested_effort="high", requested_category="deep", active_models=("gpt-6-sol",)
+        )
+        self.assertNotEqual(route["selected_model"], "gpt-6-sol")
 
     def test_the_cli_prints_the_ladder_and_the_parameter_condition(self) -> None:
         status, stdout, _stderr = run_cli(["coding", "model-contract", "--model", "gpt-6-sol"], output_json=False)
@@ -1183,6 +1180,165 @@ class Gpt6SolContractTests(unittest.TestCase):
         for model_id in ("gpt-6-sole-2026-09-22", "sol-2026-09-22", "gpt-6-sol-pro-2026-09-22"):
             with self.subTest(model_id=model_id):
                 self.assertIsNone(model_contract_projection(model_id))
+
+
+_SOL_61_FORMS = ("gpt-6.1-sol", "openai/gpt-6.1-sol", "openai-codex/gpt-6.1-sol", "GPT-6.1-Sol")
+_SOL_61_ALL_FORMS = _SOL_61_FORMS + ("gpt-6.1-sol-pro", "openai/gpt-6.1-sol-pro", "gpt-6.1-sol-2026-09-29")
+
+
+class Gpt61SolContractTests(unittest.TestCase):
+    """The GPT-6.1 Sol exact contract (2026-10-01): Astra's ladder shape (no
+    `none`, `low` floor), a declared `-pro` projection, Astra's calibration
+    wording, and every slot GPT-6 Sol held."""
+
+    def test_every_served_form_resolves_the_exact_contract(self) -> None:
+        base = model_contract("gpt-6.1-sol")
+        assert base is not None
+        for form in _SOL_61_FORMS:
+            with self.subTest(form=form):
+                self.assertEqual(model_family(form), "gpt")
+                self.assertEqual(contract_model_id(form), "gpt-6.1-sol")
+                self.assertIs(model_contract(form), base)
+                projection = model_contract_projection(form)
+                assert projection is not None
+                self.assertEqual(projection["provenance"], "exact")
+
+    def test_pro_is_a_declared_projection_and_no_tier_variant_inherits(self) -> None:
+        for form in ("gpt-6.1-sol-pro", "openai/gpt-6.1-sol-pro"):
+            with self.subTest(form=form):
+                projection = model_contract_projection(form)
+                assert projection is not None
+                self.assertEqual(projection["contract_model_id"], "gpt-6.1-sol")
+                self.assertEqual(projection["reasoning_mode"], "pro")
+                self.assertEqual(projection["service_tier"], "standard")
+                self.assertEqual(projection["provenance"], "declared_inheritance")
+        for model_id in ("gpt-6.1-sol-fast", "gpt-6.1-sol-flex", "gpt-6.1-sol-900k", "gpt-6.1-sole"):
+            with self.subTest(model_id=model_id):
+                self.assertIsNone(model_contract_projection(model_id))
+
+    def test_dated_snapshot_projects_with_its_provenance(self) -> None:
+        for form in ("gpt-6.1-sol-2026-09-29", "openai/gpt-6.1-sol-2026-09-29"):
+            with self.subTest(form=form):
+                projection = model_contract_projection(form)
+                assert projection is not None
+                self.assertEqual(projection["contract_model_id"], "gpt-6.1-sol")
+                self.assertEqual(projection["provenance"], "dated_snapshot")
+
+    def test_contract_records_the_api_ladder_limits_and_price(self) -> None:
+        contract = model_contract("gpt-6.1-sol")
+        assert contract is not None
+        self.assertEqual(contract["reasoning_efforts"], ("low", "medium", "high", "xhigh", "max"))
+        self.assertEqual(contract["effort_floor"], "low")
+        self.assertEqual(contract["effort_default"], "medium")
+        self.assertEqual(set(contract["unsupported_efforts"]), {"off", "minimal"})
+        self.assertEqual(contract["generation"], "gpt-6.1")
+        self.assertEqual(contract["released"], "2026-09-29")
+        self.assertEqual(
+            (contract["context_window_tokens"], contract["max_input_tokens"], contract["max_output_tokens"]),
+            (1_050_000, 922_000, 128_000),
+        )
+        self.assertEqual(contract["surface_efforts"], {"codex": ("low", "medium", "high", "xhigh", "max")})
+        self.assertNotIn("ultra", contract["reasoning_efforts"])
+        self.assertIn("`low` default", contract["surface_notes"]["codex"])
+        self.assertIn("NO_DISABLE_TIER_PREFIXES", contract["surface_notes"]["hermes"])
+        pricing = contract["pricing_usd_per_mtok"]
+        self.assertEqual(
+            (pricing["input"], pricing["cached_input"], pricing["cache_write"], pricing["output"]),
+            (2.0, 0.10, 2.5, 10.0),
+        )
+        self.assertEqual(contract["sources_read"], "2026-10-01")
+        self.assertIn("https://developers.openai.com/api/docs/models/gpt-6.1-sol", contract["sources"])
+        self.assertEqual(contract["claim_boundary"], MODEL_CONTRACT_CLAIM_BOUNDARY)
+
+    def test_price_row_mirrors_the_contract_with_its_cache_ratio(self) -> None:
+        from omh.plugin_bundle.omh.hermes_delegation import APPROX_CACHE_READ_RATIO, _approximate_cost_usd
+
+        contract = model_contract("gpt-6.1-sol")
+        assert contract is not None
+        pricing = contract["pricing_usd_per_mtok"]
+        self.assertEqual(APPROX_PRICE_PER_MTOK["gpt-6.1-sol"], (pricing["input"], pricing["output"]))
+        self.assertEqual(APPROX_CACHE_READ_RATIO["gpt-6.1-sol"], 0.05)
+        self.assertAlmostEqual(pricing["input"] * APPROX_CACHE_READ_RATIO["gpt-6.1-sol"], pricing["cached_input"])
+        # `-pro` and the dated snapshot inherit the base row; no row of their own.
+        self.assertNotIn("gpt-6.1-sol-pro", APPROX_PRICE_PER_MTOK)
+        for model in ("gpt-6.1-sol", "gpt-6.1-sol-pro", "openai/gpt-6.1-sol-2026-09-29"):
+            with self.subTest(model=model):
+                self.assertAlmostEqual(_approximate_cost_usd(model, 1e6, 1e6, 1e6), 2.0 + 10.0 + 0.10)
+        # The retired GPT-6 Sol stays priced at its own list rate.
+        self.assertEqual(APPROX_PRICE_PER_MTOK["gpt-6-sol"], (2.0, 10.0))
+
+    def test_no_reasoning_and_minimal_are_raised_to_low_on_every_profile(self) -> None:
+        for profile in ("codex", "hermes", "claude-code", "generic"):
+            for model in _SOL_61_ALL_FORMS:
+                for effort in ("off", "none", "minimal"):
+                    with self.subTest(profile=profile, model=model, effort=effort):
+                        route = resolve_model_route(profile, requested_model=model, requested_effort=effort)
+                        self.assertEqual(route["selected_reasoning_effort"], "low")
+                        change = route["effort_change"]
+                        self.assertEqual(change["kind"], EFFORT_FLOOR_KIND)
+                        self.assertEqual((change["requested"], change["selected"]), (effort, "low"))
+        for effort in ("low", "medium", "high", "xhigh", "max"):
+            self.assertIsNone(contract_effort_floor("gpt-6.1-sol", effort), effort)
+
+    def test_the_codex_option_row_is_the_surface_ladder(self) -> None:
+        contract = model_contract("gpt-6.1-sol")
+        assert contract is not None
+        rows = [option for option in EXECUTOR_MODEL_OPTIONS["codex"] if option["model_id"] == "gpt-6.1-sol"]
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(tuple(rows[0]["reasoning_efforts"]), contract["surface_efforts"]["codex"])
+        self.assertNotIn("default", rows[0]["label"].casefold())
+        # The retired GPT-6 Sol row stays to adjudicate an explicit override.
+        self.assertEqual(
+            [option["model_id"] for option in EXECUTOR_MODEL_OPTIONS["codex"]].count("gpt-6-sol"), 1
+        )
+        route = resolve_model_route("codex", requested_model="gpt-6.1-sol", requested_effort="max")
+        self.assertEqual(route["effort_change"]["kind"], "unchanged")
+
+    def test_hermes_recommendation_chain_head_applies_the_contract(self) -> None:
+        # No named model: 6.1 Sol is reached as the head of `deep`.
+        for effort, selected, kind in (
+            ("none", "low", EFFORT_FLOOR_KIND),
+            ("off", "low", EFFORT_FLOOR_KIND),
+            ("minimal", "low", EFFORT_FLOOR_KIND),
+            ("high", "high", None),
+        ):
+            route = resolve_model_route(
+                "hermes",
+                requested_effort=effort,
+                requested_category="deep",
+                active_models=("gpt-6.1-sol",),
+            )
+            with self.subTest(effort=effort):
+                self.assertEqual(route["provenance"], "recommendation_chain_head")
+                self.assertEqual(route["selected_model"], "gpt-6.1-sol")
+                self.assertEqual(route["selected_reasoning_effort"], selected)
+                change = route.get("effort_change")
+                self.assertEqual(change["kind"] if change else None, kind)
+
+    def test_exact_calibration_reuses_astra_wording_and_sol_keeps_the_family_block(self) -> None:
+        # The vendor's Codex client gives 6.1 Sol Astra's base prompt, so the
+        # override is Astra's measured text, byte for byte.
+        self.assertEqual(MODEL_HIGH_EFFORT_CALIBRATIONS["gpt-6.1-sol"], MODEL_HIGH_EFFORT_CALIBRATIONS["gpt-6-astra"])
+        self.assertEqual(MODEL_COMPOSITION_CALIBRATIONS["gpt-6.1-sol"], MODEL_COMPOSITION_CALIBRATIONS["gpt-6-astra"])
+        for model in ("gpt-6.1-sol", "openai/gpt-6.1-sol-pro", "gpt-6.1-sol-2026-09-29"):
+            route = {"selected_model": model, "model_family": "gpt", "selected_reasoning_effort": "high"}
+            with self.subTest(model=model):
+                self.assertEqual(calibration_for_route(route), MODEL_HIGH_EFFORT_CALIBRATIONS["gpt-6.1-sol"])
+                self.assertEqual(
+                    composition_calibration_for_model(model), MODEL_COMPOSITION_CALIBRATIONS["gpt-6.1-sol"]
+                )
+        old = {"selected_model": "gpt-6-sol", "model_family": "gpt", "selected_reasoning_effort": "high"}
+        self.assertEqual(calibration_for_route(old), HIGH_EFFORT_CALIBRATIONS["gpt"])
+        for text in (MODEL_HIGH_EFFORT_CALIBRATIONS["gpt-6.1-sol"], MODEL_COMPOSITION_CALIBRATIONS["gpt-6.1-sol"]):
+            lowered = text.casefold()
+            for phrase in ("persist until", "carry the user's intended task", "helpful enough",
+                           "without ending the turn", "continue toward completing"):
+                self.assertNotIn(phrase, lowered, phrase)
+
+    def test_the_cli_prints_the_ladder(self) -> None:
+        status, stdout, _stderr = run_cli(["coding", "model-contract", "--model", "gpt-6.1-sol"], output_json=False)
+        self.assertEqual(status, 0)
+        self.assertIn("reasoning efforts: low, medium, high, xhigh, max (floor `low`)", stdout)
 
 
 _OPUS_55_FORMS = ("claude-opus-5-5", "anthropic/claude-opus-5-5", "Claude-Opus-5-5")
@@ -1338,6 +1494,80 @@ class ClaudeOpus55ContractTests(unittest.TestCase):
         self.assertEqual(
             composition_calibration_for_model("claude-opus-5-5"), MAIN_AGENT_COMPOSITION_CALIBRATIONS["claude"]
         )
+
+
+class ClaudeSonnet55ContractTests(unittest.TestCase):
+    """Sonnet 5.5 (2026-10-01) takes the Opus 5.5 shape: a no-thinking rung is
+    raised to `low` on record, and the contract sits in no shipped chain."""
+
+    def test_every_served_and_declared_form_resolves_the_contract(self) -> None:
+        contract = model_contract("claude-sonnet-5-5")
+        assert contract is not None
+        for form in (
+            "claude-sonnet-5-5",
+            "anthropic/claude-sonnet-5-5",
+            "anthropic.claude-sonnet-5-5",
+            "claude-sonnet-5.5",
+            "openrouter/anthropic/claude-sonnet-5.5",
+        ):
+            with self.subTest(form=form):
+                self.assertIs(model_contract(form), contract)
+                route = resolve_model_route("hermes", requested_model=form, requested_effort="off")
+                self.assertEqual(route["selected_reasoning_effort"], "low")
+                self.assertEqual(route["effort_change"]["kind"], EFFORT_FLOOR_KIND)
+        for model_id in ("claude-sonnet-5", "sonnet", "us.anthropic.claude-sonnet-5-5"):
+            with self.subTest(model_id=model_id):
+                self.assertIsNone(model_contract(model_id))
+
+    def test_contract_records_the_ladder_price_and_retirement(self) -> None:
+        contract = model_contract("claude-sonnet-5-5")
+        assert contract is not None
+        self.assertEqual(contract["reasoning_efforts"], ("low", "medium", "high", "xhigh", "max"))
+        self.assertEqual((contract["effort_floor"], contract["effort_default"]), ("low", "high"))
+        self.assertIn("between_tools", contract["unsupported_efforts"]["off"])
+        pricing = contract["pricing_usd_per_mtok"]
+        self.assertEqual(APPROX_PRICE_PER_MTOK["claude-sonnet-5-5"], (pricing["input"], pricing["output"]))
+        self.assertEqual((pricing["input"], pricing["output"], pricing["cached_input"]), (2.0, 10.0, 0.20))
+        self.assertIn("2027-09-28", contract["retirement"])
+        self.assertEqual(contract["sources_read"], "2026-10-01")
+
+    def test_override_is_the_family_block_plus_the_vendor_measured_stop_clause(self) -> None:
+        override = MODEL_HIGH_EFFORT_CALIBRATIONS["claude-sonnet-5-5"]
+        family = HIGH_EFFORT_CALIBRATIONS["claude"]
+        clause = (
+            ", and once the criteria's checks pass the work is done — start no further review rounds "
+            "and no reviewer sub-agents unless a criterion asks for one."
+        )
+        self.assertEqual(override, family.replace("proves them.", "proves them" + clause))
+        route = {"selected_model": "claude-sonnet-5-5", "model_family": "claude", "selected_reasoning_effort": "max"}
+        self.assertEqual(calibration_for_route(route), override)
+        self.assertEqual(
+            composition_calibration_for_model("claude-sonnet-5-5"), MAIN_AGENT_COMPOSITION_CALIBRATIONS["claude"]
+        )
+        # Opus 5.5 keeps the family block byte-stable.
+        opus = {"selected_model": "claude-opus-5-5", "model_family": "claude", "selected_reasoning_effort": "max"}
+        self.assertEqual(calibration_for_route(opus), family)
+
+    def test_sonnet_5_still_routes_off_as_before(self) -> None:
+        for model in ("claude-sonnet-5", "sonnet"):
+            route = resolve_model_route("hermes", requested_model=model, requested_effort="off")
+            with self.subTest(model=model):
+                self.assertEqual(route["selected_reasoning_effort"], "off")
+                self.assertNotIn("model_contract", route)
+
+
+class GrokBuildPriceTests(unittest.TestCase):
+    """Grok Build 0.1 took the X-platform slot on 2026-10-01; xAI lists the
+    retired Grok Code Fast ids as its aliases, so both spellings price alike."""
+
+    def test_both_spellings_carry_the_build_rate_and_its_cache_ratio(self) -> None:
+        from omh.plugin_bundle.omh.hermes_delegation import APPROX_CACHE_READ_RATIO
+
+        for model_id in ("grok-build-0.1", "grok-code-fast"):
+            with self.subTest(model_id=model_id):
+                self.assertEqual(APPROX_PRICE_PER_MTOK[model_id], (1.0, 2.0))
+                # Cached input 0.20 on 1.00 input: a fifth, not the default tenth.
+                self.assertAlmostEqual(APPROX_CACHE_READ_RATIO[model_id] * 1.0, 0.20)
 
 
 if __name__ == "__main__":

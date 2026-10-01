@@ -552,7 +552,7 @@ and ordered recommendation chains skip missing entries in favor of a confirmed
 compatible alternative. Qwen and Gemini therefore remain valid user-selected
 alternatives even when they are not shipped category heads. If no candidate is
 confirmed for the selected category, role-slot, and domain chains, the resolver
-consults one shared final order: Claude Opus 5.5, then GPT-6 Sol. These names
+consults one shared final order: Claude Opus 5.5, then GPT-6.1 Sol. These names
 remain editorial candidates filtered through caller-confirmed metadata; they
 do not prove subscription, entitlement, authentication, or runtime readiness.
 If no candidate is confirmed anywhere, the resolver records `owner_default`;
@@ -567,9 +567,9 @@ The shipped catalog is editorial policy, not benchmark output:
 <!-- omh:model-chain-table:begin (generated: uv run python -m omh.cli docs chain-table; source: src/coding/model_recommendations.py) -->
 | Surface | What it is for | Shipped editable order |
 | --- | --- | --- |
-| Hermes `main` suggestion | The session's own model | Kimi K3, Claude Fable 5.1, Claude Opus 5.5, GPT-6 Astra (`xhigh`), GPT-6 Sol (`high`) |
+| Hermes `main` suggestion | The session's own model | Kimi K3, Claude Fable 5.1, Claude Opus 5.5, GPT-6 Astra (`xhigh`), GPT-6.1 Sol (`high`) |
 | `ultrabrain` | Deepest reasoning | GPT-6 Astra (`xhigh`) |
-| `deep` | Strong default tier | GPT-6 Sol (`high`), DeepSeek Flash (V4.1) (`high`) |
+| `deep` | Strong default tier | GPT-6.1 Sol (`high`), DeepSeek Flash (V4.1) (`high`) |
 | `architect` | Architecture and system design | Claude Fable 5.1 (`xhigh`), GPT-6 Astra (`xhigh`), Kimi K3 (`xhigh`) |
 | `unspecified-high` | Default working model | Kimi K3 (`medium`), Claude Opus 5.5 (`medium`) |
 | `unspecified-low` | Cheaper fallback | GLM 5.3 (`low`), DeepSeek Flash (V4.1) (`low`), Claude Opus 5.5 (`low`) |
@@ -580,8 +580,8 @@ The shipped catalog is editorial policy, not benchmark output:
 | `capable` | Strong general work | Claude Fable 5.1 (`medium`), Claude Opus 5.5 (`medium`), Kimi K3 (`medium`), GLM 5.3 (`medium`) |
 | `simple-work` | Small everyday tasks | GPT-6 Luna (`low`), DeepSeek Flash (V4.1) (`low`), Claude Haiku 4.5 (`low`) |
 | `deep-work` | Long tasks at frontier depth | GPT-6 Astra (`high`) |
-| `x_platform_data` affinity | X-platform data affinity | Grok Code Fast, Kimi K3, Gemini 3.1 Pro |
-| Shared final order (`last_resort.any`) | Last resort when a chain is exhausted | Claude Opus 5.5 (`medium`), GPT-6 Sol (`medium`) |
+| `x_platform_data` affinity | X-platform data affinity | Grok Build 0.1, Kimi K3, Gemini 3.1 Pro |
+| Shared final order (`last_resort.any`) | Last resort when a chain is exhausted | Claude Opus 5.5 (`medium`), GPT-6.1 Sol (`medium`) |
 <!-- omh:model-chain-table:end -->
 
 Chain customization is a config edit, not a source edit — bare
@@ -842,7 +842,7 @@ nothing, and vendors reprice. Put your own rates in
   "schema_version": "model_price_overrides/v1",
   "models": {
     "claude-fable-5-1": {"input_per_mtok": 8.0, "output_per_mtok": 40.0},
-    "grok-code-fast": {"input_per_mtok": 0.2, "output_per_mtok": 1.5},
+    "grok-build-0.1": {"input_per_mtok": 1.0, "output_per_mtok": 2.0},
     "my-free-tier-model": {"input_per_mtok": 0, "output_per_mtok": 0}
   }
 }
