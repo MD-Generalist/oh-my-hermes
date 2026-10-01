@@ -15,6 +15,7 @@ from typing import Callable
 from omh.skin_pack import SKIN_NAME, is_omh_skin_name
 
 from ..core.errors import OmhError
+from ..plugin_bundle.omh import runtime_paths
 
 from ..system.local_store import atomic_replace_text, atomic_write_text
 
@@ -674,6 +675,182 @@ def ensure_plugin_enabled(config_text: str, name: str) -> ConfigChange:
     lines.insert(plugins_index + 1, f"{indent}- {name}")
     lines.insert(plugins_index + 1, "  enabled:")
     return ConfigChange(True, "inserted plugins.enabled", "\n".join(lines) + "\n")
+
+
+PLUGIN_OMH_HOME_KEY_PATH: tuple[str, ...] = ("plugins", "entries", "omh", "settings", "omh_home")
+
+
+def plugin_omh_home_setting(config_text: str) -> str:
+    """The raw `plugins.entries.omh.settings.omh_home`, or "" when none is readable.
+
+    Read through the plugin's own standalone scan, so this can never find a
+    value the plugin would not bind, or miss one it would.
+    """
+    try:
+        found, value = runtime_paths.omh_home_setting(config_text)
+    except runtime_paths.RuntimeBindingError:
+        return ""
+    return (value or "") if found else ""
+
+
+def ensure_plugin_omh_home(config_text: str, omh_home: str | Path) -> ConfigChange:
+    """Name `omh_home` as the store the plugin loaded from this home binds (#1960).
+
+    Without it the plugin resolves the Hermes process's `OMH_HOME`, then
+    `~/.omh`, so an install at any other store had a plugin reading another
+    install's manifest and writing runtime state there. Unset-only: a value
+    already there is the home's own choice of store -- a bot profile's
+    dispatch store is exactly that (#1679) -- and is never replaced. Doctor
+    reports a value that names a different store.
+
+    The written text is read back through the plugin's own scan before it is
+    returned, so a file this editor misreads is left alone rather than handed
+    to Hermes with a setting the plugin would not find.
+    """
+    value = _normalize(omh_home)
+    try:
+        found, _current = runtime_paths.omh_home_setting(config_text)
+    except runtime_paths.RuntimeBindingError as exc:
+        return ConfigChange(False, f"{exc}; plugins.entries.omh.settings.omh_home left unset", config_text)
+    if found:
+        return ConfigChange(False, "plugins.entries.omh already names an omh_home; leaving it alone", config_text)
+    leaf = f"'{value}'"
+    lines = config_text.splitlines()
+    guard = section_edit_guard(lines, "plugins", "entries")
+    if not guard and ("'" in value or _contains_potential_quoted_mapping_key(f"omh_home: {leaf}")):
+        guard = "the OMH home path cannot be written as one plain YAML string"
+    if guard:
+        return ConfigChange(False, f"{guard}; plugins.entries.omh.settings.omh_home left unset", config_text)
+    edited = _insert_block_leaf(lines, PLUGIN_OMH_HOME_KEY_PATH, leaf)
+    if edited is None:
+        return ConfigChange(
+            False, "plugins.entries is in a shape this editor does not extend; omh_home left unset", config_text
+        )
+    text = _joined(edited)
+    if plugin_omh_home_setting(text) != value:
+        return ConfigChange(
+            False, "the plugin would not read the written omh_home back; leaving the config alone", config_text
+        )
+    return ConfigChange(True, "recorded plugins.entries.omh.settings.omh_home", text)
+
+
+def _block_children_end(lines: list[str], start: int, stop: int, parent_indent: int) -> int:
+    """The first line at or before `parent_indent` in `[start, stop)`, else `stop`."""
+    for index in range(start, stop):
+        line = lines[index]
+        body = line.strip()
+        if body and not body.startswith("#") and len(line) - len(line.lstrip(" ")) <= parent_indent:
+            return index
+    return stop
+
+
+def _block_key_at_level(
+    lines: list[str], start: int, stop: int, parent_indent: int, key: str
+) -> tuple[int | None, int | None, int] | None:
+    """`(key index, sibling indent, level end)` for one level, or None for a shape not walked.
+
+    The plugin's `_scan_block_setting` rule: children are the lines deeper
+    than the parent, the first one fixes the sibling indent, and the last
+    duplicate wins. A tab indent or a merge key at the level is refused.
+    """
+    child_indent: int | None = None
+    found_at: int | None = None
+    end = _block_children_end(lines, start, stop, parent_indent)
+    for index in range(start, end):
+        line = lines[index]
+        body = line.strip()
+        if not body or body.startswith("#"):
+            continue
+        indent = len(line) - len(line.lstrip(" "))
+        if "\t" in line[: indent + 1]:
+            return None
+        if child_indent is None:
+            child_indent = indent
+        if indent != child_indent:
+            continue
+        name, separator, _rest = body.partition(":")
+        if name.strip() == "<<":
+            return None
+        if separator and name.strip() == key:
+            found_at = index
+    return found_at, child_indent, end
+
+
+def _insert_block_leaf(lines: list[str], key_path: tuple[str, ...], leaf: str) -> list[str] | None:
+    """Insert the missing tail of a block-mapping key path, or None for any other shape.
+
+    Adds only the keys that are absent, at the sibling indent already in use
+    (two spaces deeper when the level is empty). An existing key on the path
+    that carries an inline value (`entries: {}`, `omh: ~`) is somebody's
+    shape, not an absent key, and so is a leaf that is already there.
+    """
+    start, stop, parent_indent = 0, len(lines), -1
+    for depth, key in enumerate(key_path):
+        level = _block_key_at_level(lines, start, stop, parent_indent, key)
+        if level is None:
+            return None
+        found_at, child_indent, stop = level
+        if found_at is None:
+            indent = child_indent if child_indent is not None else parent_indent + 2 if parent_indent >= 0 else 0
+            tail = key_path[depth:]
+            added = [
+                f"{' ' * (indent + 2 * offset)}{name}:{f' {leaf}' if offset == len(tail) - 1 else ''}"
+                for offset, name in enumerate(tail)
+            ]
+            position = stop
+            while position > start and not lines[position - 1].strip():
+                position -= 1
+            if depth == 0:
+                # A new top-level section, separated the way the other
+                # `ensure_*` writers append theirs.
+                return [*lines[:position], *([""] if position else []), *added, *lines[position:]]
+            return [*lines[:position], *added, *lines[position:]]
+        rest = lines[found_at].partition(":")[2].strip()
+        if depth == len(key_path) - 1 or (rest and not rest.startswith("#")):
+            return None
+        start, parent_indent = found_at + 1, int(child_indent or 0)
+    return None
+
+
+def _block_key_chain(lines: list[str], key_path: tuple[str, ...]) -> list[int] | None:
+    """The line index of each key on a block-mapping path, or None when one is absent."""
+    chain: list[int] = []
+    start, stop, parent_indent = 0, len(lines), -1
+    for key in key_path:
+        level = _block_key_at_level(lines, start, stop, parent_indent, key)
+        if level is None or level[0] is None:
+            return None
+        found_at, child_indent, stop = level
+        chain.append(found_at)
+        start, parent_indent = found_at + 1, int(child_indent or 0)
+    return chain
+
+
+def remove_plugin_omh_home(config_text: str, expected: str) -> ConfigChange:
+    """Take back the `omh_home` `ensure_plugin_omh_home` wrote, if it still says `expected`.
+
+    With it go the `settings:` and `omh:` keys the removal leaves with no
+    children: an empty mapping there is a null Hermes reads as no entry at
+    all, and leaving it would make the uninstalled file differ from the one
+    before setup. `plugins.entries` is a depth-two container and goes through
+    the recorded-container cleanup every other managed section does.
+    """
+    if plugin_omh_home_setting(config_text) != expected:
+        return ConfigChange(False, "plugins.entries.omh.settings.omh_home is not the value OMH wrote", config_text)
+    lines = config_text.splitlines()
+    guard = section_edit_guard(lines, "plugins", "entries")
+    if guard:
+        return ConfigChange(False, guard, config_text)
+    chain = _block_key_chain(lines, PLUGIN_OMH_HOME_KEY_PATH)
+    if chain is None:
+        return ConfigChange(False, "plugins.entries.omh.settings.omh_home line not found", config_text)
+    del lines[chain[-1]]
+    # `settings`, then `omh`; never `entries` or `plugins`.
+    for index in reversed(chain[2:-1]):
+        if _has_child_lines(lines, index):
+            break
+        del lines[index]
+    return ConfigChange(True, "removed plugins.entries.omh.settings.omh_home", _joined(lines))
 
 
 def memory_provider_selection(config_text: str) -> str:

@@ -46,6 +46,7 @@ from ..paths import (
     managed_command_self_update_state_path,
     managed_current_workflow_pack_dir,
 )
+from ..plugin_bundle.omh import runtime_paths
 from ..plugin_bundle.omh.installed_skills import installed_skill_names as hint_installed_skill_names
 from ..plugin_bundle.omh.installed_skills import skill_not_installed
 from ..plugin_bundle.omh.memory_dreaming import read_dreaming_state, read_latest_consolidation
@@ -423,6 +424,7 @@ def run_doctor(paths: OmhPaths) -> list[Check]:
                     observed=bool(latest_plugin_observation and latest_plugin_observation.get("observed")),
                 ),
                 _plugin_enabled_check(paths),
+                _plugin_omh_home_binding_check(paths, config_text),
                 _plugin_desktop_half_check(paths),
                 _awareness_delivery_check(paths),
             ]
@@ -2283,6 +2285,70 @@ def _plugin_enabled_check(paths: OmhPaths) -> Check:
         ),
         remediation=f"Run `hermes plugins enable {PLUGIN_NAME}`.",
         next_action=f"Run `hermes plugins enable {PLUGIN_NAME}`, then restart or reload Hermes and rerun `omh doctor`.",
+    )
+
+
+def _plugin_omh_home_binding_check(paths: OmhPaths, config_text: str) -> Check:
+    """Does the plugin loaded from this Hermes home bind the store doctor is checking?
+
+    The plugin reads its home's `plugins.entries.omh.settings.omh_home`, then
+    the Hermes process's `OMH_HOME`, then `~/.omh`. An install at any other
+    store with no setting had a plugin reading another install's manifest and
+    writing its runtime state there, while every check above passed against
+    the store the install was made at (#1960). A warning, not a blocker:
+    Hermes may well be started with `OMH_HOME` exported, which doctor cannot
+    see from here.
+    """
+    config_path = paths.hermes_config_path
+    repair = (
+        f"Run `omh --omh-home {paths.omh_home} --hermes-home {paths.hermes_home} setup` to record "
+        f"`plugins.entries.omh.settings.omh_home`, or start Hermes with `OMH_HOME={paths.omh_home}`."
+    )
+    try:
+        found, value = runtime_paths.omh_home_setting(config_text)
+        if found:
+            bound = runtime_paths.expand_path(value, hermes_home=paths.hermes_home, relative_to=paths.hermes_home)
+        else:
+            bound = runtime_paths.unset_launch_omh_home(paths.hermes_home)
+    except runtime_paths.RuntimeBindingError as exc:
+        return Check(
+            "plugin_omh_home_binding",
+            True,
+            f"the OMH home the plugin in {paths.hermes_home} binds could not be read: {exc}",
+            severity="warning",
+            observed=False,
+            next_action=f"Fix `plugins.entries.omh.settings.omh_home` in {config_path}, then rerun `omh doctor`.",
+        )
+    if bound == paths.omh_home:
+        return Check(
+            "plugin_omh_home_binding",
+            True,
+            f"the plugin in {paths.hermes_home} binds {paths.omh_home}"
+            + (" (plugins.entries.omh.settings.omh_home)" if found else ""),
+        )
+    if found:
+        return Check(
+            "plugin_omh_home_binding",
+            True,
+            (
+                f"the plugin in {paths.hermes_home} binds {bound} (plugins.entries.omh.settings.omh_home), "
+                f"not {paths.omh_home}, the OMH home this doctor run checked"
+            ),
+            severity="warning",
+            next_action=(
+                f"Rerun `omh doctor` with `--omh-home {bound}`, or change "
+                f"`plugins.entries.omh.settings.omh_home` in {config_path} if {paths.omh_home} is the store it should use."
+            ),
+        )
+    return Check(
+        "plugin_omh_home_binding",
+        True,
+        (
+            f"the plugin in {paths.hermes_home} names no OMH home, so it binds {bound} "
+            f"unless Hermes is started with OMH_HOME={paths.omh_home}; this doctor run checked {paths.omh_home}"
+        ),
+        severity="warning",
+        next_action=repair,
     )
 
 

@@ -4,6 +4,38 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **`omh update` no longer drops the full-only skills a core install kept.**
+  A staged update renders the skill pack into a new, empty generation and then
+  moves `current` to it. The installer decided what to refresh from that empty
+  directory alone, so on a `core` profile it wrote only the core skills, and
+  every full-only skill the install had kept, such as the nine ULW engines,
+  disappeared on the next update. The refresh set now also includes the skills
+  the active generation serves. A plain core install is unchanged, and
+  narrowing an install is still only done by
+  `omh skill-profile reconcile --to core`. (#1963, contributed by
+  @anhtahaylove)
+
+- **`omh setup --omh-home X` binds the plugin to X.** The plugin loaded in
+  a Hermes home resolves its store from that home's
+  `plugins.entries.omh.settings.omh_home`, then the Hermes process's
+  `OMH_HOME`, then `~/.omh`, and setup wrote none of the first. So an install
+  at any store other than `~/.omh` had a plugin that read another install's
+  manifest and wrote its runtime state to `~/.omh` unless Hermes was started
+  with `OMH_HOME` exported (#1960). Setup and update now record the setting
+  when X is not `~/.omh`; a default install's config is byte-identical to
+  before. A value already there is never replaced, bot-profile configs are
+  never given one (a profile's store stays its own choice, #1679), and
+  `omh uninstall` removes the setting while it still names the store it
+  wrote. `omh doctor` gains a `plugin_omh_home_binding` warning when the
+  plugin in the Hermes home would bind a different store than the one
+  doctor checked. Behaviour change: once the setting is recorded, an
+  exported `OMH_HOME` no longer overrides it for that Hermes home, because
+  the setting outranks the environment. Re-running setup with another
+  `--omh-home` does not move it either (the write is unset-only); to switch
+  stores, remove or edit `plugins.entries.omh.settings.omh_home` in the
+  Hermes home's `config.yaml` and run setup with the new `--omh-home`, or
+  `omh uninstall` from the old store first.
+  doctor checked.
 - **MODEL_OPTI.md records which chat models keep a non-English persona's
   language after an OMH skill loads.** On a Korean persona,
   `deepseek-v4.1-flash-ultrafast` flipped the reply after an OMH

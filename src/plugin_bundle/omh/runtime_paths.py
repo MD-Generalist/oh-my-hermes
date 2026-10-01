@@ -286,17 +286,29 @@ def _standalone_configured_home(home: Path):
         return _MISSING
     except (OSError, UnicodeDecodeError):
         raise RuntimeBindingError("OMH profile configuration is unreadable or invalid") from None
-    lines = _LINE_BREAK.split(text)
+    found, value = omh_home_setting(text)
+    if not found:
+        return _MISSING
+    for match in _VARIABLE.finditer(value or ""):
+        name = next(group for group in match.groups() if group is not None)
+        if name not in _STANDALONE_SETTING_VARIABLES:
+            raise RuntimeBindingError("OMH profile setting may reference only $HERMES_HOME or $HOME outside a Hermes host")
+    return value
+
+
+def omh_home_setting(config_text: str) -> tuple[bool, str | None]:
+    """`(found, raw value)` of the `omh_home` a config text names, unexpanded.
+
+    The standalone lane's own scan, public so the installer that writes the
+    setting and doctor that reports it read it the way the plugin does rather
+    than through a second parser that could disagree about the same file.
+    """
+    lines = _LINE_BREAK.split(config_text)
     for key_path in _STANDALONE_SETTING_PATHS:
         found, value = _scan_block_setting(lines, key_path)
-        if not found:
-            continue
-        for match in _VARIABLE.finditer(value or ""):
-            name = next(group for group in match.groups() if group is not None)
-            if name not in _STANDALONE_SETTING_VARIABLES:
-                raise RuntimeBindingError("OMH profile setting may reference only $HERMES_HOME or $HOME outside a Hermes host")
-        return value
-    return _MISSING
+        if found:
+            return True, value
+    return False, None
 
 
 def _scan_block_setting(lines: list[str], key_path: tuple[str, ...]) -> tuple[bool, str | None]:
@@ -484,7 +496,17 @@ def resolve_homes(omh_home: str | Path | None = None, hermes_home: str | Path | 
         return expand_path(value, hermes_home=home, relative_to=home if multiplex or home != launch_home else None), home
     if multiplex or home != launch_home:
         raise RuntimeBindingError("OMH home is not configured for this profile")
-    return expand_path("~/.omh", hermes_home=home), home
+    return unset_launch_omh_home(home), home
+
+
+def unset_launch_omh_home(hermes_home: Path | None = None) -> Path:
+    """The store a launch-profile plugin binds when nothing names one.
+
+    Neither its home's `settings.omh_home` nor the Hermes process's
+    `OMH_HOME`. An install at any other store has to write the setting, or
+    this is the store its plugin reads and writes (#1960).
+    """
+    return expand_path("~/.omh", hermes_home=hermes_home)
 
 
 def standalone_default_omh_home(hermes_home: Path | None = None) -> Path:

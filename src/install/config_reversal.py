@@ -56,6 +56,7 @@ from .config_adapter import (
     memory_provider_selection,
     plugin_enablement,
     plugin_enablement_is_readable,
+    plugin_omh_home_setting,
     references_mapping_key,
     childless_containers,
     remove_childless_containers,
@@ -63,7 +64,9 @@ from .config_adapter import (
     remove_display_sections,
     remove_memory_provider,
     remove_plugin_enabled,
+    remove_plugin_omh_home,
 )
+from ..plugin_bundle.omh import runtime_paths
 from .plugin_pack import PLUGIN_NAME
 
 MANAGED_CONFIG_WRITES_STATE_KEY = "hermes_config_writes"
@@ -76,6 +79,7 @@ MEMORY_PROVIDER_KEY = "memory.provider"
 PLUGINS_ENABLED_KEY = "plugins.enabled"
 COMPRESSION_FALLBACK_KEY = "auxiliary.compression.fallback_chain"
 EXTERNAL_DIRS_KEY = "skills.external_dirs"
+PLUGIN_OMH_HOME_KEY = "plugins.entries.omh.settings.omh_home"
 
 # `skills.external_dirs` is read into the record for the container cleanup
 # below, but never reversed here: `_remove_managed_external_dirs` in the
@@ -89,6 +93,7 @@ REVERSIBLE_KEYS: tuple[str, ...] = (
     MEMORY_PROVIDER_KEY,
     PLUGINS_ENABLED_KEY,
     COMPRESSION_FALLBACK_KEY,
+    PLUGIN_OMH_HOME_KEY,
 )
 
 # Containers OMH's writers can create. A `display:` that was not there before
@@ -100,6 +105,7 @@ MANAGED_CONTAINERS: tuple[str, ...] = (
     "memory",
     "plugins",
     "plugins.enabled",
+    "plugins.entries",
     "skills",
     "skills.external_dirs",
 )
@@ -148,12 +154,13 @@ def managed_config_reading(config_text: str) -> dict[str, object]:
         PLUGINS_ENABLED_KEY: list(plugin_enablement(config_text)["enabled"]),
         COMPRESSION_FALLBACK_KEY: compression_fallback_chain_lines(config_text),
         EXTERNAL_DIRS_KEY: list(external_dirs(config_text)),
+        PLUGIN_OMH_HOME_KEY: plugin_omh_home_setting(config_text),
     }
 
 
 def _written_keys(before: dict[str, object], after: dict[str, object]) -> dict[str, object]:
     written: dict[str, object] = {}
-    for key in (DISPLAY_INTERFACE_KEY, DISPLAY_SKIN_KEY, MEMORY_PROVIDER_KEY):
+    for key in (DISPLAY_INTERFACE_KEY, DISPLAY_SKIN_KEY, MEMORY_PROVIDER_KEY, PLUGIN_OMH_HOME_KEY):
         value = str(after.get(key) or "")
         if value and value != str(before.get(key) or ""):
             written[key] = value
@@ -493,6 +500,17 @@ def _reverse_one(
             )
         return _row_from(key, remove_compression_fallback_chain(config_text, [str(line) for line in recorded]))
 
+    if key == PLUGIN_OMH_HOME_KEY:
+        if not isinstance(recorded, str) or not recorded:
+            # Before #1960 setup never wrote this key, so a value with no
+            # record is a store somebody chose -- a bot profile's own
+            # dispatch store is exactly that (#1679).
+            present = config_names_key(config_text, PLUGIN_OMH_HOME_KEY)
+            return ConfigChange(False, "", config_text), _unrecorded_row(
+                key, present, "plugins.entries.omh.settings.omh_home is not set"
+            )
+        return _row_from(key, remove_plugin_omh_home(config_text, recorded))
+
     raise ValueError(f"unknown managed config key: {key}")
 
 
@@ -535,6 +553,12 @@ def config_names_key(config_text: str, key: str, *, name: str = "") -> bool:
         return (name or PLUGIN_NAME) in plugin_enablement(config_text)["enabled"]
     if key == COMPRESSION_FALLBACK_KEY:
         return bool(compression_settings(config_text).get("has_fallback_chain"))
+    if key == PLUGIN_OMH_HOME_KEY:
+        try:
+            return runtime_paths.omh_home_setting(config_text)[0]
+        except runtime_paths.RuntimeBindingError:
+            # A shape the plugin's scan refuses may still carry the key.
+            return True
     section, _, leaf = key.rpartition(".")
     return _names_section_key(config_text, section, leaf)
 
