@@ -4,8 +4,10 @@ The plugin resolves its store from its home's
 `plugins.entries.omh.settings.omh_home`, then the Hermes process's `OMH_HOME`,
 then `~/.omh`. Setup wrote none of the first, so an install at any other store
 had a plugin reading `~/.omh` unless Hermes was started with `OMH_HOME`
-exported. Every test here runs with `HOME` pointed at the temporary root and
-`OMH_HOME` unset, so `~/.omh` is a directory the test owns.
+exported. Every test here runs with `HOME` and `USERPROFILE` pointed at the
+temporary root and `OMH_HOME` unset, so `~/.omh` is a directory the test owns.
+Windows resolves `~` from `USERPROFILE` and ignores `HOME`, so patching
+`HOME` alone left `~/.omh` on the runner's real profile there.
 """
 
 from __future__ import annotations
@@ -27,7 +29,7 @@ class _IsolatedHome(unittest.TestCase):
         tmp = TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         self.root = Path(tmp.name).resolve()
-        environ = patch.dict(os.environ, {"HOME": str(self.root)})
+        environ = patch.dict(os.environ, {"HOME": str(self.root), "USERPROFILE": str(self.root)})
         environ.start()
         self.addCleanup(environ.stop)
         os.environ.pop("OMH_HOME", None)
