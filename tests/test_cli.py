@@ -13014,6 +13014,9 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
                     "display.skin",
                     "memory.provider",
                     "plugins.enabled",
+                    # `root/.omh` is not `~/.omh`, so the profile, naming no
+                    # store of its own, was given the primary's (#1967).
+                    "plugins.entries.omh.settings.omh_home",
                 },
             )
 
