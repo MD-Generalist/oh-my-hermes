@@ -381,49 +381,219 @@ named and the outcome Hermes recorded, under the same boundary.
 
 ## Agent Debug Report
 
-The `agent-debug` skill diagnoses a stuck, looping, or repeatedly failing
-agent run, and it declared `agent_debug_report/v1` without anything that
-produced one, so a plausible narrative read the same as a diagnosis.
-`omh quality-evidence agent-debug` gives the diagnosis a floor of observed
-rows: it reads one session from Hermes' own session store and returns
-findings derived from record fields, each cited by reference.
+Audience: people ask Hermes why a run went wrong; agents and operators run the
+CLI.
+
+The `agent-debug` skill diagnoses a stuck, looping, drifting, or repeatedly
+failing agent run. `omh quality-evidence agent-debug` gives that diagnosis a
+floor of observed rows and builds the incident on top of them: it reads one
+session, returns findings derived from record fields, each cited by
+reference, and then the capture, the competing hypotheses, and a proposed
+recovery that is never executed.
 
 ```sh
-omh quality-evidence agent-debug --hermes-session <id|latest> [--json]
+omh quality-evidence agent-debug --hermes-session <id|prefix|latest> \
+  [--session-record <file.jsonl>] [--turns N|N:M|N:] \
+  [--observable looping|repeated_work|goal_drift|context_loss|tool_stall|unexpected_cost] \
+  [--receipt <dispatch_summary.json>]... [--max-rows N] [--max-row-bytes N] [--json]
+omh quality-evidence agent-debug-export --report <reviewed.json> --output <new-file> \
+  [--session-record <file.jsonl>] [--confirm-export]
 ```
+
+### Selecting one session
+
+The source is Hermes' own `state.db`, opened `mode=ro`, or a supplied JSON
+Lines session record with one message object per line (the fields a
+`messages` row has: `session_id`, `role`, `content`, `tool_call_id`,
+`tool_name`, `tool_calls`, `timestamp`, `_compressed_summary`). A state.db
+finding cites `messages.id`; a record finding cites `<record>:<line>`.
+
+`--hermes-session` takes a full id, `latest`, or a prefix that names exactly
+one session. A prefix that names more than one is refused with the sessions
+it matched, and a record that holds more than one session needs a selector;
+neither case is ever guessed. `--turns` narrows the rows read to a 1-based,
+inclusive range of user turns (compaction summary rows are not turns). The
+source is never written; a diagnosis creates no file anywhere.
+
+### Findings
 
 | Kind | Derived from |
 | --- | --- |
 | `tool_error` | a tool result whose JSON object records an error in a typed field: a non-zero integer `exit_code`, `success: false`, or a non-empty string `error` (error class `nonzero_exit`, `success_false`, `error_field`) |
 | `identical_retry_after_error` | the next call of the same tool after a `tool_error` whose arguments, from the assistant row's `tool_calls`, have the same sha256 over canonical JSON |
 | `background_without_notify` | a tool result that records a started process (an integer `pid`) with `notify_on_complete` not true |
-| `compaction_boundary` | a message row Hermes marks `_compressed_summary` |
+| `compaction_boundary` | a message row marked `_compressed_summary` |
 
 Every finding carries a citation with a closed key set: the session id, one
-message id and timestamp per row the finding spans, the tool_call ids, the
-tool name, the error class, the exit code, and a 16-character argument
-digest. No prompt, reply, argument, or tool output is quoted, and no word of
-a result is matched. The validator refuses a report whose finding lacks the
-citation its kind requires, cites another session, or carries any key outside
-that shape; the reader runs it on every report before returning it.
+message id (or record line) and timestamp per row the finding spans, the
+tool_call ids, the tool name, the error class, the exit code, and a
+16-character argument digest. No prompt, reply, argument, or tool output is
+quoted, and no word of a result is matched. The validator refuses a report
+whose finding lacks the citation its kind requires, cites another session,
+or carries any key outside that shape; the reader runs it on every report
+before returning it. A tool call counts once per distinct `tool_call_id`,
+the first row deciding what it was, because a compaction re-persists rows
+under new ids. A field the source does not have lists its kind under
+`unavailable` and leaves it out of `checked_kinds`, so an unchecked kind
+never reads as clean.
 
-The database opens `mode=ro` and nothing is written. A compaction re-persists
-rows under new ids, so a tool call counts once per distinct `tool_call_id`,
-the first row by id deciding what it was; a row with an empty `tool_call_id`
-is counted in `tool_calls_without_id` and never cited as a call. When the
-Hermes build lacks the `tool_calls` or `_compressed_summary` column, the kind
-that needs it is listed under `unavailable` and left out of `checked_kinds`,
-so an unchecked kind never reads as clean. A valid report exits 0 whether or
-not it has findings: a finding is an observation to cite, not failed work,
-and a loop that wants to gate reads `finding_counts`. A missing database, an
-unknown session, or a report that fails validation exits 2.
+### Bounded reading
 
-The payload is `agent_debug_report/v1` and carries its own claim boundary: a
-finding is an observed record, not a diagnosis. It does not show why the
-agent acted as it did, that a retry was wrong, that a compaction lost what
-mattered, or that any recovery worked, and it is not execution, review, CI,
-or merge evidence. The failure pattern, competing hypotheses, and recovery
-action the skill asks for are built on top of these citations.
+At most `--max-rows` rows (state.db) or lines (record) are read, and at most
+`--max-row-bytes` of any one cell or line is taken into memory: state.db cells
+are cut inside SQLite, and a record line over the budget is skipped in fixed
+chunks without being kept. Each row is reduced on read to the typed fields the
+kinds need. A row over the byte budget is listed under
+`budget.oversized_refs` and not checked; a session cut short sets
+`budget.row_limit_reached`. `budget.complete` is true only when neither
+happened, and the hypotheses below never treat an absence as evidence unless
+it is.
+
+### Incident artifacts
+
+| Artifact | What it holds |
+| --- | --- |
+| `agent_failure_capture/v1` | the identity the case is bound to (session, source, selection, turn range, source snapshot, report digest), the observed finding ids, every piece of `unavailable` evidence (an unchecked kind, oversized rows, rows past the limit, and host runtime state, which a record never holds), and the receipts admitted or refused |
+| `agent_failure_pattern_hypothesis/v1` | at least two competing hypotheses from a closed pattern table, each `observed: false`, with typed `evidence_for` and `evidence_against` (`finding:<id>` or `absence:<kind>`), the evidence it could not see, a confidence, and the observation that would decide it |
+| `contained_recovery_action/v1` | the smallest reversible step for the leading hypothesis, `requires_approval: true`, `executed: false`, and the actions diagnosis did not take |
+
+A hypothesis is ruled out only by an observed absence in a complete reading.
+`outside_recorded_evidence` -- the cause lies in provider, model, or runtime
+state the record does not hold -- can never be ruled out from records, so a
+case with a supported pattern stays `unresolved`, and no hypothesis may claim
+`high` confidence while a competitor is open. Each artifact is validated
+against the one it is built on, by digest, so a capture for another report or
+a hypothesis for another capture is refused.
+
+`--receipt` binds a fanout `dispatch_summary.json` (`fanout_dispatch_summary/v1`)
+as evidence. A unit is admitted only when it binds all five identities: the
+report's session (`origin_session_id`), a run (`run_ref`), a unit
+(`unit_id`), a configuration (the summary's `contract_digest`), and freshness
+(an `observed_at` no earlier than the session's start). Anything else is
+refused by name (`foreign_session`, `run_unbound`, `configuration_unbound`,
+`stale`, `identity_conflict`, ...).
+
+### Example: evidence-backed
+
+A fixture session where the agent re-ran a failing command with identical
+arguments, then hit a compaction, then a failed patch, asked with
+`--observable looping` (`tests/test_agent_debug_incident.py` renders this
+example from its fixture and checks it matches this page):
+
+```text
+OMH agent debug report: session 20260930_091500_c0ffee (source tui)
+  started 2026-09-30T08:55:00Z    ended 2026-09-30T08:55:20Z    end reason tui_shutdown
+  selected exact from state.db    turns all of 3
+  tool calls 4 (distinct tool_call_id)    findings 5
+Findings
+  tool_error:3  messages 3  at 2026-09-30T08:55:03Z  calls c1  tool terminal  nonzero_exit  exit 1
+  identical_retry_after_error:3  messages 3,5  at 2026-09-30T08:55:03Z,2026-09-30T08:55:05Z  calls c1,c2  tool terminal  nonzero_exit  exit 1  args sha256 5227c58c95dcb311
+  tool_error:5  messages 5  at 2026-09-30T08:55:05Z  calls c2  tool terminal  nonzero_exit  exit 1
+  compaction_boundary:9  messages 9  at 2026-09-30T08:55:09Z
+  tool_error:12  messages 12  at 2026-09-30T08:55:12Z  calls c4  tool patch  success_false
+Budget
+  rows read 12 of at most 20000    bytes read 1207 (at most 262144 per row)
+  complete yes
+Boundary
+  An agent debug report cites rows one session record persisted, read without writing to it, and quotes no prompt, reply, argument, or tool output. A finding is an observed record, not a diagnosis: it does not show why the agent acted as it did, that a retry was wrong, that a compaction lost what mattered, or that any recovery worked, and it is not execution, review, CI, or merge evidence. A kind listed as unavailable was not checked, and rows listed as oversized or past the row budget were not read.
+Incident (observable looping)
+  receipts admitted 0    refused 0
+  unavailable: host_runtime
+Hypotheses (unresolved)
+  H1 tool_error_retry_loop: supported, confidence low
+    for finding:identical_retry_after_error:3
+    against (none)
+    decided by a retry with changed arguments that succeeds, or the same arguments failing again after a change elsewhere
+  H2 context_loss_after_compaction: supported, confidence low
+    for finding:compaction_boundary:9
+    against (none)
+    decided by the same failure in a turn range with no compaction before it
+  H3 outside_recorded_evidence: unresolved, confidence low
+    for (none)
+    against (none)
+    could not see unavailable:host_runtime
+    decided by a replay of the cited turns, or host evidence (provider, model, or runtime state) the record does not hold
+Contained recovery (proposed, requires approval, not executed)
+  change_arguments_before_next_retry: Pause the run before its next call of the cited tool, and change the arguments or the approach the cited error points at before it retries.
+  targets finding:identical_retry_after_error:3
+  not performed: recovery, executor_reset, session_mutation, runtime_repair, export, archive, github_issue, comment
+```
+
+Two patterns are supported and neither is proven: the record shows the
+retry failing again and a failure after the compaction, but only a replay or
+host evidence decides which (or neither) caused the loop. The proposed step
+targets the cited retry and changes nothing until someone approves it.
+
+### Example: unavailable
+
+The same session read from a Hermes build without the `tool_calls` and
+`_compressed_summary` columns, asked with `--observable context_loss`:
+
+```text
+OMH agent debug report: session 20260930_091500_c0ffee (source tui)
+  started 2026-09-30T08:55:00Z    ended 2026-09-30T08:55:20Z    end reason tui_shutdown
+  selected exact from state.db    turns all of 4
+  tool calls 4 (distinct tool_call_id)    findings 3
+Findings
+  tool_error:3  messages 3  at 2026-09-30T08:55:03Z  calls c1  tool terminal  nonzero_exit  exit 1
+  tool_error:5  messages 5  at 2026-09-30T08:55:05Z  calls c2  tool terminal  nonzero_exit  exit 1
+  tool_error:12  messages 12  at 2026-09-30T08:55:12Z  calls c4  tool patch  success_false
+Unavailable
+  identical_retry_after_error: messages.tool_calls column not present
+  compaction_boundary: messages._compressed_summary column not present
+Budget
+  rows read 12 of at most 20000    bytes read 483 (at most 262144 per row)
+  complete yes
+Boundary
+  An agent debug report cites rows one session record persisted, read without writing to it, and quotes no prompt, reply, argument, or tool output. A finding is an observed record, not a diagnosis: it does not show why the agent acted as it did, that a retry was wrong, that a compaction lost what mattered, or that any recovery worked, and it is not execution, review, CI, or merge evidence. A kind listed as unavailable was not checked, and rows listed as oversized or past the row budget were not read.
+Incident (observable context_loss)
+  receipts admitted 0    refused 0
+  unavailable: identical_retry_after_error, compaction_boundary, host_runtime
+Hypotheses (unresolved)
+  H1 context_loss_after_compaction: unresolved, confidence low
+    for (none)
+    against (none)
+    could not see unavailable:compaction_boundary
+    decided by the same failure in a turn range with no compaction before it
+  H2 outside_recorded_evidence: unresolved, confidence low
+    for (none)
+    against (none)
+    could not see unavailable:host_runtime
+    decided by a replay of the cited turns, or host evidence (provider, model, or runtime state) the record does not hold
+Contained recovery (proposed, requires approval, not executed)
+  collect_discriminating_evidence: Change nothing in the run yet: replay the cited turn range or supply the host evidence the decisive observation needs.
+  not performed: recovery, executor_reset, session_mutation, runtime_repair, export, archive, github_issue, comment
+```
+
+Neither hypothesis can be supported or ruled out, so the case stays
+unresolved and the only proposal is to collect the evidence that would
+decide it.
+
+### Export
+
+Sharing is a separate action, never a side effect of diagnosis.
+`agent-debug-export` takes a saved `agent-debug --json` payload the user
+reviewed, re-validates the report and the three artifacts, re-reads every
+cited reference from the source and refuses one that is missing, foreign
+(now in another session), stale (its timestamp, or the record file, changed),
+or mismatched (not the cited tool call or summary). It drops the absolute
+source path and runs a deterministic leak scan for absolute paths,
+credential-shaped values, a value that is a phone number or email address,
+raw-material keys, and body-length strings. Without `--confirm-export` it prints the package and
+writes nothing; with it, the package goes to a new private file that is never
+overwritten and never inside the Hermes home or over the record. Nothing is
+uploaded, filed as an issue, or posted.
+
+A valid report exits 0 whether or not it has findings: a finding is an
+observation to cite, not failed work, and a loop that wants to gate reads
+`finding_counts`. A missing database or record, an unknown or ambiguous
+session, an artifact that fails validation, or a refused export exits 2.
+
+The payloads carry their own claim boundaries: a finding is an observed
+record, not a diagnosis, a hypothesis is inferred, a supported one is a
+correlation and not a proven cause, the recovery action was not executed,
+and none of it is execution, review, CI, or merge evidence, or proof that a
+future run is fixed.
 
 ## Cost Receipt
 

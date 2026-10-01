@@ -42,6 +42,27 @@ All notable changes will be documented here.
   and a historical capture stay separate classes. The skill line also names
   a spent retrieval budget as a gap reason. OMH still fetches nothing. (#1527)
 
+
+- **`agent-debug` produces a bounded, cited incident report, and sharing it
+  is a separate reviewed action.** `omh quality-evidence agent-debug` now
+  selects one session by full id, `latest`, or a prefix that names exactly
+  one (an ambiguous prefix is refused, never guessed), reads a supplied JSON
+  Lines session record as well as `state.db` with `record:line` citations,
+  narrows to a turn range, and reads within row and byte budgets that skip an
+  oversized cell or line without holding it. On top of the cited report it
+  builds `agent_failure_capture/v1`, `agent_failure_pattern_hypothesis/v1`
+  (at least two competing hypotheses with typed evidence for and against,
+  ruled out only by an absence in a complete reading) and
+  `contained_recovery_action/v1` (proposed, never executed), and binds a
+  fanout dispatch-summary receipt only when it carries the session, run,
+  unit, configuration and freshness identities. The new
+  `agent-debug-export` re-checks every cited reference against the source,
+  redacts and leak-scans the package, and writes it only with
+  `--confirm-export`. Requests about a looping, repeating, drifting,
+  context-losing or unexpectedly costly agent run now route to `agent-debug`.
+  `docs/HARNESS_QUALITY.md` shows an evidence-backed and an unavailable
+  example rendered from the test fixture. (#1799)
+
 - **`omh update` no longer drops the full-only skills a core install kept.**
   A staged update renders the skill pack into a new, empty generation and then
   moves `current` to it. The installer decided what to refresh from that empty

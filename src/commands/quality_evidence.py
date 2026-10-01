@@ -20,7 +20,23 @@ from ..quality.language_diagnostic_evidence import (
     language_diagnostic_claim_support,
 )
 from ..quality.reply_lint import build_reply_lint, format_reply_lint_summary, summarize_reply_lints
-from ..quality.agent_debug_report import AgentDebugReportError, build_agent_debug_report, format_agent_debug_report
+from ..quality.agent_debug_incident import (
+    OBSERVABLES,
+    AgentDebugIncidentError,
+    build_agent_debug_export,
+    build_agent_debug_incident,
+    format_agent_debug_incident,
+    read_receipt,
+    write_agent_debug_export,
+)
+from ..quality.agent_debug_report import (
+    DEFAULT_MAX_ROW_BYTES,
+    DEFAULT_MAX_ROWS,
+    AgentDebugReportError,
+    build_agent_debug_report,
+    format_agent_debug_report,
+    parse_turn_range,
+)
 from ..quality.hermes_state import HERMES_LATEST_SESSION, NO_SOURCE_LABEL
 from ..quality.reply_lint_source import ReplySourceError, hermes_session_replies
 from ..quality.session_file_activity import (
@@ -205,21 +221,72 @@ def cmd_quality_evidence_agent_debug(args: argparse.Namespace) -> int:
 
     The agent-debug skill declared ``agent_debug_report/v1`` and nothing
     produced one, so a plausible narrative read the same as a diagnosis. This
-    reads one session read-only and returns findings derived from record
-    fields, each cited by session, message and tool-call id. A valid report
-    exits 0 whether or not it has findings: a finding is an observation to
-    cite, not failed work, and a wrapper that wants to gate reads
-    ``finding_counts``. A missing session, an unreadable database, or a report
-    that fails validation is an error.
+    reads one session read-only -- from state.db or a supplied session record
+    -- and returns findings derived from record fields, each cited by session,
+    message (or record line) and tool-call id, plus the incident built on
+    them: the capture, competing hypotheses, and a proposed recovery that is
+    never executed. A valid report exits 0 whether or not it has findings: a
+    finding is an observation to cite, not failed work, and a wrapper that
+    wants to gate reads ``finding_counts``. A missing or ambiguous session, an
+    unreadable source, or an artifact that fails validation is an error.
+    Nothing is written; sharing is the separate ``agent-debug-export``.
     """
     try:
-        report = build_agent_debug_report(_paths(args).hermes_home, args.hermes_session)
-    except (OSError, AgentDebugReportError, ValueError) as exc:
+        report = build_agent_debug_report(
+            _paths(args).hermes_home,
+            args.hermes_session,
+            session_record=args.session_record,
+            turns=parse_turn_range(args.turns),
+            max_rows=int(args.max_rows),
+            max_row_bytes=int(args.max_row_bytes),
+        )
+        incident = build_agent_debug_incident(
+            report,
+            observable=args.observable,
+            receipts=[read_receipt(path) for path in args.receipt or ()],
+        )
+    except (OSError, AgentDebugReportError, AgentDebugIncidentError, ValueError) as exc:
         raise OmhError(str(exc)) from exc
     if _wants_json(args):
-        _print_json(report)
+        _print_json({**report, "incident": incident})
     else:
         print(format_agent_debug_report(report))
+        print(format_agent_debug_incident(incident))
+    return 0
+
+
+def cmd_quality_evidence_agent_debug_export(args: argparse.Namespace) -> int:
+    """Prepare, and only with ``--confirm-export`` write, a redacted agent-debug package.
+
+    Export is its own action, never a side effect of diagnosis. It re-checks
+    the reviewed payload and every reference it cites against the source,
+    drops the absolute source path, and runs a leak scan. Without
+    ``--confirm-export`` it prints the package for review and writes nothing;
+    with it, the package goes to a new file outside the source. Nothing is
+    uploaded, filed, or posted. A refused export exits 2.
+    """
+    paths = _paths(args)
+    try:
+        payload = json.loads(Path(args.report).read_text(encoding="utf-8"))
+        if not isinstance(payload, dict):
+            raise ValueError("the reviewed payload must be a JSON object from agent-debug --json")
+        package = build_agent_debug_export(payload, hermes_home=paths.hermes_home, session_record=args.session_record)
+        written = (
+            write_agent_debug_export(
+                package, args.output, hermes_home=paths.hermes_home, session_record=args.session_record
+            )
+            if args.confirm_export
+            else None
+        )
+    except (OSError, AgentDebugReportError, AgentDebugIncidentError, ValueError) as exc:
+        raise OmhError(str(exc)) from exc
+    if _wants_json(args):
+        _print_json({"written": written is not None, "output": None if written is None else written.name, "package": package})
+    elif written is None:
+        print(json.dumps(package, indent=2, sort_keys=True))
+        print("Not written: review the package above, then re-run with --confirm-export to write it to --output.")
+    else:
+        print(f"Wrote the reviewed agent-debug package to {written.name}. Nothing was uploaded, filed, or posted.")
     return 0
 
 
@@ -434,11 +501,52 @@ def _add_quality_evidence_commands(sub: argparse._SubParsersAction[argparse.Argu
     )
     agent_debug.add_argument(
         "--hermes-session",
-        required=True,
-        help=f"Hermes session id, or `{HERMES_LATEST_SESSION}` for the most recently active session.",
+        help=(
+            f"Hermes session id, `{HERMES_LATEST_SESSION}`, or a prefix naming exactly one session; a prefix "
+            "naming more than one is refused. Optional with --session-record when it holds one session."
+        ),
     )
-    agent_debug.add_argument("--json", action="store_true", help="Print the machine-readable agent_debug_report/v1 payload.")
+    agent_debug.add_argument(
+        "--session-record",
+        help="Read this JSON Lines session record (one message object per line) instead of state.db; cites record:line.",
+    )
+    agent_debug.add_argument("--turns", help="Turn range N, N:M, or N: (1-based, counted over user turns).")
+    agent_debug.add_argument(
+        "--max-rows", type=int, default=DEFAULT_MAX_ROWS, help=f"Most rows or lines to read (default {DEFAULT_MAX_ROWS})."
+    )
+    agent_debug.add_argument(
+        "--max-row-bytes",
+        type=int,
+        default=DEFAULT_MAX_ROW_BYTES,
+        help=f"Most bytes of one row or line to read; a longer one is listed and not checked (default {DEFAULT_MAX_ROW_BYTES}).",
+    )
+    agent_debug.add_argument(
+        "--observable", choices=OBSERVABLES, default="unspecified", help="What the user saw go wrong; picks the competing hypotheses."
+    )
+    agent_debug.add_argument(
+        "--receipt",
+        action="append",
+        help="A fanout dispatch_summary.json to bind as evidence; units that do not bind session, run, unit, configuration and freshness are refused.",
+    )
+    agent_debug.add_argument("--json", action="store_true", help="Print the machine-readable agent_debug_report/v1 payload with its incident.")
     agent_debug.set_defaults(func=cmd_quality_evidence_agent_debug)
+
+    export = commands.add_parser(
+        "agent-debug-export",
+        help="Prepare a redacted agent-debug package for review; write it only with --confirm-export.",
+        description=(
+            "Re-check a reviewed `agent-debug --json` payload and every reference it cites against the source, "
+            "drop the absolute source path, and leak-scan the package. Without --confirm-export it prints the "
+            "package and writes nothing; with it, the package is written to a new file outside the source. "
+            "Nothing is uploaded, filed as an issue, or posted."
+        ),
+    )
+    export.add_argument("--report", required=True, help="The saved `agent-debug --json` payload the user reviewed.")
+    export.add_argument("--session-record", help="The session record the payload cites, when it was read from one.")
+    export.add_argument("--output", required=True, help="New file to write the package to; never overwritten.")
+    export.add_argument("--confirm-export", action="store_true", help="Write the package after the user reviewed it.")
+    export.add_argument("--json", action="store_true", help="Print the package and whether it was written as JSON.")
+    export.set_defaults(func=cmd_quality_evidence_agent_debug_export)
 
     receipt = commands.add_parser(
         "cost-receipt",
