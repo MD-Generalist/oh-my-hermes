@@ -139,27 +139,111 @@ class SetupBindsPluginHomeTests(_IsolatedHome):
 
 
 class ProfileStoreChoiceTests(_IsolatedHome):
-    """A bot profile's `settings.omh_home` is its dispatch store (#1679)."""
+    """A bot profile's store is its own choice (#1679); one with none binds the primary's (#1967).
 
-    def test_setup_keeps_a_profile_setting_and_writes_none_where_there_is_none(self) -> None:
-        own = self.hermes_home / "profiles" / "own"
-        bare = self.hermes_home / "profiles" / "bare"
-        own.mkdir(parents=True)
-        bare.mkdir(parents=True)
-        profile_store = self.root / "bot-store"
-        own_config = f"plugins:\n  entries:\n    omh:\n      settings:\n        omh_home: {profile_store.as_posix()}\n"
-        (own / "config.yaml").write_text(own_config, encoding="utf-8")
+    A profile's managed skills, widget and skin come from the primary's
+    store, so a profile that names no store through its `settings.omh_home`
+    or its `.env` `OMH_HOME` is given the primary's -- otherwise its plugin
+    binds `~/.omh` whenever the primary's store is anywhere else.
+    """
 
+    def profile(self, name: str, config: str = "", env: str = "") -> Path:
+        home = self.hermes_home / "profiles" / name
+        home.mkdir(parents=True)
+        if config:
+            (home / "config.yaml").write_text(config, encoding="utf-8")
+        if env:
+            (home / ".env").write_text(env, encoding="utf-8")
+        return home
+
+    @staticmethod
+    def profile_config(home: Path) -> str:
+        return (home / "config.yaml").read_text(encoding="utf-8")
+
+    def test_a_profile_with_no_store_binds_the_non_default_primary(self) -> None:
+        bare = self.profile("bare")
         store = self.root / "isolated-omh"
+
         self.setup_at(store)
 
-        self.assertEqual(plugin_omh_home_setting(self.config()), store.as_posix())
-        own_after = (own / "config.yaml").read_text(encoding="utf-8")
+        self.assertEqual(plugin_omh_home_setting(self.profile_config(bare)), store.as_posix())
+        self.assertEqual(runtime_paths.resolve_homes(hermes_home=bare)[0], store)
+
+    def test_a_profile_setting_is_kept(self) -> None:
+        profile_store = self.root / "bot-store"
+        own = self.profile(
+            "own", f"plugins:\n  entries:\n    omh:\n      settings:\n        omh_home: {profile_store.as_posix()}\n"
+        )
+
+        self.setup_at(self.root / "isolated-omh")
+
+        own_after = self.profile_config(own)
         self.assertEqual(plugin_omh_home_setting(own_after), profile_store.as_posix())
+        self.assertEqual(own_after.count("omh_home"), 1)
         self.assertIn("omh", own_after.split("enabled:", 1)[-1])
-        # A profile with no setting may bind through its own `.env`
-        # `OMH_HOME`, which a written setting would outrank.
-        self.assertNotIn("omh_home", (bare / "config.yaml").read_text(encoding="utf-8"))
+
+    def test_a_profile_with_an_env_omh_home_is_given_no_setting(self) -> None:
+        # The written setting would outrank the profile's `.env` choice.
+        plain = self.profile("plain", env="OMH_HOME=/stores/bot\n")
+        exported = self.profile("exported", env="# bot store\nexport OMH_HOME=/stores/bot\n")
+
+        self.setup_at(self.root / "isolated-omh")
+
+        self.assertNotIn("omh_home", self.profile_config(plain))
+        self.assertNotIn("omh_home", self.profile_config(exported))
+
+    def test_a_default_primary_writes_no_profile_setting(self) -> None:
+        bare = self.profile("bare", "version: 1\n")
+
+        self.setup_at(self.root / ".omh")
+
+        # What setup wrote to a profile before #1967: the registration keys,
+        # and no `plugins.entries` at all.
+        self.assertNotIn("entries:", self.profile_config(bare))
+        self.assertNotIn("omh_home", self.profile_config(bare))
+
+    def test_update_records_the_setting_on_a_profile_synced_before_it(self) -> None:
+        bare = self.profile("bare")
+        store = self.root / "isolated-omh"
+        self.setup_at(store)
+        # A profile synced before #1967: registered, and no setting.
+        before = remove_plugin_omh_home(self.profile_config(bare), store.as_posix())
+        self.assertTrue(before.changed, before.message)
+        (bare / "config.yaml").write_text(before.text, encoding="utf-8")
+        self.assertEqual(runtime_paths.resolve_homes(hermes_home=bare)[0], self.root / ".omh")
+
+        status, _stdout, stderr = run_cli(
+            ["--omh-home", str(store), "--hermes-home", str(self.hermes_home), "update", "--json"],
+            output_json=False,
+        )
+
+        self.assertEqual(status, 0, stderr)
+        self.assertEqual(runtime_paths.resolve_homes(hermes_home=bare)[0], store)
+
+    def test_uninstall_takes_back_only_the_profile_setting_it_wrote(self) -> None:
+        bare = self.profile("bare", "version: 1\n")
+        profile_store = self.root / "bot-store"
+        own_setting = f"plugins:\n  entries:\n    omh:\n      settings:\n        omh_home: {profile_store.as_posix()}\n"
+        own = self.profile("own", own_setting)
+        store = self.root / "isolated-omh"
+        self.hermes_home.mkdir(parents=True, exist_ok=True)
+        self.config_path.write_text("version: 1\n", encoding="utf-8")
+        self.setup_at(store, "--with-plugin", "--yes")
+        self.assertEqual(plugin_omh_home_setting(self.profile_config(bare)), store.as_posix())
+
+        status, stdout, stderr = run_cli(
+            ["--omh-home", str(store), "--hermes-home", str(self.hermes_home), "uninstall"],
+        )
+
+        self.assertEqual(status, 0, stderr)
+        rows = {
+            entry["profile"]: {row["key"]: row["status"] for row in entry.get("config_keys", [])}
+            for entry in json.loads(stdout)["hermes_profiles"]
+        }
+        self.assertEqual(rows["bare"]["plugins.entries.omh.settings.omh_home"], "reversed")
+        self.assertEqual(rows["own"]["plugins.entries.omh.settings.omh_home"], "unrecorded")
+        self.assertEqual(self.profile_config(bare), "version: 1\n")
+        self.assertEqual(plugin_omh_home_setting(self.profile_config(own)), profile_store.as_posix())
 
 
 class DoctorBindingTests(_IsolatedHome):
@@ -204,6 +288,59 @@ class DoctorBindingTests(_IsolatedHome):
 
         self.assertEqual(row["severity"], "warning", row)
         self.assertIn(str(elsewhere), row["message"])
+
+
+class DoctorProfileBindingTests(_IsolatedHome):
+    def doctor_rows(self, store: Path) -> dict[str, dict]:
+        status, stdout, _stderr = run_cli(
+            ["--omh-home", str(store), "--hermes-home", str(self.hermes_home), "doctor", "--json"],
+        )
+        payload = json.loads(stdout)
+        self.doctor_status = status
+        return {
+            row["name"]: row for row in payload["checks"] if row["name"].startswith("plugin_omh_home_binding:")
+        }
+
+    def test_an_unbound_profile_warns_without_blocking(self) -> None:
+        bare = self.hermes_home / "profiles" / "bare"
+        bare.mkdir(parents=True)
+        store = self.root / "isolated-omh"
+        self.setup_at(store, "--with-plugin")
+        self.assertEqual(self.doctor_rows(store), {})
+        unbound = remove_plugin_omh_home((bare / "config.yaml").read_text(encoding="utf-8"), store.as_posix())
+        (bare / "config.yaml").write_text(unbound.text, encoding="utf-8")
+        baseline = self.doctor_status
+
+        rows = self.doctor_rows(store)
+
+        row = rows["plugin_omh_home_binding:bare"]
+        self.assertTrue(row["ok"], row)
+        self.assertEqual(row["severity"], "warning", row)
+        self.assertIn(str(self.root / ".omh"), row["message"])
+        self.assertIn(str(bare), row["next_action"])
+        self.assertEqual(self.doctor_status, baseline)
+
+    def test_a_profile_that_chose_a_store_is_not_reported(self) -> None:
+        for name, env in (("env", "OMH_HOME=/stores/bot\n"), ("own", "")):
+            home = self.hermes_home / "profiles" / name
+            home.mkdir(parents=True)
+            if env:
+                (home / ".env").write_text(env, encoding="utf-8")
+            else:
+                (home / "config.yaml").write_text(
+                    "plugins:\n  entries:\n    omh:\n      settings:\n        omh_home: /stores/own\n", encoding="utf-8"
+                )
+        store = self.root / "isolated-omh"
+        self.setup_at(store, "--with-plugin")
+
+        self.assertEqual(self.doctor_rows(store), {})
+
+    def test_profiles_of_a_default_primary_are_not_reported(self) -> None:
+        (self.hermes_home / "profiles" / "bare").mkdir(parents=True)
+        store = self.root / ".omh"
+        self.setup_at(store, "--with-plugin")
+
+        self.assertEqual(self.doctor_rows(store), {})
 
 
 class EnsurePluginOmhHomeTests(unittest.TestCase):

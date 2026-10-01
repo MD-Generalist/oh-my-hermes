@@ -4,6 +4,16 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **Bot profiles under a non-default primary OMH home bind the primary's
+  store.** `omh setup --omh-home X` recorded `plugins.entries.omh.settings.omh_home`
+  in the primary Hermes home only, so a bot profile that named no store of its
+  own had a plugin binding `~/.omh` while its managed skills, widget and skin
+  came from X (#1967). Setup and update now give such a profile the same
+  setting, but only when it has neither its own `settings.omh_home` nor
+  `OMH_HOME` in its `.env`: a profile that chose a store keeps it, and with a
+  default primary no profile config changes. `omh uninstall` takes back only
+  the setting OMH wrote, and `omh doctor` warns with
+  `plugin_omh_home_binding:<profile>` for each profile still naming no store.
 - **`omh update` no longer drops the full-only skills a core install kept.**
   A staged update renders the skill pack into a new, empty generation and then
   moves `current` to it. The installer decided what to refresh from that empty
@@ -23,8 +33,8 @@ All notable changes will be documented here.
   manifest and wrote its runtime state to `~/.omh` unless Hermes was started
   with `OMH_HOME` exported (#1960). Setup and update now record the setting
   when X is not `~/.omh`; a default install's config is byte-identical to
-  before. A value already there is never replaced, bot-profile configs are
-  never given one (a profile's store stays its own choice, #1679), and
+  before. A value already there is never replaced (a profile's store stays
+  its own choice, #1679; profiles that chose none are covered above), and
   `omh uninstall` removes the setting while it still names the store it
   wrote. `omh doctor` gains a `plugin_omh_home_binding` warning when the
   plugin in the Hermes home would bind a different store than the one
