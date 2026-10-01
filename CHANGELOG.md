@@ -4,6 +4,17 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **`omh update` no longer drops the full-only skills a core install kept.**
+  A staged update renders the skill pack into a new, empty generation and then
+  moves `current` to it. The installer decided what to refresh from that empty
+  directory alone, so on a `core` profile it wrote only the core skills, and
+  every full-only skill the install had kept, such as the nine ULW engines,
+  disappeared on the next update. The refresh set now also includes the skills
+  the active generation serves. A plain core install is unchanged, and
+  narrowing an install is still only done by
+  `omh skill-profile reconcile --to core`. (#1963, contributed by
+  @anhtahaylove)
+
 - **`omh setup --omh-home X` binds the plugin to X.** The plugin loaded in
   a Hermes home resolves its store from that home's
   `plugins.entries.omh.settings.omh_home`, then the Hermes process's
