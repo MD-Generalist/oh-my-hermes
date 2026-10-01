@@ -1076,6 +1076,13 @@ pairing so a benchmark claim can never mix in other prompt changes.
   (OpenRouter's model listing for the gateway id and the long-horizon
   characterization, and the oh-my-openagent / oh-my-pi / models.dev
   handling surveyed for divergence), each labeled as such above.
+- **Persona language after an OMH skill load (2026-10-01):** on a Korean
+  persona, `deepseek-v4.1-flash-ultrafast` narrated the reply after an OMH
+  `skill_view` in English in 16/20, 26/30 and 24/30 samples over three runs,
+  against 3/20, 5/30 and 5/30 with no skill. Six prompt-level levers did not
+  move it; `kimi-k3` and `deepseek-v4-pro` held. Tables and the recommendation are in
+  [Measured: a non-English persona's language after an OMH skill
+  load](#measured-a-non-english-personas-language-after-an-omh-skill-load).
 
 ### `mistral` (Mistral Large / Medium)
 
@@ -1320,6 +1327,93 @@ corpus, and its offline pilot exist; the table lands in this section when a
 run exists whose records this document can point at. Until then this section
 is a pointer, not a result. What the lane measures, what it deliberately does
 not, and how to reproduce it: `benchmarks/product-ab/v1/README.md`.
+
+## Measured: a non-English persona's language after an OMH skill load
+
+OMH skill bodies are English by repository rule. When the host loads one with
+`skill_view`, the body enters the context as a tool result of about 10KB,
+and the model's next reply follows it. On a Korean casual-register persona
+the effect was a language switch, not a register change. The narration of
+the next reply came out in English, while the persona's `SOUL.md` and every
+earlier reply were Korean. This section records which models keep the
+persona's language at that point. Every number in it was measured.
+
+**Probe.** Each request is the real request from one session on the
+owner's `miku` profile (Slack, Korean casual-register `SOUL.md`):
+- the stored system prompt, with main's reply line;
+- the stored history, through the final briefing;
+- a Korean request to review a pull request;
+- then either no skill (control), or an assistant
+  `skill_view(name="omh-code-review")` followed by a tool row carrying the
+  shipped body (A).
+
+Every request used the same gateway route, with no temperature sent and
+`tool_choice` set to `"none"`, so each reply is text.
+
+A reply's narration is its text before any tool-call markup, with code
+removed. A reply counts as *flipped* when its narration has fewer than 20
+Hangul characters. A model is *skill-flip-prone* when its flip rate in A
+exceeds its rate in control by 30 points or more. A cell with fewer than 15
+usable replies is reported as insufficient.
+
+The scripts, the rules (written into each script before it ran), and the raw
+samples are in the owner's eval archive (`persona-residuals-2026-09-30/`),
+not in git.
+
+| Model | Control flipped | A flipped | A − control | Reading |
+| --- | ---: | ---: | ---: | --- |
+| `deepseek-v4.1-flash-ultrafast` | 3/20 | 16/20 | +65 pt | skill-flip-prone |
+| `kimi-k3` | 0/20 | 0/19 | 0 pt | holds |
+| `deepseek-v4-pro` | 2/20 | 1/17 | −4 pt | holds |
+| `glm-5.3-ultrafast` | 8/20 | 7/20 | −5 pt | holds, with a 35-40% English-narration rate whether or not a skill is loaded |
+| `deepseek-flash` | 0/20 | none usable | n/a | insufficient: every A request returned HTTP 400 (cause not diagnosed), so the Flash model without the ultrafast tier is unmeasured |
+
+- **Earlier runs.** Two earlier n=30 runs on `deepseek-v4.1-flash-ultrafast`
+  give the same picture: control 5/30 against A 26/30, and control 5/30
+  against A 24/30.
+- **Empty narrations.** Those samples are excluded from the counts: one for
+  `kimi-k3`, three for `deepseek-v4-pro`.
+- **`glm-5.3-ultrafast`.** It does not flip because of the skill. It
+  narrates in English in about two of five replies regardless, which is
+  itself a reason not to recommend it for a non-English persona.
+
+**What did not move it.** Six prompt-level levers were each tested against A
+on `deepseek-v4.1-flash-ultrafast`, at n=30, under one rule written before
+the runs: keep a lever only if it beats A with one-sided Fisher p <= 0.05.
+None passed.
+
+| Lever | Flipped (A in the same run) | p |
+| --- | --- | ---: |
+| the persona sentence moved from the body's tail to the line under the title | 20/30 (26/30) | 0.063 |
+| a persona line added as the tool result's last field | 27/29 (26/30) | — |
+| both of the above | 24/30 (26/30) | — |
+| a line naming the language the persona has been replying in, prepended to the body | 27/30 (24/30) | — |
+| the same named line as the result's last field | 22/30 (24/30) | 0.38 |
+| the title move plus the prepended named line | 23/30 (24/30) | — |
+
+- **Where the named line came from.** A script detector read the persona's
+  own earlier replies and named Korean. It is not a language OMH chose.
+- **Chinese drift, a separate null.** An A/B at n=40 on a mid-session probe
+  found that a sentence asking to hold the language across tool output does
+  not reduce this model's occasional switch into Chinese. That rate was 2/40
+  on main and 4/40 with the sentence. No Han character appeared anywhere in
+  what the model had read before the switch.
+
+**Recommendation.** For a persona whose `SOUL.md` sets a language other than
+English, run the main chat model on one that keeps that language after an OMH
+skill load.
+- **Measured to hold:** `kimi-k3` and `deepseek-v4-pro`.
+- **Measured not to hold:** `deepseek-v4.1-flash-ultrafast`.
+- **Not recommended here:** `glm-5.3-ultrafast`, because of its base-rate
+  English narration.
+- **Unmeasured:** `deepseek-flash` without the ultrafast tier.
+
+This is a model choice for the host and its operator, not a calibration OMH
+can inject. The host's own chat turns have no per-model OMH surface: the
+calibration tables above reach coding unit prompts only. The wording levers
+did not change the measured rate either. The evidence is one persona, one
+request, and one skill body, at n=20 per cell. That is a direction to
+choose models by, not a guarantee for another persona or skill.
 
 ## Coverage matrix and known gaps
 

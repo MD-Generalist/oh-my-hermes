@@ -4,6 +4,16 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **MODEL_OPTI.md records which chat models keep a non-English persona's
+  language after an OMH skill loads.** On a Korean persona,
+  `deepseek-v4.1-flash-ultrafast` narrated the reply after an OMH
+  `skill_view` in English in 16 of 20 samples, against 3 of 20 with no skill.
+  `kimi-k3` (0/19) and `deepseek-v4-pro` (1/17) held. `glm-5.3-ultrafast`
+  narrated in English about 40% of the time whether or not a skill loaded.
+  Six prompt-level wording levers were measured against the Flash model and
+  none passed its pre-registered rule, so the guidance is a host model
+  choice, not an OMH calibration. Docs only.
+
 - **OMH's reply rule says the persona owns the voice, progress updates
   included.** The awareness rail and every generated skill's tail said to
   reply "in the host's own voice" and named nothing that voice covers. On a
