@@ -4,6 +4,20 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **Update takes back a bot profile's store setting once its `.env` names
+  one.** Setup and update give a storeless bot profile
+  `plugins.entries.omh.settings.omh_home` under a non-default primary store
+  (#1967). If `OMH_HOME` was added to the profile's `.env` afterwards, that
+  setting outranked it and the profile kept binding the primary's store.
+  Setup and update now remove the setting when the profile's `.env` names
+  `OMH_HOME` and the value is still the one OMH's write record says it
+  wrote, clear that record entry, and report the removed value per profile
+  (`omh_home_reclaimed` in the profile row, and a line in the human output).
+  A setting OMH did not write, or one changed by hand since, is kept.
+  `omh doctor` adds a warning under `plugin_omh_home_binding:<profile>` when
+  a setting OMH did not write outranks the profile's `.env` `OMH_HOME`; it
+  never blocks. (#1973)
+
 - **The file-operation, coding-handoff, and review workflows cite
   `session_file_activity/v1`.** `workspace-file-operator` names it inside
   `file_observation_manifest/v1`, and `maestro` and `code-review` name it for

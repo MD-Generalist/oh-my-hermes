@@ -227,6 +227,7 @@ def managed_config_writes(
     config_path: str | Path,
     previous: object = None,
     now: str | None = None,
+    released: Iterable[str] = (),
 ) -> dict[str, object]:
     """Add this apply pass's record to the per-config map, keeping the others.
 
@@ -237,6 +238,11 @@ def managed_config_writes(
     holding the last profile's record, and the primary -- the home somebody
     is most likely to uninstall -- would silently fall back to the
     no-record subset.
+
+    `released` names keys this pass took back from the config, which leave
+    the record with them. The record only ever grows otherwise, so a key
+    removed without this would still read as OMH's, and a later pass would
+    take the same value back from the person who wrote it again (#1973).
     """
     before = managed_config_reading(before_text)
     after = managed_config_reading(after_text)
@@ -254,11 +260,16 @@ def managed_config_writes(
         }
     )
     prior_restores = prior.get("restores") if isinstance(prior.get("restores"), dict) else {}
+    dropped = {str(key) for key in released}
     record = {
         "schema_version": MANAGED_CONFIG_WRITES_SCHEMA,
         "config_path": str(config_path),
         "recorded_at": now or utc_now(),
-        "keys": _merged_keys(dict(prior_keys), _written_keys(before, after)),  # type: ignore[arg-type]
+        "keys": {
+            key: value
+            for key, value in _merged_keys(dict(prior_keys), _written_keys(before, after)).items()  # type: ignore[arg-type]
+            if key not in dropped
+        },
         # The most recent replacement wins, and a pass that replaced nothing
         # leaves the entry alone. Only an explicit re-consent replaces a
         # value at all -- `ensure_tui_interface` refuses anything the person
@@ -295,6 +306,32 @@ def load_managed_config_writes(value: object, *, config_path: str | Path) -> dic
     one OMH home.
     """
     return _config_map(value).get(str(config_path), {})  # type: ignore[return-value]
+
+
+def reclaim_plugin_omh_home(config_text: str, record: object, *, config_path: str | Path) -> ConfigChange:
+    """Take back the `omh_home` OMH wrote to a home that has since named its own store (#1973).
+
+    The caller decides that the home chose: a bot profile whose `.env`
+    names `OMH_HOME` after setup gave it the primary's store, which the
+    setting outranks in the plugin's resolver. Only the value this config's
+    record says OMH wrote goes; one OMH never wrote, or one changed since,
+    is the person's and stays. `plugins.entries` goes with it only when the
+    record says OMH created it and the removal left it empty -- every other
+    container is the uninstall's business, not this one's.
+    """
+    owned = load_managed_config_writes(record, config_path=config_path)
+    keys = owned.get("keys") if isinstance(owned.get("keys"), dict) else {}
+    recorded = keys.get(PLUGIN_OMH_HOME_KEY) if isinstance(keys, dict) else None  # type: ignore[union-attr]
+    if not isinstance(recorded, str) or not recorded:
+        return ConfigChange(False, "no record of OMH writing plugins.entries.omh.settings.omh_home", config_text)
+    removed = remove_plugin_omh_home(config_text, recorded)
+    if not removed.changed:
+        return removed
+    created = owned.get("containers_created") if isinstance(owned.get("containers_created"), list) else []
+    if "plugins.entries" not in created:  # type: ignore[operator]
+        return removed
+    cleanup = remove_childless_containers(removed.text, ["plugins.entries"])
+    return ConfigChange(True, removed.message, cleanup.text)
 
 
 def _unrecorded_row(key: str, present: bool, absent_detail: str) -> ReversalRow:

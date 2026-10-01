@@ -69,6 +69,7 @@ from ..plugin_observations import (
 )
 from ..plugin_pack import PLUGIN_NAME, inspect_plugin_bundle
 from ..install.plugin_pack import HERMES_PLUGIN_UPDATE_COMMAND, host_managed_plugin
+from ..install.config_reversal import MANAGED_CONFIG_WRITES_STATE_KEY, PLUGIN_OMH_HOME_KEY, load_managed_config_writes
 from ..runtime.artifacts import read_state, read_state_error
 from ..skill_pack import CORE_SKILLS, builtin_skill_templates
 from ..system.security_posture import SECURITY_POSTURE_ENV_VAR, STRICT_POSTURE, resolve_security_posture
@@ -2355,28 +2356,59 @@ def _plugin_omh_home_binding_check(paths: OmhPaths, config_text: str) -> Check:
 
 
 def _profile_omh_home_binding_checks(paths: OmhPaths) -> list[Check]:
-    """A bot profile that names no store, under a primary whose store is not `~/.omh`.
+    """A bot profile whose plugin binds a store other than the one it names, or none.
 
-    Its managed skills, widget and skin come from the primary's store, but
-    with neither a `settings.omh_home` nor an `.env` `OMH_HOME` its plugin
-    binds `~/.omh` when the profile runs as its own Hermes process, and is
-    refused in a multiplexed one (#1967). A profile that named any store
-    chose it (#1679) and is not reported. One row per affected profile,
-    named after it, as `_external_dir_ambiguity_checks` does; a warning with
-    `ok=True`, because the primary home does not share the finding.
+    Two findings, one row per affected profile, named after it, as
+    `_external_dir_ambiguity_checks` does; each a warning with `ok=True`,
+    because the primary home does not share it.
+
+    A profile that names no store, under a primary whose store is not
+    `~/.omh`: its managed skills, widget and skin come from the primary's
+    store, but with neither a `settings.omh_home` nor an `.env` `OMH_HOME`
+    its plugin binds `~/.omh` when the profile runs as its own Hermes
+    process, and is refused in a multiplexed one (#1967).
+
+    A profile whose `.env` names `OMH_HOME` beside a `settings.omh_home` OMH
+    did not write, under any primary: the setting outranks the `.env` in the
+    plugin's resolver, so the profile's `.env` choice (#1679) is ignored.
+    Update takes back only a value its record says it wrote (#1973), so this
+    one stays until somebody removes it.
     """
     unset = runtime_paths.unset_launch_omh_home()
-    if paths.omh_home == unset:
-        return []
+    state = read_state(paths) or {}
+    record = state.get(MANAGED_CONFIG_WRITES_STATE_KEY)
     checks: list[Check] = []
     for name, profile_dir in hermes_profile_dirs(paths.hermes_home):
         config_path = _profile_paths(paths, profile_dir).hermes_config_path
+        env_path = profile_dir / ".env"
+        env_names_store = bool(env_key_names(profile_dir, allowed=("OMH_HOME",)))
         try:
-            found, _value = runtime_paths.omh_home_setting(read_config(config_path))
+            found, value = runtime_paths.omh_home_setting(read_config(config_path))
         except runtime_paths.RuntimeBindingError:
             # A setting the plugin's scan refuses is still the profile's own.
-            found = True
-        if found or env_key_names(profile_dir, allowed=("OMH_HOME",)):
+            found, value = True, None
+        if found and value and env_names_store:
+            keys = load_managed_config_writes(record, config_path=config_path).get("keys")
+            if isinstance(keys, dict) and keys.get(PLUGIN_OMH_HOME_KEY) == value:
+                # OMH's own write: the next update takes it back.
+                continue
+            checks.append(
+                Check(
+                    f"plugin_omh_home_binding:{name}",
+                    True,
+                    (
+                        f"bot profile {name} names OMH_HOME in {env_path}, but its "
+                        f"plugins.entries.omh.settings.omh_home ({value}) outranks it, and OMH did not write it"
+                    ),
+                    severity="warning",
+                    next_action=(
+                        f"Remove `plugins.entries.omh.settings.omh_home` from {config_path} to use the "
+                        f"`.env` store, or remove `OMH_HOME` from {env_path} to keep the setting."
+                    ),
+                )
+            )
+            continue
+        if paths.omh_home == unset or found or env_names_store:
             continue
         checks.append(
             Check(
@@ -2390,7 +2422,7 @@ def _profile_omh_home_binding_checks(paths: OmhPaths) -> list[Check]:
                 next_action=(
                     f"Run `omh --omh-home {paths.omh_home} --hermes-home {paths.hermes_home} update` to record "
                     f"`plugins.entries.omh.settings.omh_home` in {config_path}, or name the profile's own store "
-                    f"there or as `OMH_HOME` in {profile_dir / '.env'}."
+                    f"there or as `OMH_HOME` in {env_path}."
                 ),
             )
         )

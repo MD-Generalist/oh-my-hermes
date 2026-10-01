@@ -33,10 +33,15 @@ is never replaced. A bot profile that already names a store, through this
 setting or through `OMH_HOME` in its own `.env`, keeps it untouched; a profile
 that names neither is given X too, because its managed skills, widget and skin
 come from X, and with a default primary nothing is written to a profile.
+If a profile's `.env` names `OMH_HOME` after OMH gave it X, the setting would
+outrank that choice, so setup and update remove it while it still names the
+value OMH recorded writing, and say so per profile; a value OMH did not write,
+or one changed since, is kept.
 `omh doctor` warns (`plugin_omh_home_binding`) when the plugin in the Hermes
 home would bind a store other than the one it checked, and
 (`plugin_omh_home_binding:<profile>`) for each profile that names no store
-under a primary that is not `~/.omh`.
+under a primary that is not `~/.omh`, and for each profile whose `.env`
+`OMH_HOME` is outranked by a setting OMH did not write.
 Once recorded, the setting outranks an exported `OMH_HOME` for that Hermes
 home, and setup does not move it. To switch stores, remove or edit the
 setting and run setup with the new `--omh-home`, or run `omh uninstall`

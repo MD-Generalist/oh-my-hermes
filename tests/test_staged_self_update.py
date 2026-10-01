@@ -1429,12 +1429,13 @@ class ManagedWorkflowRegistrationTests(unittest.TestCase):
                 # the unset-only writer keeps a profile setting (#1679).
                 self.assertTrue(bind_omh_home)
                 applied.append(profile_args)
-                # The three keys the sync copies onto the profile row; the
-                # real `_apply_result` always returns them (#1857).
+                # The keys the sync reads for the profile row; the real
+                # `_apply_result` always returns them (#1857, #1973).
                 return {
                     "registration": "unchanged",
                     "retired_external_dirs": [],
                     "registered_dir": current_skills.as_posix(),
+                    "plugin_omh_home": {"reclaimed": ""},
                 }
 
             def capture_results(
