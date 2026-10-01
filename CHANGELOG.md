@@ -27,6 +27,21 @@ All notable changes will be documented here.
   the setting OMH wrote, and `omh doctor` warns with
   `plugin_omh_home_binding:<profile>` for each profile still naming no store.
 
+- **A blocked research source leaves a typed `research_source_recovery/v1`
+  record.** `research` (and the portable `ulw-research`) already tried the
+  host's blocked-page recovery once for a 403, 429, paywall, WAF, or bot-wall
+  source (#1907). That rule is now a contract in
+  `src/workflows/research_source_recovery.py`: one planner maps each failure
+  class to exactly one step (cite the direct retrieval, one
+  `blocked-page-recovery` handoff, or an unresolved gap naming
+  `authentication_required`, `unsupported_failure_class`,
+  `missing_capability`, `budget_exhausted`, or `recovery_failed`), the
+  record keeps the canonical URL, failure class, route, retrieval time,
+  evidence class, outcome, and residual uncertainty, and a run that hands
+  the same source to recovery twice is refused as a retry loop. A live page
+  and a historical capture stay separate classes. The skill line also names
+  a spent retrieval budget as a gap reason. OMH still fetches nothing. (#1527)
+
 - **`omh update` no longer drops the full-only skills a core install kept.**
   A staged update renders the skill pack into a new, empty generation and then
   moves `current` to it. The installer decided what to refresh from that empty
