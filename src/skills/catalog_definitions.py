@@ -1167,6 +1167,10 @@ _DEFINITIONS = [
             "run` for one unit -- is the only executing surface, explicit per invocation, and it never merges; "
             "preparing, composing, or showing a prompt is never dispatch, and a dispatch receipt is never "
             "review, CI, or merge evidence.",
+            "To carry the files the Hermes session already touched into the handoff, cite `session_file_activity/v1` "
+            "(`omh quality-evidence file-activity --hermes-session <id> --json`): the workspace files its read_file, "
+            "write_file, and patch calls named, with the outcome Hermes recorded -- never file-content, diff, test, "
+            "review, CI, or merge evidence.",
             "Capture the executor's session id at dispatch (`--output-format json` -> `session_id` for Claude "
             "Code, `--json` -> `thread_id` for Codex) and carry it into every status line; a missing id is "
             "reported as unsteerable, never silently attached.",
@@ -6648,6 +6652,7 @@ _DEFINITIONS = [
             "Review on two axes and report them side by side, never re-ranked against each other: the correctness/risk axis judges the code as it is, and the spec axis judges the diff against the dispatch's Claim and Requirements pointer. A clean diff that does not do what was asked is a spec-axis finding; when no Claim or spec pointer was supplied, report the spec axis as `not_assessed` with that reason instead of staying silent.",
             "Judge maintainability findings against the named baseline in `omh-code-review/references/smell-baseline.md`: a baseline smell is a judgement call to argue from evidence, never an automatic finding, and the reviewed repository's own standards override the baseline wherever they conflict.",
             "Close with two lists beside the verdict: what was checked and found clean, and what could not be assessed with the reason. An absent finding is evidence only when the closing says the surface was actually checked.",
+            "When the reviewed work ran in a Hermes session, cite `session_file_activity/v1` (`omh quality-evidence file-activity --hermes-session <id> --json`) to scope which workspace files its read_file, write_file, and patch calls touched, with the outcome Hermes recorded; it is file lineage, never file-content, diff, test, review, CI, or merge evidence.",
             "For native `omh_todo` checkpoints, load the todo-checklist closing recipe; `record` then `recall` this review declaration. Stored declarations are not proof.",
         ),
         why_this_exists="`code-review` exists to make review bug-first and evidence-grounded: findings must cite concrete files, diffs, commands, or artifacts before any summary or fix proposal.",
