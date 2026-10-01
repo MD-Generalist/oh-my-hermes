@@ -63,8 +63,10 @@ from ..install.compression_defaults import ensure_compression_defaults
 from ..install.config_reversal import (
     MANAGED_CONFIG_WRITES_STATE_KEY,
     drop_emptied_containers,
+    PLUGIN_OMH_HOME_KEY,
     load_managed_config_writes,
     managed_config_writes,
+    reclaim_plugin_omh_home,
     reverse_managed_config,
 )
 from ..install.skill_registration import (
@@ -470,6 +472,7 @@ def cmd_update(args: argparse.Namespace) -> int:
             and hasattr(args, "omh_home")
         ):
             _print_registration_migrations(primary_registration, profile_results)
+            _print_omh_home_reclaims(profile_results)
             _print_hermes_profiles_line(profile_results, language=_resolve_language(args))
             if synced_profiles:
                 # Post-check, re-read from disk after every home was written:
@@ -633,6 +636,9 @@ def _sync_hermes_profiles(args: argparse.Namespace) -> list[dict[str, object]]:
             entry["registration"] = applied["registration"]
             entry["retired_external_dirs"] = applied["retired_external_dirs"]
             entry["registered_dir"] = applied["registered_dir"]
+            reclaimed = applied["plugin_omh_home"]["reclaimed"]  # type: ignore[index]
+            if reclaimed:
+                entry["omh_home_reclaimed"] = reclaimed
         # A profile's widget or skin the manifest cannot vouch for refuses,
         # exactly as the primary home's does. That refusal is one profile's
         # row, never the end of the update: the primary home and every other
@@ -758,6 +764,22 @@ def _print_registration_migrations(
         retired = entry.get("retired_external_dirs")
         listed = ", ".join(str(item) for item in retired) if isinstance(retired, list) else ""
         print(f"  {label} migrated from {listed} to {entry.get('registered_dir')}.")
+
+
+def _print_omh_home_reclaims(profile_results: list[dict[str, object]]) -> None:
+    """One line per bot profile whose OMH-written store setting was taken back (#1973).
+
+    The profile's `.env` `OMH_HOME` binds its plugin from now on, which is a
+    different store from the one it bound yesterday, so it is said rather
+    than folded into "refreshed".
+    """
+    for row in profile_results:
+        reclaimed = row.get("omh_home_reclaimed")
+        if reclaimed:
+            print(
+                f"  Bot profile {row.get('profile')}: removed plugins.entries.omh.settings.omh_home "
+                f"({reclaimed}); its .env OMH_HOME applies."
+            )
 
 
 def _registration_ambiguity_lines(args: argparse.Namespace) -> list[str]:
@@ -1953,8 +1975,10 @@ def _apply_result(args: argparse.Namespace, *, bind_omh_home: bool = True) -> di
 
     `bind_omh_home` is off only for a bot-profile home whose `.env` names
     `OMH_HOME`: that is the profile's own choice of store (#1679), and a
-    setting written here would outrank it. A profile that chose through its
-    own `settings.omh_home` is kept by the unset-only writer, and one that
+    setting written here would outrank it. A setting OMH wrote before the
+    `.env` named one is taken back, while it still says what the record
+    says OMH wrote (#1973). A profile that chose through its own
+    `settings.omh_home` is kept by the unset-only writer, and one that
     chose neither is given the primary's store, which its managed skills,
     widget and skin already come from (#1967).
     """
@@ -1983,6 +2007,10 @@ def _apply_result(args: argparse.Namespace, *, bind_omh_home: bool = True) -> di
     retire_candidates = (
         _managed_workflow_dir_candidates(paths) if _registration_retires_older_entries(registered_dir) else []
     )
+    # Read before the mutation: the reclaim below decides from it whether a
+    # setting is OMH's, and the record this pass writes carries it forward.
+    state_before, _state_error = read_state_result(paths)
+    previous_writes = (state_before or {}).get(MANAGED_CONFIG_WRITES_STATE_KEY)
 
     def _apply(config_text: str) -> ConfigChange:
         nonlocal current, display_sections_before, retired_external_dirs
@@ -2067,14 +2095,20 @@ def _apply_result(args: argparse.Namespace, *, bind_omh_home: bool = True) -> di
         # any store but `~/.omh` binds `~/.omh` unless Hermes is started
         # with `OMH_HOME` exported, and reads another install's manifest
         # (#1960).
-        if bind_omh_home and not binds_by_default:
+        if not bind_omh_home:
+            plugin_omh_home = reclaim_plugin_omh_home(
+                memory_provider.text, previous_writes, config_path=paths.hermes_config_path
+            )
+            if not plugin_omh_home.changed:
+                plugin_omh_home = ConfigChange(
+                    False, "a bot profile names its own store in its .env OMH_HOME", memory_provider.text
+                )
+        elif not binds_by_default:
             plugin_omh_home = ensure_plugin_omh_home(memory_provider.text, paths.omh_home)
         else:
             plugin_omh_home = ConfigChange(
                 False,
-                "the plugin binds this store without a setting"
-                if binds_by_default
-                else "a bot profile names its own store in its .env OMH_HOME",
+                "the plugin binds this store without a setting",
                 memory_provider.text,
             )
         applied.update(
@@ -2110,17 +2144,19 @@ def _apply_result(args: argparse.Namespace, *, bind_omh_home: bool = True) -> di
     display_sections = applied["display_sections"]
     memory_provider = applied["memory_provider"]
     plugin_omh_home = applied["plugin_omh_home"]
+    # Only the profile branch removes this key, so a change there is a reclaim.
+    reclaimed = plugin_omh_home_setting(current) if not bind_omh_home and plugin_omh_home.changed else ""
     # The record of what this pass added, carried forward from any earlier
     # one. `omh uninstall` reads it to reverse exactly the keys OMH wrote and
     # leave every value the person has since changed; without it, three of
     # the seven keys are indistinguishable from a personal choice and have to
     # be left behind (#1725).
-    state_before, _state_error = read_state_result(paths)
     config_writes = managed_config_writes(
         current,
         plugin_omh_home.text,
         config_path=paths.hermes_config_path,
-        previous=(state_before or {}).get(MANAGED_CONFIG_WRITES_STATE_KEY),
+        previous=previous_writes,
+        released=(PLUGIN_OMH_HOME_KEY,) if reclaimed else (),
     )
     if not args.dry_run:
         update_state(
@@ -2190,6 +2226,9 @@ def _apply_result(args: argparse.Namespace, *, bind_omh_home: bool = True) -> di
             "changed": plugin_omh_home.changed,
             "message": plugin_omh_home.message,
             "selected": plugin_omh_home_setting(plugin_omh_home.text),
+            # The value taken back from a bot profile whose `.env` now names
+            # its own store (#1973), or "".
+            "reclaimed": reclaimed,
         },
         "managed_config_writes": config_writes,
     }
@@ -4467,6 +4506,7 @@ def _print_setup_summary(payload: dict[str, object], *, language: str = "en") ->
     profiles = payload.get("hermes_profiles")
     if isinstance(profiles, list):
         _print_hermes_profiles_line(profiles, language=language)
+        _print_omh_home_reclaims([row for row in profiles if isinstance(row, dict)])
     verdict = payload.get("tui_verdict")
     if isinstance(verdict, dict):
         _print_tui_verdict_block(verdict, language=language)
