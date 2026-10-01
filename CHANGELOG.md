@@ -6,11 +6,14 @@ All notable changes will be documented here.
 
 - **MODEL_OPTI.md records which chat models keep a non-English persona's
   language after an OMH skill loads.** On a Korean persona,
-  `deepseek-v4.1-flash-ultrafast` narrated the reply after an OMH
-  `skill_view` in English in 16 of 20 samples, against 3 of 20 with no skill.
-  `kimi-k3` (0/19) and `deepseek-v4-pro` (1/17) held. `glm-5.3-ultrafast`
-  narrated in English about 40% of the time whether or not a skill loaded.
-  Six prompt-level wording levers were measured against the Flash model and
+  `deepseek-v4.1-flash-ultrafast` flipped the reply after an OMH
+  `skill_view` (fewer than 20 Hangul characters in its narration) in 16 of
+  20 samples, against 3 of 20 with no skill; 15 of the 16 were English
+  narrations. `kimi-k3`, `deepseek-v4-pro` and `glm-5.3-ultrafast` held: 0,
+  1 and 0 English narrations with the skill loaded. glm's pre-registered
+  flip counts (8/20 and 7/20) are short Korean lines and tool-call-only
+  replies, which the DeepSeek-marker splitter cannot separate. Six
+  prompt-level wording levers were measured against the Flash model and
   none passed its pre-registered rule, so the guidance is a host model
   choice, not an OMH calibration. Docs only.
 
