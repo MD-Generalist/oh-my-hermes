@@ -17,6 +17,13 @@ All notable changes will be documented here.
   `omh uninstall` removes the setting while it still names the store it
   wrote. `omh doctor` gains a `plugin_omh_home_binding` warning when the
   plugin in the Hermes home would bind a different store than the one
+  doctor checked. Behaviour change: once the setting is recorded, an
+  exported `OMH_HOME` no longer overrides it for that Hermes home, because
+  the setting outranks the environment. Re-running setup with another
+  `--omh-home` does not move it either (the write is unset-only); to switch
+  stores, remove or edit `plugins.entries.omh.settings.omh_home` in the
+  Hermes home's `config.yaml` and run setup with the new `--omh-home`, or
+  `omh uninstall` from the old store first.
   doctor checked.
 - **MODEL_OPTI.md records which chat models keep a non-English persona's
   language after an OMH skill loads.** On a Korean persona,

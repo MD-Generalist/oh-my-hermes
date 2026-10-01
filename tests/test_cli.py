@@ -3335,7 +3335,7 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
             self.assertIn("상태 로그:", stdout)
 
             install_root = root / "install"
-            status, stdout, stderr = run_cli(["--omh-home", str(install_root / ".omh"), "install", "--language", "zh"], output_json=False)
+            status, stdout, stderr = run_cli(["--omh-home", str(install_root / ".omh"), "--hermes-home", str(Path(str(install_root / ".omh")).parent / ".hermes"), "install", "--language", "zh"], output_json=False)
 
             self.assertEqual(status, 0, stderr)
             self.assertEqual(stderr, "")
@@ -3382,7 +3382,7 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
     def test_install_and_update_default_to_human_summary_with_json_escape_hatch(self) -> None:
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
-            base = ["--omh-home", str(root / ".omh")]
+            base = ["--omh-home", str(root / ".omh"), "--hermes-home", str(root / ".hermes")]
 
             status, stdout, stderr = run_cli(base + ["install"], output_json=False)
 
@@ -3492,7 +3492,7 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
     def test_package_manager_update_uses_native_command_guidance(self) -> None:
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
-            base = ["--omh-home", str(root / ".omh")]
+            base = ["--omh-home", str(root / ".omh"), "--hermes-home", str(root / ".hermes")]
             with patch.dict(
                 os.environ,
                 {
@@ -13710,7 +13710,7 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
             )
             omh_home = root / ".omh"
 
-            self.assertEqual(run_cli(["--omh-home", str(omh_home), "install", "--source", str(root / "release-archive")])[0], 0)
+            self.assertEqual(run_cli(["--omh-home", str(omh_home), "--hermes-home", str(Path(str(omh_home)).parent / ".hermes"), "install", "--source", str(root / "release-archive")])[0], 0)
             first_manifest = json.loads((omh_home / "manifest.json").read_text(encoding="utf-8"))
             self.assertEqual(first_manifest["source"], str((root / "release-archive").resolve()))
 
@@ -13718,7 +13718,7 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
                 "---\nname: loop\ndescription: Upstream Loop\n---\n# Loop\nUpdated.\n",
                 encoding="utf-8",
             )
-            self.assertEqual(run_cli(["--omh-home", str(omh_home), "update", "--source", str(root / "release-archive")])[0], 0)
+            self.assertEqual(run_cli(["--omh-home", str(omh_home), "--hermes-home", str(Path(str(omh_home)).parent / ".hermes"), "update", "--source", str(root / "release-archive")])[0], 0)
             updated = (omh_home / "skills" / "ultrawork" / "ulw-loop" / "SKILL.md").read_text(encoding="utf-8")
             self.assertIn("Updated.", updated)
 
@@ -13727,7 +13727,7 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
             root = Path(tmp)
             omh_home = root / ".omh"
 
-            status, stdout, stderr = run_cli(["--omh-home", str(omh_home), "install", "--dry-run", "--channel", "stable", "--version", "1.0.0"])
+            status, stdout, stderr = run_cli(["--omh-home", str(omh_home), "--hermes-home", str(Path(str(omh_home)).parent / ".hermes"), "install", "--dry-run", "--channel", "stable", "--version", "1.0.0"])
             self.assertEqual(stderr, "")
             self.assertEqual(status, 0)
             dry_run = json.loads(stdout)
@@ -13743,11 +13743,11 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
             )
             self.assertEqual(dry_run["release_artifact_kind"], "release-wheel")
 
-            status, _, stderr = run_cli(["--omh-home", str(omh_home), "install", "--dry-run", "--channel", "stable"])
+            status, _, stderr = run_cli(["--omh-home", str(omh_home), "--hermes-home", str(Path(str(omh_home)).parent / ".hermes"), "install", "--dry-run", "--channel", "stable"])
             self.assertEqual(status, 2)
             self.assertIn("stable channel requires", stderr)
 
-            status, _, stderr = run_cli(["--omh-home", str(omh_home), "update", "--channel", "local"])
+            status, _, stderr = run_cli(["--omh-home", str(omh_home), "--hermes-home", str(Path(str(omh_home)).parent / ".hermes"), "update", "--channel", "local"])
             self.assertEqual(status, 2)
             self.assertIn("local channel requires", stderr)
 
@@ -13759,7 +13759,7 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
             status, stdout, stderr = run_cli(
                 [
                     "--omh-home",
-                    str(omh_home),
+                    str(omh_home), "--hermes-home", str(Path(str(omh_home)).parent / ".hermes"),
                     "install",
                     "--channel",
                     "preview",
@@ -13779,7 +13779,7 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
             status, stdout, stderr = run_cli(
                 [
                     "--omh-home",
-                    str(omh_home),
+                    str(omh_home), "--hermes-home", str(Path(str(omh_home)).parent / ".hermes"),
                     "update",
                     "--channel",
                     "preview",
@@ -13804,7 +13804,7 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
             status, stdout, stderr = run_cli(
                 [
                     "--omh-home",
-                    str(omh_home),
+                    str(omh_home), "--hermes-home", str(Path(str(omh_home)).parent / ".hermes"),
                     "update",
                     "--channel",
                     "preview",
@@ -13824,7 +13824,7 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
             status, stdout, stderr = run_cli(
                 [
                     "--omh-home",
-                    str(omh_home),
+                    str(omh_home), "--hermes-home", str(Path(str(omh_home)).parent / ".hermes"),
                     "update",
                     "--channel",
                     "stable",
@@ -13852,7 +13852,7 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
             status, stdout, stderr = run_cli(
                 [
                     "--omh-home",
-                    str(omh_home),
+                    str(omh_home), "--hermes-home", str(Path(str(omh_home)).parent / ".hermes"),
                     "install",
                     "--channel",
                     "stable",
@@ -13871,7 +13871,7 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
             status, stdout, stderr = run_cli(
                 [
                     "--omh-home",
-                    str(omh_home),
+                    str(omh_home), "--hermes-home", str(Path(str(omh_home)).parent / ".hermes"),
                     "update",
                     "--channel",
                     "stable",
@@ -13893,7 +13893,7 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
             status, stdout, stderr = run_cli(
                 [
                     "--omh-home",
-                    str(omh_home),
+                    str(omh_home), "--hermes-home", str(Path(str(omh_home)).parent / ".hermes"),
                     "update",
                     "--channel",
                     "stable",
@@ -13915,7 +13915,7 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
             status, stdout, stderr = run_cli(
                 [
                     "--omh-home",
-                    str(omh_home),
+                    str(omh_home), "--hermes-home", str(Path(str(omh_home)).parent / ".hermes"),
                     "update",
                     "--channel",
                     "stable",
@@ -13943,7 +13943,7 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
                 run_cli(
                     [
                         "--omh-home",
-                        str(omh_home),
+                        str(omh_home), "--hermes-home", str(Path(str(omh_home)).parent / ".hermes"),
                         "install",
                         "--channel",
                         "stable",
@@ -13960,7 +13960,7 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
             status, stdout, stderr = run_cli(
                 [
                     "--omh-home",
-                    str(omh_home),
+                    str(omh_home), "--hermes-home", str(Path(str(omh_home)).parent / ".hermes"),
                     "update",
                     "--channel",
                     "stable",
@@ -13991,7 +13991,7 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
             status, stdout, stderr = run_cli(
                 [
                     "--omh-home",
-                    str(omh_home),
+                    str(omh_home), "--hermes-home", str(Path(str(omh_home)).parent / ".hermes"),
                     "update",
                     "--dry-run",
                     "--channel",
@@ -14019,7 +14019,7 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
             status, stdout, stderr = run_cli(
                 [
                     "--omh-home",
-                    str(omh_home),
+                    str(omh_home), "--hermes-home", str(Path(str(omh_home)).parent / ".hermes"),
                     "update",
                     "--language",
                     "ko",
@@ -14041,12 +14041,18 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
             omh_home = root / ".omh"
+            # Its own Hermes home: `update` bootstraps and registers the one it
+            # resolves, and without this that is the process-wide test home,
+            # whose config would then name this store for every later test (#1960).
+            hermes_home = root / ".hermes"
 
             self.assertEqual(
                 run_cli(
                     [
                         "--omh-home",
                         str(omh_home),
+                        "--hermes-home",
+                        str(hermes_home),
                         "install",
                         "--source-ref",
                         "main@old",
@@ -14057,7 +14063,7 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
             )
 
             status, stdout, stderr = run_cli(
-                ["--omh-home", str(omh_home), "update", "--source-ref", "main@manual"],
+                ["--omh-home", str(omh_home), "--hermes-home", str(hermes_home), "update", "--source-ref", "main@manual"],
                 output_json=False,
             )
 
@@ -14068,7 +14074,7 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
             self.assertIn("OMH command: not updated (workflows only)", stdout)
 
             status, stdout, stderr = run_cli(
-                ["--omh-home", str(omh_home), "update", "--source-ref", "main@manual", "--json"],
+                ["--omh-home", str(omh_home), "--hermes-home", str(hermes_home), "update", "--source-ref", "main@manual", "--json"],
                 output_json=False,
             )
             self.assertEqual(status, 0, stderr)
@@ -14084,7 +14090,7 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
             omh_home = root / ".omh"
 
             status, stdout, stderr = run_cli(
-                ["--omh-home", str(omh_home), "update", "--source-ref", "main@first"],
+                ["--omh-home", str(omh_home), "--hermes-home", str(Path(str(omh_home)).parent / ".hermes"), "update", "--source-ref", "main@first"],
                 output_json=False,
             )
 
@@ -14099,12 +14105,12 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
             root = Path(tmp)
             omh_home = root / ".omh"
 
-            self.assertEqual(run_cli(["--omh-home", str(omh_home), "update", "--source-ref", "main@old"])[0], 0)
+            self.assertEqual(run_cli(["--omh-home", str(omh_home), "--hermes-home", str(Path(str(omh_home)).parent / ".hermes"), "update", "--source-ref", "main@old"])[0], 0)
             self.assertEqual(
                 run_cli(
                     [
                         "--omh-home",
-                        str(omh_home),
+                        str(omh_home), "--hermes-home", str(Path(str(omh_home)).parent / ".hermes"),
                         "install",
                         "--source-ref",
                         "main@new",
@@ -14115,7 +14121,7 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
             )
 
             status, stdout, stderr = run_cli(
-                ["--omh-home", str(omh_home), "update", "--source-ref", "main@new", "--json"],
+                ["--omh-home", str(omh_home), "--hermes-home", str(Path(str(omh_home)).parent / ".hermes"), "update", "--source-ref", "main@new", "--json"],
                 output_json=False,
             )
 
@@ -14137,7 +14143,7 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
             status, stdout, stderr = run_cli(
                 [
                     "--omh-home",
-                    str(omh_home),
+                    str(omh_home), "--hermes-home", str(Path(str(omh_home)).parent / ".hermes"),
                     "update",
                     "--source-ref",
                     "main@repair",
@@ -14838,7 +14844,7 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
             omh_home = root / ".omh"
-            self.assertEqual(run_cli(["--omh-home", str(omh_home), "install"])[0], 0)
+            self.assertEqual(run_cli(["--omh-home", str(omh_home), "--hermes-home", str(Path(str(omh_home)).parent / ".hermes"), "install"])[0], 0)
             state_path = omh_home / "runtime" / "state.json"
             state_path.write_text('"bad"', encoding="utf-8")
 
