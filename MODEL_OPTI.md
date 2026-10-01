@@ -1076,6 +1076,15 @@ pairing so a benchmark claim can never mix in other prompt changes.
   (OpenRouter's model listing for the gateway id and the long-horizon
   characterization, and the oh-my-openagent / oh-my-pi / models.dev
   handling surveyed for divergence), each labeled as such above.
+- **Persona language after an OMH skill load (2026-10-01):** on a Korean
+  persona, `deepseek-v4.1-flash-ultrafast` flipped the reply after an OMH
+  `skill_view` (fewer than 20 Hangul characters in its narration) in 16/20,
+  26/30 and 24/30 samples over three runs, against 3/20, 5/30 and 5/30 with
+  no skill; 15 of the 16 in the latest run were English narrations. Six
+  prompt-level levers did not move it; `kimi-k3`, `deepseek-v4-pro` and
+  `glm-5.3-ultrafast` held. Tables and the recommendation are in
+  [Measured: a non-English persona's language after an OMH skill
+  load](#measured-a-non-english-personas-language-after-an-omh-skill-load).
 
 ### `mistral` (Mistral Large / Medium)
 
@@ -1320,6 +1329,120 @@ corpus, and its offline pilot exist; the table lands in this section when a
 run exists whose records this document can point at. Until then this section
 is a pointer, not a result. What the lane measures, what it deliberately does
 not, and how to reproduce it: `benchmarks/product-ab/v1/README.md`.
+
+## Measured: a non-English persona's language after an OMH skill load
+
+OMH skill bodies are English by repository rule. When the host loads one with
+`skill_view`, the body enters the context as a tool result; the body measured
+here is about 9KB. The model's next reply follows it. On a Korean
+casual-register persona the effect was a language switch, not a register
+change. The narration of the next reply came out in English, while the
+persona's `SOUL.md` and every earlier reply were Korean. This section records
+which models keep the persona's language at that point. Every number in it
+was measured.
+
+**Probe.** Each request is the real request from one session on the
+owner's `miku` profile (Slack, Korean casual-register `SOUL.md`):
+- the stored system prompt, with main's reply line;
+- the stored history, through the final briefing;
+- a Korean request to review a pull request;
+- then either no skill (control), or an assistant
+  `skill_view(name="omh-code-review")` followed by a tool row carrying the
+  shipped body (A).
+
+Every request used the same gateway route, with no temperature sent and
+`tool_choice` set to `"none"`, so each reply is text.
+
+**Metric.** A reply's narration is its text before the tool-call markup, with
+code removed. A reply counts as *flipped* when its narration has fewer than
+20 Hangul characters. A model is *skill-flip-prone* when its flip rate in A
+exceeds its rate in control by 30 points or more. A cell with fewer than 15
+usable replies is reported as insufficient.
+
+The scripts, the rules (written into each script before it ran), and the raw
+samples are in the owner's eval archive (`persona-residuals-2026-09-30/`),
+not in git.
+
+**The pre-registered splitter only knows DeepSeek's tool-call marker.** It
+cuts the narration at `<｜DSML｜`, and it is not valid for models that write
+tool calls in other markup. `glm-5.3-ultrafast` writes `<tool_call>…`. Under
+the pre-registered splitter, its tool-call-only replies and its short Korean
+lines both count as flipped. So the table gives two columns:
+- the pre-registered *flipped* counts;
+- *English narrations*: every flipped reply, cut at either marker and read
+  by hand. A reply counts here when its narration is written in English. A
+  Korean sentence that uses English words does not count.
+
+| Model | Control flipped (pre-registered) | A flipped (pre-registered) | A − control | Control English narrations | A English narrations | Reading |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| `deepseek-v4.1-flash-ultrafast` | 3/20 | 16/20 | +65 pt | 2/20 | 15/20 | skill-flip-prone |
+| `kimi-k3` | 0/20 | 0/19 | 0 pt | 0/20 | 0/19 | holds |
+| `deepseek-v4-pro` | 2/20 | 1/17 | −4 pt | 0/20 | 1/17 | holds |
+| `glm-5.3-ultrafast` | 8/20 | 7/20 | −5 pt | 0/20 | 0/20 | holds |
+| `deepseek-flash` | 0/20 | none usable | n/a | 0/20 | none usable | insufficient: every A request returned HTTP 400 (cause not diagnosed), so the Flash model without the ultrafast tier is unmeasured |
+
+- **Flips that are not English.** Some pre-registered flips are something
+  else:
+  - `glm-5.3-ultrafast`: its 8 control flips are 7 Korean lines and 1
+    tool-call-only reply; its 7 A flips are 3 Korean lines and 4
+    tool-call-only replies. The Korean lines are short, or the code-span rule
+    ran into the tool-call markup and cut their Hangul count.
+  - `deepseek-v4-pro`: both control flips are short Korean lines.
+  - `deepseek-v4.1-flash-ultrafast`: 1 control flip and 1 A flip are short
+    Korean lines, the A one a Korean sentence with English words.
+- **Empty narrations.** These are excluded from the counts above: one for
+  `kimi-k3` and three for `deepseek-v4-pro`. The 5 tool-call-only replies
+  from `glm-5.3-ultrafast` are not excluded. The splitter does not see their
+  markup, so it counts them as flipped instead.
+- **Earlier runs.** Two earlier n=30 runs on `deepseek-v4.1-flash-ultrafast`
+  give the same picture: control 5/30 against A 26/30 flipped, and control
+  5/30 against A 24/30.
+
+**What did not move it.** Six prompt-level levers were each tested against A
+on `deepseek-v4.1-flash-ultrafast`, at n=30, under one rule written before
+the runs: keep a lever only if it beats A with one-sided Fisher p <= 0.05.
+None passed. The counts are pre-registered flips (fewer than 20 Hangul
+characters), not English-only counts. In the second run, 4 of A's 24 flips
+are short Korean sentences with English words, not English narrations.
+
+| Lever | Flipped (A in the same run) | p |
+| --- | --- | ---: |
+| the persona sentence moved from the body's tail to the line under the title | 20/30 (26/30) | 0.0626 |
+| a persona line added as the tool result's last field | 27/29 (26/30) | 0.8951 |
+| both of the above | 24/30 (26/30) | 0.3653 |
+| a line naming the language the persona has been replying in, prepended to the body | 27/30 (24/30) | 0.9273 |
+| the same named line as the result's last field | 22/30 (24/30) | 0.3805 |
+| the title move plus the prepended named line | 23/30 (24/30) | 0.5000 |
+
+- **Where the named line came from.** A script detector read the persona's
+  own earlier replies and named Korean. It is not a language OMH chose.
+- **Chinese drift, a separate null.** An A/B at n=40 on a mid-session probe
+  found that a sentence asking to hold the language across tool output does
+  not reduce this model's occasional switch into Chinese. That rate was 2/40
+  on main and 4/40 with the sentence.
+- **What the model had read before the live switch.** A separate check, not
+  part of `script_drift_ab.py`, counted Han and Kana characters
+  (`[一-鿿぀-ヿ]`) in three places:
+  - the stored session rows before the switch (messages 48856..48891, tool
+    rows and tool calls included): none;
+  - the tool schemas the probe sends: none;
+  - the stored system prompt: 6, all in one skill-index description,
+    `(信息图, 可视化)`, which belongs to a non-OMH skill.
+
+**Recommendation.** For a persona whose `SOUL.md` sets a language other than
+English, run the main chat model on one that keeps that language after an OMH
+skill load.
+- **Measured to hold:** `kimi-k3`, `deepseek-v4-pro`, and `glm-5.3-ultrafast`
+  (0/20 English narrations in both arms on inspection).
+- **Measured not to hold:** `deepseek-v4.1-flash-ultrafast`.
+- **Unmeasured:** `deepseek-flash` without the ultrafast tier.
+
+This is a model choice for the host and its operator, not a calibration OMH
+can inject. The host's own chat turns have no per-model OMH surface: the
+calibration tables above reach coding unit prompts only. The wording levers
+did not change the measured rate either. The evidence is one persona, one
+request, and one skill body, at n=20 per cell. That is a direction to
+choose models by, not a guarantee for another persona or skill.
 
 ## Coverage matrix and known gaps
 
