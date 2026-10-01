@@ -14,6 +14,7 @@ from pathlib import Path
 import sqlite3
 from tempfile import TemporaryDirectory
 import unittest
+from unittest import mock
 
 from _cli_harness import run_cli
 from omh.quality.session_file_activity import (
@@ -24,6 +25,7 @@ from omh.quality.session_file_activity import (
     build_session_file_activity,
     format_session_file_activity_summary,
 )
+from omh.skills.render import builtin_skill_templates
 
 
 SESSION = "20260928_101500_a1b2c3"
@@ -387,6 +389,24 @@ class SessionFileActivityTests(unittest.TestCase):
         self.assertEqual(payload["calls"]["total"], 2)
         self.assertEqual(payload["calls"]["results_without_call"], 1)
 
+    def test_out_of_order_rows_keep_their_outcomes_and_times(self) -> None:
+        self.store.session(SESSION, cwd=str(self.root), repo_root=str(self.root))
+        # c2's result is persisted before its own call row, and the later row
+        # by id carries the earlier timestamp.
+        self.store.result("c2", "patch", PATCH_FAILED, at=150.0)
+        self.store.assistant([_call("c1", "write_file", {"path": "a.py", "content": "x"})], at=200.0)
+        self.store.assistant([_call("c2", "patch", {"path": "a.py", "old_string": "a", "new_string": "b"})], at=100.0)
+        self.store.result("c1", "write_file", WRITE_OK, at=201.0)
+
+        payload = build_session_file_activity(self.home, SESSION)
+
+        self.assertEqual(_activity(payload), {"a.py": [("write", "succeeded", 1), ("update", "failed", 1)]})
+        self.assertEqual(
+            (payload["files"][0]["first_at"], payload["files"][0]["last_at"]),
+            ("1970-01-01T00:01:40Z", "1970-01-01T00:03:20Z"),
+        )
+        self.assertEqual((payload["calls"]["total"], payload["calls"]["results_without_call"]), (2, 0))
+
     def test_a_store_without_effect_disposition_still_reads(self) -> None:
         home = Path(self._tmp.name) / "old-hermes"
         store = _Store(home, messages_ddl=_MESSAGES_DDL.replace(" effect_disposition TEXT,", ""))
@@ -432,6 +452,69 @@ class SessionFileActivityCliTests(unittest.TestCase):
         self.assertEqual(missing_status, 2)
         self.assertIn("no Hermes session nope", missing_stderr)
         self.assertEqual(missing_stdout.strip(), "")
+
+
+class SessionFileActivityProfileIsolationTests(unittest.TestCase):
+    """A Hermes profile is its own Hermes home with its own ``state.db``.
+
+    Both homes below share one workspace, one session id, and one call id,
+    so only the store a query opens can tell their activity apart.
+    """
+
+    def test_each_profile_home_reads_only_its_own_sessions(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp) / "repo"
+            default_home = Path(tmp) / ".hermes"
+            work_home = default_home / "profiles" / "work"
+            default = _Store(default_home)
+            work = _Store(work_home)
+            default.session(SESSION, cwd=str(root), repo_root=str(root), activity=100.0)
+            default.assistant([_call("c1", "read_file", {"path": "default.py"})], at=60.0)
+            default.result("c1", "read_file", READ_OK, at=61.0)
+            # The newest session on the machine lives in the default profile.
+            default.session("default-later", cwd=str(root), repo_root=str(root), activity=900.0)
+            default.assistant(
+                [_call("c2", "write_file", {"path": "later.py", "content": "x"})], at=800.0, session_id="default-later"
+            )
+            default.result("c2", "write_file", WRITE_OK, at=801.0, session_id="default-later")
+            work.session(SESSION, cwd=str(root), repo_root=str(root), activity=50.0)
+            work.assistant([_call("c1", "patch", {"path": "work.py", "old_string": "a", "new_string": "b"})], at=40.0)
+            work.result("c1", "patch", PATCH_OK, at=41.0)
+
+            default_payload = build_session_file_activity(default_home, SESSION)
+            later_payload = build_session_file_activity(default_home, "default-later")
+            work_payload = build_session_file_activity(work_home, SESSION)
+            work_latest = build_session_file_activity(work_home, "latest")
+            with self.assertRaisesRegex(SessionFileActivityError, "no Hermes session default-later"):
+                build_session_file_activity(work_home, "default-later")
+            # The standalone CLI takes the profile from HERMES_HOME, as Hermes sets it.
+            with mock.patch.dict("os.environ", {"HERMES_HOME": str(work_home)}):
+                status, stdout, stderr = run_cli(
+                    ["--omh-home", str(Path(tmp) / ".omh"), "quality-evidence", "file-activity", "--hermes-session", "latest"]
+                )
+
+        self.assertEqual(_activity(default_payload), {"default.py": [("read", "succeeded", 1)]})
+        self.assertEqual(_activity(later_payload), {"later.py": [("write", "succeeded", 1)]})
+        self.assertEqual(_activity(work_payload), {"work.py": [("update", "succeeded", 1)]})
+        self.assertEqual(work_latest["source"]["session_id"], SESSION)
+        self.assertEqual(_activity(work_latest), {"work.py": [("update", "succeeded", 1)]})
+        self.assertEqual(status, 0, stderr)
+        self.assertEqual(_activity(json.loads(stdout)), {"work.py": [("update", "succeeded", 1)]})
+
+
+class SessionFileActivityWorkflowCitationTests(unittest.TestCase):
+    """The file-operation, coding-handoff, and review workflows cite the receipt and its boundary."""
+
+    def test_each_workflow_body_cites_the_receipt_as_lineage_not_evidence(self) -> None:
+        bodies = {template.name: template.content for template in builtin_skill_templates()}
+        for name in ("workspace-file-operator", "maestro", "code-review"):
+            with self.subTest(workflow=name):
+                lines = [line for line in bodies[name].splitlines() if SESSION_FILE_ACTIVITY_SCHEMA_VERSION in line]
+                self.assertEqual(len(lines), 1, lines)
+                self.assertIn("omh quality-evidence file-activity --hermes-session <id> --json", lines[0])
+                self.assertIn("never", lines[0])
+                for kind in ("file-content", "diff", "test", "review", "CI", "merge"):
+                    self.assertIn(kind, lines[0].split("never", 1)[1])
 
 
 if __name__ == "__main__":

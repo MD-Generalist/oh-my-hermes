@@ -368,6 +368,17 @@ database, an unknown session id, or `--max-files` below 1 exits 2. The claim
 boundary says what the payload is not: it is not file-content, diff, test,
 review, CI, or merge evidence.
 
+Each Hermes profile is its own Hermes home with its own `state.db`, so the
+query reads only the profile it is pointed at (`--hermes-home`, or
+`HERMES_HOME` as Hermes sets it), and `latest` means that profile's latest
+session. Because nothing observes while the session runs, there is no observer
+that can load late: a call with no recorded result is `unknown`, and a result
+whose call row is gone is counted in `results_without_call`.
+
+The `workspace-file-operator`, `maestro` (coding handoff), and `code-review`
+workflows cite this receipt as file lineage: which workspace files a session
+named and the outcome Hermes recorded, under the same boundary.
+
 ## Agent Debug Report
 
 The `agent-debug` skill diagnoses a stuck, looping, or repeatedly failing

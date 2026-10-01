@@ -35,7 +35,7 @@
     "omh-backend/references/service-contract.md": "984cd9cb634b88a505cbd76214e281b2e22edf3d75fc6a3b9a0a88fcc4a265f5",
     "omh-build-failure-triage/SKILL.md": "d02513dd1b5b629000cf31f25fd6c974d47c69ba10d0e4c9fc14f570380a2753",
     "omh-cancel/SKILL.md": "735cb62ac316ff6c35a5c54ac9bfdf0d38d81e8d41f651a4c29ca86f9aa7ded8",
-    "omh-code-review/SKILL.md": "07c554deb7dfbdc14c3fbd63dc9f83eb6ed7f23ebf9eba093f5b83fd0994bc48",
+    "omh-code-review/SKILL.md": "64a62cd6c7e6eece6c65694faf001e08d00531d3069c387abef3ca647f074114",
     "omh-code-review/references/review-dispatch.md": "6a155bc585a17cb85a5bea62c5b834657e308a3958c317d54657ab0f8fcab424",
     "omh-code-review/references/review-lenses.md": "fb2ae13bd37473da0937c715db313142d5f5516fe0b4235038b38b0ad28d7d4f",
     "omh-code-review/references/review-response.md": "9da4fc0d81fb7c7d26ecf6fbcf17f8ee95fc76bfba8a31f70cf689ee296682db",
@@ -70,7 +70,7 @@
     "omh-external-connector-readiness/references/memory-provider-trial.md": "b6eda7efc3307d8bd6540bec47b2564f3e565da5ad8133bd998b2ebcabdf29a3",
     "omh-failure-signal-audit/SKILL.md": "ea34846d980bab8d2878deeaf9b3a284f7b3ec178d228b7af438aad05b2579f4",
     "omh-feedback-triage/SKILL.md": "00e8008b7cc2b4d0eeca4dd2dde0c4fb1ea5e112c6f167189da5c9c2b9a61262",
-    "omh-files/SKILL.md": "a22387ae0c3898eeb87ee925d18cd8d225aeb74cf5e5e164629bb6fb8d47c993",
+    "omh-files/SKILL.md": "44411ba3c8a1a22e8b7d37c1b4a8fbceb9b4095b25fb4d724ce8687c0a22cb6a",
     "omh-finance-analysis/SKILL.md": "7a2cb00ccd913a82172b58f3be124b2c031d9bbcbba46cd5549ecfa3554fd9c9",
     "omh-finance-analysis/references/procedure.md": "0fd8b3ad528d10aebd971c26375de9775e95429d3dbdc3a6f2ee5cc063a9c79c",
     "omh-frontend-refactor/SKILL.md": "347d22b3dd7d7f57524bd2737658d64e65095fa8f3e665ddff528da4043c16f2",
@@ -314,7 +314,7 @@
     "ulw-work"
   ],
   "source": "agent-skills",
-  "source_digest": "fbc929dbf71d39021cb78dfddde889779c0504b037e3f5742d0a8344910fd966",
+  "source_digest": "d2f654fe058d9633dff714f6161d026f98a08ff96e65dba2a47efb2aecc2703c",
   "targets": {
     "repo": ".agents/skills",
     "user": ".agents/skills"

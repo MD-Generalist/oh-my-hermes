@@ -4,6 +4,18 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **The file-operation, coding-handoff, and review workflows cite
+  `session_file_activity/v1`.** `workspace-file-operator` names it inside
+  `file_observation_manifest/v1`, and `maestro` and `code-review` name it for
+  carrying a Hermes session's file lineage into a handoff or scoping a review.
+  Each citation gives the command and keeps the receipt's boundary: it is not
+  file-content, diff, test, review, CI, or merge evidence. A new test proves
+  profile isolation: two Hermes homes sharing a workspace, a session id, and a
+  call id each read only their own `state.db`, including `latest` and the
+  CLI under `HERMES_HOME`. Containment stays lexical, so a symlink inside the
+  workspace that points outside shows its in-workspace spelling; resolving
+  links would stat named files, which the receipt never does. (#1813)
+
 - **Bot profiles under a non-default primary OMH home bind the primary's
   store.** `omh setup --omh-home X` recorded `plugins.entries.omh.settings.omh_home`
   in the primary Hermes home only, so a bot profile that named no store of its
@@ -14,6 +26,7 @@ All notable changes will be documented here.
   default primary no profile config changes. `omh uninstall` takes back only
   the setting OMH wrote, and `omh doctor` warns with
   `plugin_omh_home_binding:<profile>` for each profile still naming no store.
+
 - **`omh update` no longer drops the full-only skills a core install kept.**
   A staged update renders the skill pack into a new, empty generation and then
   moves `current` to it. The installer decided what to refresh from that empty
