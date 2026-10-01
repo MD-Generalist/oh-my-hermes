@@ -823,8 +823,10 @@ PORTABLE_OVERRIDES: dict[str, dict[str, tuple[str, ...]]] = {'ulw-plan': {'artif
                                      'once for that source when it offers one and never retry the '
                                      'same URL in a loop; cite an archive or cached copy it returns as '
                                      'a dated historical capture, never as the live page. If no such '
-                                     'capability exists, recovery fails, or the source needs a login '
-                                     'or payment, name the retrieval gap with that reason.',
+                                     'capability exists, recovery fails, the retrieval budget is '
+                                     'spent, or the source needs a login or payment, name the '
+                                     'retrieval gap with that reason. Record each blocked source as '
+                                     'one `research_source_recovery/v1`.',
                                      'If web or repository access is unavailable, name the retrieval '
                                      'gap and use only observed local context instead of inventing '
                                      'findings.',

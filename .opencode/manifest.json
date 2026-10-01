@@ -193,7 +193,7 @@
     "ulw-perf/SKILL.md": "4189814b67cd81e446f42dc0dbb0e91168c065d2833b9dbc895539226bb927ad",
     "ulw-plan/SKILL.md": "a1068aa7705c9cd362a1b8385d5228fab29e4a5a8e4ad8645dea53e98bb55be2",
     "ulw-qa/SKILL.md": "11049ec3a49f47c5b0447cb8faa6b36ade31da65219def1a9d5526d9f535479f",
-    "ulw-research/SKILL.md": "e953a2149a34ffa1d72502d65b38b66e250e00a01bf53f1e196353a144b00943",
+    "ulw-research/SKILL.md": "ca887a0cb672c2418d5d3f959c25d25d50187df964c3219a8d0586888faa0f58",
     "ulw-research/references/briefing-format.md": "466c21fb7bedefe1e42dbdb3f8ddaf3321504882140af507a292188678243dac",
     "ulw-work/SKILL.md": "32ca677b6e4ac3c7e54881105bd262f8e8cf03f32dadd6ed66ebd31e7ddb87e8",
     "ulw-work/references/dependency-topology.md": "b35e627344579054a9ec46722ca59cdf9f6bda41a217f0b3775669c1ad764dac"
@@ -314,7 +314,7 @@
     "ulw-work"
   ],
   "source": "agent-skills",
-  "source_digest": "d2f654fe058d9633dff714f6161d026f98a08ff96e65dba2a47efb2aecc2703c",
+  "source_digest": "7b34c42a913ec3d04ff45709bcfb2567cbc310f5cc003fb3ab87c4c9881fdacb",
   "targets": {
     "repo": ".agents/skills",
     "user": ".agents/skills"
