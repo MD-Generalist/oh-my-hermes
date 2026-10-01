@@ -535,7 +535,10 @@ DATA_BOUNDARY_LIMITS: Final = (
 DATA_BOUNDARY_LIMIT_NAMES: Final = tuple(entry[0] for entry in DATA_BOUNDARY_LIMITS)
 
 # The confinement tool each platform would use, and the reason a platform with
-# neither can never enforce a runtime limit no matter what else lands.
+# neither can never enforce a runtime limit no matter what else lands. Windows
+# takes that reason because the two native backends built for it were measured
+# and each failed the fanout write-fence contract (#1357, see
+# `cross_harness_adapter_sandbox.backend`).
 _MACOS_CONFINEMENT_TOOL: Final = "/usr/bin/sandbox-exec"
 _NO_HOST_BACKEND_REASON: Final = "no_os_confinement_backend_on_this_platform"
 
