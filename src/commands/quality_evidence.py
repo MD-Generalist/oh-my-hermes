@@ -23,6 +23,7 @@ from ..quality.reply_lint import build_reply_lint, format_reply_lint_summary, su
 from ..quality.agent_debug_incident import (
     OBSERVABLES,
     AgentDebugIncidentError,
+    agent_debug_export_target_problem,
     build_agent_debug_export,
     build_agent_debug_incident,
     format_agent_debug_incident,
@@ -261,8 +262,10 @@ def cmd_quality_evidence_agent_debug_export(args: argparse.Namespace) -> int:
     Export is its own action, never a side effect of diagnosis. It re-checks
     the reviewed payload and every reference it cites against the source,
     drops the absolute source path, and runs a leak scan. Without
-    ``--confirm-export`` it prints the package for review and writes nothing;
-    with it, the package goes to a new file outside the source. Nothing is
+    ``--confirm-export`` it prints the package for review, says whether
+    ``--output`` could take it (it already exists, or lies inside the Hermes
+    home), and writes nothing; with it, the package goes to a new file outside
+    the source. Nothing is
     uploaded, filed, or posted. A refused export exits 2.
     """
     paths = _paths(args)
@@ -278,12 +281,28 @@ def cmd_quality_evidence_agent_debug_export(args: argparse.Namespace) -> int:
             if args.confirm_export
             else None
         )
+        output_problem = (
+            None
+            if written is not None
+            else agent_debug_export_target_problem(
+                args.output, hermes_home=paths.hermes_home, session_record=args.session_record
+            )
+        )
     except (OSError, AgentDebugReportError, AgentDebugIncidentError, ValueError) as exc:
         raise OmhError(str(exc)) from exc
     if _wants_json(args):
-        _print_json({"written": written is not None, "output": None if written is None else written.name, "package": package})
+        _print_json(
+            {
+                "written": written is not None,
+                "output": None if written is None else written.name,
+                "output_problem": output_problem,
+                "package": package,
+            }
+        )
     elif written is None:
         print(json.dumps(package, indent=2, sort_keys=True))
+        if output_problem is not None:
+            print(f"--output cannot take this package: {output_problem}. Choose another --output before confirming.")
         print("Not written: review the package above, then re-run with --confirm-export to write it to --output.")
     else:
         print(f"Wrote the reviewed agent-debug package to {written.name}. Nothing was uploaded, filed, or posted.")

@@ -463,15 +463,20 @@ state the record does not hold -- can never be ruled out from records, so a
 case with a supported pattern stays `unresolved`, and no hypothesis may claim
 `high` confidence while a competitor is open. Each artifact is validated
 against the one it is built on, by digest, so a capture for another report or
-a hypothesis for another capture is refused.
+a hypothesis for another capture is refused. What a capture says was checked
+decides whether an absence can rule a hypothesis out, so its `checked_kinds`,
+`unavailable`, and `finding_counts` must equal what the report shows, and the
+report's own `checked_kinds` must be every kind it does not list as
+unavailable.
 
 `--receipt` binds a fanout `dispatch_summary.json` (`fanout_dispatch_summary/v1`)
 as evidence. A unit is admitted only when it binds all five identities: the
 report's session (`origin_session_id`), a run (`run_ref`), a unit
 (`unit_id`), a configuration (the summary's `contract_digest`), and freshness
-(an `observed_at` no earlier than the session's start). Anything else is
-refused by name (`foreign_session`, `run_unbound`, `configuration_unbound`,
-`stale`, `identity_conflict`, ...).
+(an `observed_at` no earlier than the session's start; a session with no
+recorded start binds no freshness). Anything else is refused by name
+(`foreign_session`, `run_unbound`, `configuration_unbound`,
+`freshness_unbound`, `stale`, `identity_conflict`, ...).
 
 ### Example: evidence-backed
 
@@ -573,15 +578,24 @@ decide it.
 
 Sharing is a separate action, never a side effect of diagnosis.
 `agent-debug-export` takes a saved `agent-debug --json` payload the user
-reviewed, re-validates the report and the three artifacts, re-reads every
-cited reference from the source and refuses one that is missing, foreign
-(now in another session), stale (its timestamp, or the record file, changed),
-or mismatched (not the cited tool call or summary). It drops the absolute
-source path and runs a deterministic leak scan for absolute paths,
+reviewed, re-validates the report and the three artifacts, and refuses a key
+outside their closed shapes (a reviewer's note, a memo on the recovery), so
+the package carries ids, digests, counts, timestamps, the source and receipt
+file names, closed-vocabulary values, and OMH's own fixed wording only. It
+re-reads every cited reference from the source and refuses one that is
+missing, foreign (now in another session), stale (its timestamp changed), or
+mismatched (not the cited tool call or summary), and calls every reference
+stale when the source moved under the report's snapshot: the record file's
+size or modification time changed, or the session in state.db gained or lost
+rows. It drops the absolute source path and the session selector the user
+typed, and runs a deterministic leak scan for absolute paths,
 credential-shaped values, a value that is a phone number or email address,
-raw-material keys, and body-length strings. Without `--confirm-export` it prints the package and
-writes nothing; with it, the package goes to a new private file that is never
-overwritten and never inside the Hermes home or over the record. Nothing is
+raw-material keys, and body-length strings. Without `--confirm-export` it
+prints the package, says when `--output` already exists or lies inside the
+Hermes home, and writes nothing; with it, the package goes to a new private
+file that is never overwritten, never written through an existing name or
+symlink, never inside the Hermes home (its parent directory is resolved
+first) or over the record, and removed again if the write fails. Nothing is
 uploaded, filed as an issue, or posted.
 
 A valid report exits 0 whether or not it has findings: a finding is an

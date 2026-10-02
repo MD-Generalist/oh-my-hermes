@@ -3902,6 +3902,13 @@ selected_workflow=ultraprocess
             "my recursive function keeps redoing the same computation",
             "the API costs of my app went up this month",
             "why did my database lose rows after compaction",
+            # The incident phrases themselves, said of a person or a database.
+            "the real estate agent drifted from the goal of the negotiation",
+            "my insurance agent keeps redoing work on my claim",
+            "the travel agent keeps looping me back to the same menu",
+            "the secret agent drifted from the goal in the movie",
+            "my editor lost context after compaction",
+            "the vacuum lost context after compaction in sqlite",
         ):
             with self.subTest(message=message):
                 self.assertNotEqual(route_chat_message(message, source="discord")["selected_skill"], "agent-debug")

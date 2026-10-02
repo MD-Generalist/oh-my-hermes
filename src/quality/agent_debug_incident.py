@@ -24,21 +24,26 @@ Receipts. A ``fanout_dispatch_summary/v1`` unit is admitted as evidence only
 when it binds all five identities -- the report's session (its
 ``origin_session_id``), a run (``run_ref``), a unit (``unit_id``), a
 configuration (the summary's ``contract_digest``), and freshness (an
-``observed_at`` no earlier than the session's start). A unit that cannot bind
-one is refused with the identity it lacked; two units claiming one run and
+``observed_at`` no earlier than the session's start; a session with no
+recorded start binds no freshness). A unit that cannot bind one is refused
+with the identity it lacked; two units claiming one run and
 unit under different configurations are both refused.
 
-Export is a separate action. ``build_agent_debug_export`` re-validates the
-artifacts, re-reads every cited reference from the source (refusing a
-missing, foreign, stale, or mismatched one), drops the absolute source path,
-and runs a deterministic leak scan; ``write_agent_debug_export`` writes the
-package only to a new file outside the source. Nothing here files an issue,
+Export is a separate action. ``build_agent_debug_export`` refuses a payload
+with any key outside the artifacts' closed shapes, re-validates the
+artifacts, re-checks the source against the report (refusing a missing,
+foreign, stale, or mismatched reference, or a source that moved under the
+report's snapshot), drops the absolute source path and the typed session
+selector, and runs a deterministic leak scan; ``write_agent_debug_export``
+writes the package only to a new file outside the source, never through an
+existing name or link. Nothing here files an issue,
 posts a comment, resets an executor, or touches the session.
 """
 
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import contextlib
 import hashlib
 import json
 import os
@@ -49,6 +54,7 @@ from typing import Any, Mapping, Sequence
 from ..system.metadata_safety import is_raw_pii_shaped, is_secret_value_shaped
 from .agent_debug_report import (
     BACKGROUND_WITHOUT_NOTIFY,
+    CITATION_KEYS,
     COMPACTION_BOUNDARY,
     FINDING_KINDS,
     IDENTICAL_RETRY_AFTER_ERROR,
@@ -182,7 +188,8 @@ INCIDENT_CLAIM_BOUNDARY = (
 )
 EXPORT_CLAIM_BOUNDARY = (
     "An agent-debug export is the redacted incident package a person reviewed and chose to write. It carries "
-    "ids, digests, counts, and closed-vocabulary values only; it was not uploaded, filed, or shared by OMH."
+    "ids, digests, counts, timestamps, the source and receipt file names, closed-vocabulary values, and OMH's "
+    "own fixed wording only; it was not uploaded, filed, or shared by OMH."
 )
 
 
@@ -251,9 +258,11 @@ def bind_receipts(report: Mapping[str, Any], receipts: Sequence[tuple[str, Any]]
                 reason = "unit_unbound"
             elif not isinstance(configuration, str) or not _SHA256.match(configuration):
                 reason = "configuration_unbound"
-            elif observed_at is None:
+            elif observed_at is None or not isinstance(started_at, (int, float)) or isinstance(started_at, bool):
+                # Freshness binds the receipt to the session's start; a
+                # session with no recorded start leaves nothing to bind to.
                 reason = "freshness_unbound"
-            elif isinstance(started_at, (int, float)) and observed_at < started_at:
+            elif observed_at < started_at:
                 reason = "stale"
             if reason is not None:
                 rejected.append({"receipt": label, "unit_id": unit_id, "reason": reason})
@@ -303,7 +312,42 @@ def build_agent_failure_capture(
         raise AgentDebugIncidentError("the report is not a valid agent_debug_report/v1: " + "; ".join(errors))
     if observable not in OBSERVABLES:
         raise AgentDebugIncidentError(f"observable must be one of {', '.join(OBSERVABLES)}")
+    capture = {
+        "schema_version": AGENT_FAILURE_CAPTURE_SCHEMA_VERSION,
+        "identity": _capture_identity(report),
+        "observable": observable,
+        "observed_findings": [
+            {"finding_id": item["finding_id"], "kind": item["kind"]} for item in report.get("findings") or ()
+        ],
+        "finding_counts": dict(report.get("finding_counts") or {}),
+        "checked_kinds": list(report.get("checked_kinds") or ()),
+        "reading_complete": bool((report.get("budget") or {}).get("complete", False)),
+        "unavailable": _capture_unavailable(report),
+        "receipts": bind_receipts(report, receipts),
+        "observed": True,
+        "claim_boundary": INCIDENT_CLAIM_BOUNDARY,
+    }
+    errors = agent_failure_capture_errors(capture, report)
+    if errors:
+        raise AgentDebugIncidentError("agent_failure_capture/v1 failed validation: " + "; ".join(errors))
+    return capture
+
+
+def _capture_identity(report: Mapping[str, Any]) -> dict[str, Any]:
     source = report.get("source") or {}
+    return {
+        "session_id": str((report.get("session") or {}).get("id")),
+        "source_kind": source.get("kind"),
+        "source_label": source.get("label"),
+        "selection": source.get("selection"),
+        "turns": dict(report.get("turns") or {}),
+        "snapshot": dict(source.get("snapshot") or {}),
+        "report_sha256": report_digest(report),
+    }
+
+
+def _capture_unavailable(report: Mapping[str, Any]) -> list[dict[str, str]]:
+    """Every piece of evidence the report could not see: its unchecked kinds, unread rows, host state."""
     budget = report.get("budget") or {}
     unavailable = [{"evidence": item["kind"], "reason": item["reason"]} for item in report.get("unavailable") or ()]
     if budget.get("oversized_rows"):
@@ -313,33 +357,7 @@ def build_agent_failure_capture(
     if budget.get("row_limit_reached"):
         unavailable.append({"evidence": "rows_after_limit", "reason": "rows after the row budget were not read"})
     unavailable.append(dict(HOST_RUNTIME_UNAVAILABLE))
-    capture = {
-        "schema_version": AGENT_FAILURE_CAPTURE_SCHEMA_VERSION,
-        "identity": {
-            "session_id": str((report.get("session") or {}).get("id")),
-            "source_kind": source.get("kind"),
-            "source_label": source.get("label"),
-            "selection": source.get("selection"),
-            "turns": dict(report.get("turns") or {}),
-            "snapshot": dict(source.get("snapshot") or {}),
-            "report_sha256": report_digest(report),
-        },
-        "observable": observable,
-        "observed_findings": [
-            {"finding_id": item["finding_id"], "kind": item["kind"]} for item in report.get("findings") or ()
-        ],
-        "finding_counts": dict(report.get("finding_counts") or {}),
-        "checked_kinds": list(report.get("checked_kinds") or ()),
-        "reading_complete": bool(budget.get("complete", False)),
-        "unavailable": unavailable,
-        "receipts": bind_receipts(report, receipts),
-        "observed": True,
-        "claim_boundary": INCIDENT_CLAIM_BOUNDARY,
-    }
-    errors = agent_failure_capture_errors(capture, report)
-    if errors:
-        raise AgentDebugIncidentError("agent_failure_capture/v1 failed validation: " + "; ".join(errors))
-    return capture
+    return unavailable
 
 
 def report_digest(report: Mapping[str, Any]) -> str:
@@ -355,7 +373,17 @@ def report_digest(report: Mapping[str, Any]) -> str:
 
 
 def agent_failure_capture_errors(capture: Mapping[str, Any], report: Mapping[str, Any]) -> list[str]:
-    errors: list[str] = []
+    """Every reason ``capture`` is not the capture of ``report``.
+
+    What the capture says was checked and what it says was unavailable decide
+    whether an absence can rule a hypothesis out, so both are compared with
+    the report, not trusted: ``checked_kinds`` and ``finding_counts`` must
+    equal the report's, and ``unavailable`` must be exactly what the report
+    could not see (its unchecked kinds, unread rows, and host state). The
+    report is validated first, which holds its ``checked_kinds`` to every kind
+    it does not list as unavailable.
+    """
+    errors = [f"report: {problem}" for problem in agent_debug_report_errors(report)]
     if capture.get("schema_version") != AGENT_FAILURE_CAPTURE_SCHEMA_VERSION:
         errors.append(f"schema_version must be {AGENT_FAILURE_CAPTURE_SCHEMA_VERSION}")
     identity = capture.get("identity") or {}
@@ -364,6 +392,16 @@ def agent_failure_capture_errors(capture: Mapping[str, Any], report: Mapping[str
         errors.append("identity.session_id names another session than the report")
     if identity.get("report_sha256") != report_digest(report):
         errors.append("identity.report_sha256 does not match the report: the capture is stale or for another report")
+    elif identity != _capture_identity(report):
+        errors.append("identity must be the report's source, selection, turn range, and snapshot")
+    if capture.get("checked_kinds") != list(report.get("checked_kinds") or ()):
+        errors.append("checked_kinds must equal the report's checked_kinds")
+    if capture.get("unavailable") != _capture_unavailable(report):
+        errors.append("unavailable must list exactly the evidence the report could not see")
+    if capture.get("finding_counts") != dict(report.get("finding_counts") or {}):
+        errors.append("finding_counts must equal the report's finding_counts")
+    if capture.get("observed") is not True or capture.get("claim_boundary") != INCIDENT_CLAIM_BOUNDARY:
+        errors.append("a capture is observed and carries the incident claim boundary")
     if capture.get("observable") not in OBSERVABLES:
         errors.append("observable is not in the closed vocabulary")
     report_ids = {item.get("finding_id"): item.get("kind") for item in report.get("findings") or ()}
@@ -401,7 +439,14 @@ def agent_failure_capture_errors(capture: Mapping[str, Any], report: Mapping[str
 
 
 def build_agent_failure_pattern_hypothesis(capture: Mapping[str, Any], report: Mapping[str, Any]) -> dict[str, Any]:
-    """``agent_failure_pattern_hypothesis/v1``: competing hypotheses, each with typed evidence for and against."""
+    """``agent_failure_pattern_hypothesis/v1``: competing hypotheses, each with typed evidence for and against.
+
+    The capture is validated against the report first: what it says was
+    checked decides whether an absence rules a hypothesis out.
+    """
+    errors = agent_failure_capture_errors(capture, report)
+    if errors:
+        raise AgentDebugIncidentError("agent_failure_capture/v1 failed validation: " + "; ".join(errors))
     findings = list(report.get("findings") or ())
     checked = set(capture.get("checked_kinds") or ())
     complete = bool(capture.get("reading_complete"))
@@ -499,6 +544,8 @@ def agent_failure_pattern_hypothesis_errors(artifact: Mapping[str, Any], capture
         errors.append("capture_sha256 does not match the capture")
     if artifact.get("session_id") != (capture.get("identity") or {}).get("session_id"):
         errors.append("session_id names another session than the capture")
+    if artifact.get("claim_boundary") != INCIDENT_CLAIM_BOUNDARY:
+        errors.append("claim_boundary must be the incident claim boundary")
     hypotheses = artifact.get("hypotheses")
     if not isinstance(hypotheses, list) or len(hypotheses) < 2:
         return errors + ["at least two competing hypotheses are required"]
@@ -521,6 +568,8 @@ def agent_failure_pattern_hypothesis_errors(artifact: Mapping[str, Any], capture
             continue
         if item.get("observed") is not False:
             errors.append(f"{label} must be marked observed: false; a hypothesis is inferred")
+        if item.get("discriminator") != PATTERNS[item["pattern"]][1]:
+            errors.append(f"{label} must carry its pattern's own discriminator")
         for ref in [*(item.get("evidence_for") or ()), *(item.get("evidence_against") or ())]:
             problem = _reference_problem(str(ref), observed, checked, complete)
             if problem:
@@ -608,6 +657,10 @@ def contained_recovery_action_errors(artifact: Mapping[str, Any], hypothesis: Ma
         errors.append("a contained recovery action must be reversible")
     if artifact.get("action") not in RECOVERY_ACTION_STEPS:
         errors.append("action is not in the closed recovery vocabulary")
+    elif artifact.get("step") != RECOVERY_ACTION_STEPS[artifact["action"]]:
+        errors.append("step must be the recovery action's own step")
+    if artifact.get("claim_boundary") != INCIDENT_CLAIM_BOUNDARY:
+        errors.append("claim_boundary must be the incident claim boundary")
     if set(NOT_PERFORMED) - set(artifact.get("not_performed") or ()):
         errors.append("not_performed must list every action diagnosis does not take")
     leading = hypothesis.get("leading_hypothesis")
@@ -644,13 +697,15 @@ def build_agent_debug_incident(
 
 
 def agent_debug_incident_errors(report: Mapping[str, Any], incident: Mapping[str, Any]) -> list[str]:
-    errors = list(agent_debug_report_errors(report))
     capture = incident.get("agent_failure_capture")
     hypothesis = incident.get("agent_failure_pattern_hypothesis")
     recovery = incident.get("contained_recovery_action")
     if not isinstance(capture, Mapping) or not isinstance(hypothesis, Mapping) or not isinstance(recovery, Mapping):
-        return errors + ["the incident must carry a capture, a hypothesis artifact, and a recovery action"]
-    errors.extend(agent_failure_capture_errors(capture, report))
+        return list(agent_debug_report_errors(report)) + [
+            "the incident must carry a capture, a hypothesis artifact, and a recovery action"
+        ]
+    # The capture check validates the report first.
+    errors = agent_failure_capture_errors(capture, report)
     errors.extend(agent_failure_pattern_hypothesis_errors(hypothesis, capture))
     errors.extend(contained_recovery_action_errors(recovery, hypothesis))
     return errors
@@ -690,6 +745,144 @@ _RAW_KEYS = frozenset(
     {"content", "prompt", "prompts", "messages", "arguments", "output", "result", "results", "transcript", "path", "text"}
 )
 _MAX_EXPORT_STRING = 600
+# The closed key shape of every artifact the export carries: a dict maps each
+# allowed key to the shape of its value (None for a scalar or a list of
+# scalars), and a one-item list is a list of that shape. A key outside it is
+# refused, so a note added to a reviewed payload never rides into the package.
+_UNAVAILABLE_SHAPE = [{"kind": None, "reason": None}]
+_REPORT_SHAPE: dict[str, Any] = {
+    "schema_version": None,
+    "source": {
+        "kind": None,
+        "path": None,
+        "label": None,
+        "locator": None,
+        "requested_session": None,
+        "selection": None,
+        "snapshot": {"session_rows": None, "max_message_id": None, "bytes": None, "mtime_ns": None},
+    },
+    "session": {"id": None, "source": None, "started_at": None, "ended_at": None, "end_reason": None},
+    "turns": {"start": None, "end": None, "turn_count": None},
+    "budget": {
+        "max_rows": None,
+        "max_row_bytes": None,
+        "rows_read": None,
+        "bytes_read": None,
+        "bytes_skipped": None,
+        "row_limit_reached": None,
+        "oversized_rows": None,
+        "oversized_refs": None,
+        "complete": None,
+    },
+    "counts": {"tool_calls": None, "tool_calls_without_id": None, "tool_calls_with_arguments": None},
+    "checked_kinds": None,
+    "unavailable": _UNAVAILABLE_SHAPE,
+    "findings": [{"finding_id": None, "kind": None, "citation": {key: None for key in CITATION_KEYS}}],
+    "finding_counts": {kind: None for kind in FINDING_KINDS},
+    "observed": None,
+    "claim_boundary": None,
+}
+_INCIDENT_SHAPE: dict[str, Any] = {
+    "agent_failure_capture": {
+        "schema_version": None,
+        "identity": {
+            "session_id": None,
+            "source_kind": None,
+            "source_label": None,
+            "selection": None,
+            "turns": _REPORT_SHAPE["turns"],
+            "snapshot": _REPORT_SHAPE["source"]["snapshot"],
+            "report_sha256": None,
+        },
+        "observable": None,
+        "observed_findings": [{"finding_id": None, "kind": None}],
+        "finding_counts": _REPORT_SHAPE["finding_counts"],
+        "checked_kinds": None,
+        "reading_complete": None,
+        "unavailable": [{"evidence": None, "reason": None}],
+        "receipts": {
+            "accepted": [
+                {
+                    "ref": None,
+                    "receipt": None,
+                    "schema_version": None,
+                    "session_id": None,
+                    "run_id": None,
+                    "unit_id": None,
+                    "configuration_digest": None,
+                    "observed_at": None,
+                    "status": None,
+                    "exit_code": None,
+                }
+            ],
+            "rejected": [{"receipt": None, "unit_id": None, "reason": None}],
+        },
+        "observed": None,
+        "claim_boundary": None,
+    },
+    "agent_failure_pattern_hypothesis": {
+        "schema_version": None,
+        "session_id": None,
+        "capture_sha256": None,
+        "observable": None,
+        "hypotheses": [
+            {
+                "hypothesis_id": None,
+                "pattern": None,
+                "status": None,
+                "confidence": None,
+                "evidence_for": None,
+                "evidence_against": None,
+                "unavailable_evidence": None,
+                "discriminator": None,
+                "observed": None,
+            }
+        ],
+        "resolution": None,
+        "leading_hypothesis": None,
+        "claim_boundary": None,
+    },
+    "contained_recovery_action": {
+        "schema_version": None,
+        "session_id": None,
+        "hypothesis_sha256": None,
+        "for_hypothesis": None,
+        "action": None,
+        "step": None,
+        "targets": None,
+        "reversible": None,
+        "requires_approval": None,
+        "executed": None,
+        "not_performed": None,
+        "claim_boundary": None,
+    },
+}
+_PAYLOAD_SHAPE: dict[str, Any] = {**_REPORT_SHAPE, "incident": _INCIDENT_SHAPE}
+# Report fields that never leave the machine: the absolute source path, and
+# the selector the user typed (free text that only located the session).
+_EXPORT_DROPPED_SOURCE_KEYS = ("path", "requested_session")
+
+
+def _keys_outside(value: Any, shape: Any, where: str) -> list[str]:
+    """Every key in ``value`` that ``shape`` does not allow, by path."""
+    if isinstance(shape, dict):
+        if not isinstance(value, Mapping):
+            return [] if value is None else [f"{where} must be an object"]
+        outside = [f"{where}.{key}" for key in value if key not in shape]
+        for key, sub in shape.items():
+            if sub is not None and key in value:
+                outside.extend(_keys_outside(value[key], sub, f"{where}.{key}"))
+        return outside
+    if isinstance(shape, list):
+        if not isinstance(value, list):
+            return [] if value is None else [f"{where} must be a list"]
+        outside = []
+        for index, item in enumerate(value):
+            outside.extend(_keys_outside(item, shape[0], f"{where}[{index}]"))
+        return outside
+    if isinstance(value, Mapping) or (isinstance(value, list) and any(isinstance(item, (Mapping, list)) for item in value)):
+        return [f"{where} must be a value, not a structure"]
+    return []
 
 
 def build_agent_debug_export(
@@ -698,26 +891,33 @@ def build_agent_debug_export(
     hermes_home: str | Path | None = None,
     session_record: str | Path | None = None,
 ) -> dict[str, Any]:
-    """The redacted package for a reviewed ``agent-debug --json`` payload, after re-checking its references."""
-    report = {key: value for key, value in payload.items() if key != "incident"}
+    """The redacted package for a reviewed ``agent-debug --json`` payload, after re-checking its references.
+
+    The payload must keep the closed key shape the reader and the incident
+    builders produce; a key outside it (a reviewer's note, a memo on the
+    recovery) is refused by path rather than carried or silently dropped.
+    """
     incident = payload.get("incident")
     if not isinstance(incident, Mapping):
         raise AgentDebugIncidentError("the payload carries no incident; build it with agent-debug --json first")
+    report = {key: value for key, value in payload.items() if key != "incident"}
     errors = agent_debug_incident_errors(report, incident)
     if errors:
         raise AgentDebugIncidentError("the payload failed validation: " + "; ".join(errors))
+    outside = _keys_outside(payload, _PAYLOAD_SHAPE, "payload")
+    if outside:
+        raise AgentDebugIncidentError("the payload carries keys outside the export shape: " + ", ".join(outside))
     reference_errors = agent_debug_reference_errors(report, hermes_home=hermes_home, session_record=session_record)
     if reference_errors:
         raise AgentDebugIncidentError("the report's references no longer hold: " + "; ".join(reference_errors))
-    source = dict(report.get("source") or {})
-    source.pop("path", None)
+    source = {key: value for key, value in (report.get("source") or {}).items() if key not in _EXPORT_DROPPED_SOURCE_KEYS}
     redacted_report = {**report, "source": source}
     package = {
         "schema_version": AGENT_DEBUG_EXPORT_SCHEMA_VERSION,
         "report": redacted_report,
         "incident": {key: incident[key] for key in ("agent_failure_capture", "agent_failure_pattern_hypothesis", "contained_recovery_action")},
         "redaction": {
-            "dropped": ["source.path"],
+            "dropped": [f"source.{key}" for key in _EXPORT_DROPPED_SOURCE_KEYS],
             "never_read": ["prompts", "replies", "tool arguments", "tool output", "other sessions' rows"],
         },
         "approval": {"requires_user_review": True, "uploaded": False, "issue_filed": False},
@@ -756,6 +956,34 @@ def agent_debug_export_leaks(package: Any) -> list[str]:
     return leaks
 
 
+def agent_debug_export_target_problem(
+    output: str | Path,
+    *,
+    hermes_home: str | Path | None = None,
+    session_record: str | Path | None = None,
+) -> str | None:
+    """Why ``output`` cannot take the export, found without writing; None when it can.
+
+    The parent directory is resolved (so a symlinked directory into the Hermes
+    home is seen for what it is) and the file name is not: whatever already
+    sits at that name -- a file, or a symlink, dangling or not -- is
+    "already exists", never something to follow.
+    """
+    named = Path(output).expanduser()
+    parent = named.parent.resolve()
+    target = parent / named.name
+    if not parent.is_dir():
+        return f"the export directory {parent.name} does not exist"
+    if session_record is not None and target == Path(session_record).expanduser().resolve():
+        return "the export may not replace the session record"
+    protected = [Path(item).expanduser().resolve() for item in (hermes_home,) if item is not None]
+    if any(target == root or root in target.parents for root in protected):
+        return "the export may not be written inside the Hermes home it was read from"
+    if os.path.lexists(target):
+        return f"{target.name} already exists; an export never overwrites"
+    return None
+
+
 def write_agent_debug_export(
     package: Mapping[str, Any],
     output: str | Path,
@@ -763,25 +991,33 @@ def write_agent_debug_export(
     hermes_home: str | Path | None = None,
     session_record: str | Path | None = None,
 ) -> Path:
-    """Write the package to a new private file; refuse to overwrite or to write inside the source."""
+    """Write the package to a new private file; refuse to overwrite, to follow a link, or to write inside the source.
+
+    The file is created with ``O_EXCL`` (and ``O_NOFOLLOW`` where the platform
+    has it), so an existing name -- including a dangling symlink -- is refused
+    rather than written through. A write that fails removes the partial file.
+    """
     leaks = agent_debug_export_leaks(package)
     if leaks:
         raise AgentDebugIncidentError("the export failed its leak scan: " + "; ".join(leaks))
-    target = Path(output).expanduser().resolve()
-    protected = [Path(item).expanduser().resolve() for item in (hermes_home,) if item is not None]
-    if session_record is not None and target == Path(session_record).expanduser().resolve():
-        raise AgentDebugIncidentError("the export may not replace the session record")
-    if any(target == root or root in target.parents for root in protected):
-        raise AgentDebugIncidentError("the export may not be written inside the Hermes home it was read from")
-    if not target.parent.is_dir():
-        raise AgentDebugIncidentError(f"the export directory {target.parent.name} does not exist")
+    problem = agent_debug_export_target_problem(output, hermes_home=hermes_home, session_record=session_record)
+    if problem is not None:
+        raise AgentDebugIncidentError(problem)
+    named = Path(output).expanduser()
+    target = named.parent.resolve() / named.name
     text = json.dumps(package, indent=2, sort_keys=True) + "\n"
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
     try:
-        descriptor = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        descriptor = os.open(target, flags, 0o600)
     except FileExistsError:
         raise AgentDebugIncidentError(f"{target.name} already exists; an export never overwrites") from None
-    with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as handle:
-        handle.write(text)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as handle:
+            handle.write(text)
+    except OSError:
+        with contextlib.suppress(OSError):
+            target.unlink()
+        raise
     return target
 
 

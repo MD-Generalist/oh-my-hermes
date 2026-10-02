@@ -3415,6 +3415,57 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
         "",
         "agent-debug",
     ),
+    # Each sentence below carries one of the incident observables' words in a
+    # human or non-agent sense -- "drifted from the goal", "keeps redoing
+    # work", "keeps looping", "lost context after compaction". The fast path
+    # once dispatched all six; the shipped phrases now need an agent-run
+    # context (a tool call, turns, a compaction, "agent run"). Five of them
+    # still name agent-debug among the clarification candidates, exactly as
+    # they do on main without these phrases, so they pin the route action
+    # only; the insurance sentence never names it and forbids it.
+    RoutingPrecisionCase(
+        "real-estate-agent-goal-drift-stays-out-of-agent-debug",
+        "A real estate agent drifting from a negotiation goal is not goal drift in an agent run",
+        "the real estate agent drifted from the goal of the negotiation",
+        "answer_clarification",
+        "",
+    ),
+    RoutingPrecisionCase(
+        "insurance-agent-redoing-work-stays-out-of-agent-debug",
+        "An insurance agent redoing work on a claim is not repeated work in an agent run",
+        "my insurance agent keeps redoing work on my claim",
+        "answer_clarification",
+        "",
+        "agent-debug",
+    ),
+    RoutingPrecisionCase(
+        "travel-agent-looping-menu-stays-out-of-agent-debug",
+        "A travel agent looping a caller through a phone menu is not an agent run looping",
+        "the travel agent keeps looping me back to the same menu",
+        "answer_clarification",
+        "",
+    ),
+    RoutingPrecisionCase(
+        "secret-agent-goal-drift-stays-out-of-agent-debug",
+        "A film's secret agent drifting from the goal is not goal drift in an agent run",
+        "the secret agent drifted from the goal in the movie",
+        "answer_clarification",
+        "",
+    ),
+    RoutingPrecisionCase(
+        "editor-compaction-context-stays-out-of-agent-debug",
+        "An editor losing context after compaction is not an agent run's context loss",
+        "my editor lost context after compaction",
+        "answer_clarification",
+        "",
+    ),
+    RoutingPrecisionCase(
+        "sqlite-vacuum-compaction-context-stays-out-of-agent-debug",
+        "A SQLite vacuum compaction is a database operation, not an agent run's context loss",
+        "the vacuum lost context after compaction in sqlite",
+        "answer_clarification",
+        "",
+    ),
 )
 
 

@@ -135,6 +135,18 @@ _FINDING_KEYS = frozenset({"finding_id", "kind", "citation"})
 _SUMMARY_COLUMN = "_compressed_summary"
 # The only result fields any kind reads. A row is reduced to these on read.
 _TYPED_RESULT_KEYS = ("exit_code", "success", "pid", "notify_on_complete")
+# Why a kind can be unavailable: the source lacks the field it is derived from.
+# The closed set the readers write and the validator accepts.
+UNAVAILABLE_REASONS: dict[str, dict[str, str]] = {
+    SOURCE_STATE_DB: {
+        IDENTICAL_RETRY_AFTER_ERROR: "messages.tool_calls column not present",
+        COMPACTION_BOUNDARY: f"messages.{_SUMMARY_COLUMN} column not present",
+    },
+    SOURCE_RECORD: {
+        IDENTICAL_RETRY_AFTER_ERROR: "no record line carries a tool_calls field",
+        COMPACTION_BOUNDARY: f"no record line carries a {_SUMMARY_COLUMN} field",
+    },
+}
 
 AGENT_DEBUG_REPORT_CLAIM_BOUNDARY = (
     "An agent debug report cites rows one session record persisted, read without writing to it, and "
@@ -239,43 +251,51 @@ def _read_state_db(
             "substr(CAST(tool_calls AS BLOB), 1, :cap), length(CAST(tool_calls AS BLOB))" if has_calls else "NULL, NULL"
         )
         summary_sql = _SUMMARY_COLUMN if has_summary else "NULL"
-        raw_rows = connection.execute(
+        cursor = connection.execute(
             f"SELECT id, role, {TOOL_CALL_KEY_SQL}, tool_call_id, tool_name, "
             "substr(CAST(content AS BLOB), 1, :cap), length(CAST(content AS BLOB)), "
             f"{calls_sql}, {summary_sql}, timestamp FROM messages WHERE {where} ORDER BY id LIMIT :limit",
             params,
-        ).fetchall()
+        )
+        # One row at a time off the cursor, reduced before the next arrives, so
+        # at most one budget-cut row's cells are held at once. The query asks
+        # for one row past the budget only to learn that the limit was reached.
+        rows: list[dict[str, Any]] = []
+        bytes_read = 0
+        row_limit_reached = False
+        for message_id, role, call_key, tool_call_id, tool_name, content, content_len, calls, calls_len, summary, stamp in cursor:
+            if len(rows) >= max_rows:
+                row_limit_reached = True
+                break
+            bytes_read += len(content or b"") + len(calls or b"")
+            content_oversized = int(content_len or 0) > max_row_bytes
+            calls_oversized = int(calls_len or 0) > max_row_bytes
+            rows.append(
+                _reduced_row(
+                    ref=int(message_id),
+                    session_id=resolved,
+                    role=str(role or ""),
+                    call_key=str(call_key),
+                    tool_call_id=tool_call_id,
+                    tool_name=tool_name,
+                    content=None if content_oversized else _text(content),
+                    tool_calls=None if calls_oversized else _json_value(_text(calls)),
+                    summary=None if summary is None else bool(summary),
+                    stamp=stamp,
+                    oversized=content_oversized or calls_oversized,
+                )
+            )
     except sqlite3.Error as exc:
         raise AgentDebugReportError(f"could not read {path}: {exc}") from exc
     finally:
         connection.close()
 
-    rows: list[dict[str, Any]] = []
-    bytes_read = 0
-    for message_id, role, call_key, tool_call_id, tool_name, content, content_len, calls, calls_len, summary, stamp in raw_rows[:max_rows]:
-        bytes_read += len(content or b"") + len(calls or b"")
-        content_oversized = int(content_len or 0) > max_row_bytes
-        calls_oversized = int(calls_len or 0) > max_row_bytes
-        rows.append(
-            _reduced_row(
-                ref=int(message_id),
-                session_id=resolved,
-                role=str(role or ""),
-                call_key=str(call_key),
-                tool_call_id=tool_call_id,
-                tool_name=tool_name,
-                content=None if content_oversized else _text(content),
-                tool_calls=None if calls_oversized else _json_value(_text(calls)),
-                summary=None if summary is None else bool(summary),
-                stamp=stamp,
-                oversized=content_oversized or calls_oversized,
-            )
-        )
+    reasons = UNAVAILABLE_REASONS[SOURCE_STATE_DB]
     unavailable: list[dict[str, str]] = []
     if not has_calls:
-        unavailable.append({"kind": IDENTICAL_RETRY_AFTER_ERROR, "reason": "messages.tool_calls column not present"})
+        unavailable.append({"kind": IDENTICAL_RETRY_AFTER_ERROR, "reason": reasons[IDENTICAL_RETRY_AFTER_ERROR]})
     if not has_summary:
-        unavailable.append({"kind": COMPACTION_BOUNDARY, "reason": f"messages.{_SUMMARY_COLUMN} column not present"})
+        unavailable.append({"kind": COMPACTION_BOUNDARY, "reason": reasons[COMPACTION_BOUNDARY]})
     return {
         "source": {
             "kind": SOURCE_STATE_DB,
@@ -296,7 +316,7 @@ def _read_state_db(
         "turns": _turns_block(turns, len(user_ids)),
         "rows": rows,
         "rows_read": len(rows),
-        "row_limit_reached": len(raw_rows) > max_rows,
+        "row_limit_reached": row_limit_reached,
         "bytes_read": bytes_read,
         "bytes_skipped": 0,
         "unavailable": unavailable,
@@ -398,11 +418,12 @@ def _read_record(
             windowed.append(row)
     if turns is not None and turns[0] > user_turn:
         raise AgentDebugReportError(f"turn {turns[0]} is past the session's last turn ({user_turn})")
+    reasons = UNAVAILABLE_REASONS[SOURCE_RECORD]
     unavailable: list[dict[str, str]] = []
     if not any(row["has_tool_calls_field"] for row in selected):
-        unavailable.append({"kind": IDENTICAL_RETRY_AFTER_ERROR, "reason": "no record line carries a tool_calls field"})
+        unavailable.append({"kind": IDENTICAL_RETRY_AFTER_ERROR, "reason": reasons[IDENTICAL_RETRY_AFTER_ERROR]})
     if not any(row["summary"] is not None for row in selected):
-        unavailable.append({"kind": COMPACTION_BOUNDARY, "reason": f"no record line carries a {_SUMMARY_COLUMN} field"})
+        unavailable.append({"kind": COMPACTION_BOUNDARY, "reason": reasons[COMPACTION_BOUNDARY]})
     stamps = [row["timestamp"] for row in selected if row["timestamp"] is not None]
     return {
         "source": {
@@ -622,7 +643,10 @@ def agent_debug_report_errors(report: Mapping[str, Any]) -> list[str]:
     id and one timestamp per row the kind spans, and the fields that kind
     requires. A key outside that shape is refused, so text cannot ride along.
     A report may not call its reading complete when its budget block records
-    an oversized row or a reached row limit.
+    an oversized row or a reached row limit. ``unavailable`` lists kinds with
+    the reader's own reason for its source, ``checked_kinds`` is every other
+    kind, no finding has an unavailable kind, ``finding_counts`` counts the
+    findings by kind, and the claim boundary is the reader's own.
     """
     errors: list[str] = []
     if report.get("schema_version") != AGENT_DEBUG_REPORT_SCHEMA_VERSION:
@@ -640,9 +664,29 @@ def agent_debug_report_errors(report: Mapping[str, Any]) -> list[str]:
         honest = not budget.get("row_limit_reached") and not budget.get("oversized_rows")
         if budget.get("complete") is not honest:
             errors.append("budget.complete must be true exactly when no row was oversized and the row limit was not reached")
+    if report.get("claim_boundary") != AGENT_DEBUG_REPORT_CLAIM_BOUNDARY:
+        errors.append("claim_boundary must be the agent debug report's own")
+    reasons = UNAVAILABLE_REASONS.get(str(source.get("kind")) if isinstance(source, Mapping) else "", {})
+    unavailable = report.get("unavailable")
+    unavailable_kinds: list[Any] = []
+    if not isinstance(unavailable, list):
+        errors.append("unavailable must be a list")
+    else:
+        for item in unavailable:
+            if not isinstance(item, Mapping) or set(item) != {"kind", "reason"} or reasons.get(str(item.get("kind"))) != item.get("reason"):
+                errors.append("unavailable must list a kind with the reader's own reason for this source, and nothing else")
+                continue
+            unavailable_kinds.append(item["kind"])
+    if report.get("checked_kinds") != [kind for kind in FINDING_KINDS if kind not in unavailable_kinds]:
+        errors.append("checked_kinds must be every finding kind the report does not list as unavailable")
     findings = report.get("findings")
     if not isinstance(findings, list):
         return errors + ["findings must be a list"]
+    counted = {kind: sum(1 for item in findings if isinstance(item, Mapping) and item.get("kind") == kind) for kind in FINDING_KINDS}
+    for kind in unavailable_kinds:
+        if counted.get(kind):
+            errors.append(f"{kind} is listed unavailable but has findings")
+    before_findings = len(errors)
     seen_ids: set[str] = set()
     for index, finding in enumerate(findings):
         label = f"finding {index}"
@@ -669,6 +713,10 @@ def agent_debug_report_errors(report: Mapping[str, Any]) -> list[str]:
         elif finding_id in seen_ids:
             errors.append(f"{label} ({kind}) repeats finding_id {finding_id}")
         seen_ids.add(str(finding_id))
+    # Checked only over well-formed findings: a malformed one is already
+    # refused above, and recounting it would name the same fault twice.
+    if len(errors) == before_findings and report.get("finding_counts") != counted:
+        errors.append("finding_counts must count the report's findings by kind")
     return errors
 
 
@@ -681,11 +729,15 @@ def agent_debug_reference_errors(
     """Re-read every cited row from the source and name each reference that no longer holds.
 
     A reference is *missing* when its row is gone, *foreign* when the row
-    belongs to another session, *stale* when the row's timestamp (or, for a
-    record file, the file's size or modification time) changed since the
-    report was built, and *mismatched* when the row is not the tool call,
-    tool, or compaction summary the finding says it is. Only the cited rows
-    are read. An invalid report is refused before anything is read.
+    belongs to another session, *stale* when the row's timestamp changed
+    since the report was built, and *mismatched* when the row is not the tool
+    call, tool, or compaction summary the finding says it is. Every reference
+    is stale when the source moved under the report's snapshot: a record
+    file's size or modification time changed, or the session in state.db
+    gained or lost rows (its row count or highest message id changed), so a
+    row added after the report cannot go unseen. The snapshot is compared
+    even when nothing is cited; only the cited rows are read. An invalid
+    report is refused before anything is read.
     """
     errors = agent_debug_report_errors(report)
     if errors:
@@ -693,17 +745,20 @@ def agent_debug_reference_errors(
     source = report.get("source") or {}
     session_id = str((report.get("session") or {}).get("id"))
     cited = _cited_rows(report)
-    if not cited:
-        return []
     if source.get("kind") == SOURCE_RECORD:
         if session_record is None:
-            return ["the report cites a session record; supply that record to check its references"]
+            return ["the report was read from a session record; supply that record to check it"]
         max_row_bytes = int((report.get("budget") or {}).get("max_row_bytes") or DEFAULT_MAX_ROW_BYTES)
         current = _record_rows(Path(session_record), source, set(cited), max_row_bytes)
     elif source.get("kind") == SOURCE_STATE_DB:
         if hermes_home is None:
-            return ["the report cites a Hermes state.db; supply its Hermes home to check its references"]
-        current = _state_db_rows(hermes_home, set(cited))
+            return ["the report was read from a Hermes state.db; supply its Hermes home to check it"]
+        read = _state_db_rows(hermes_home, set(cited), session_id, source.get("snapshot") or {})
+        if isinstance(read, str):
+            return [read]
+        current, moved = read
+        if moved:
+            errors.append("every reference is stale: the session's rows in state.db changed since the report")
     else:
         return [f"source.kind {source.get('kind')!r} has no reader"]
     if isinstance(current, str):
@@ -752,12 +807,20 @@ def _cited_rows(report: Mapping[str, Any]) -> dict[int, list[tuple[str, dict[str
     return cited
 
 
-def _state_db_rows(hermes_home: str | Path, refs: set[int]) -> dict[int, dict[str, Any]] | str:
+def _state_db_rows(
+    hermes_home: str | Path, refs: set[int], session_id: str, snapshot: Mapping[str, Any]
+) -> tuple[dict[int, dict[str, Any]], bool] | str:
+    """The cited rows as they are now, and whether the session's row count or highest id moved."""
     try:
         path, connection = open_state_db_readonly(hermes_home, error=AgentDebugReportError)
     except AgentDebugReportError as exc:
         return str(exc)
     try:
+        count, max_id = connection.execute(
+            "SELECT COUNT(*), MAX(id) FROM messages WHERE session_id = ?", (session_id,)
+        ).fetchone()
+        current = {"session_rows": int(count or 0), "max_message_id": None if max_id is None else int(max_id)}
+        moved = current != {"session_rows": snapshot.get("session_rows"), "max_message_id": snapshot.get("max_message_id")}
         columns = {str(row[1]) for row in connection.execute("PRAGMA table_info(messages)")}
         summary_sql = _SUMMARY_COLUMN if _SUMMARY_COLUMN in columns else "NULL"
         ordered = sorted(refs)
@@ -782,7 +845,7 @@ def _state_db_rows(hermes_home: str | Path, refs: set[int]) -> dict[int, dict[st
         return f"could not read {path}: {exc}"
     finally:
         connection.close()
-    return rows
+    return rows, moved
 
 
 def _record_rows(
@@ -796,6 +859,8 @@ def _record_rows(
     if (int(info.st_size), int(info.st_mtime_ns)) != (snapshot.get("bytes"), snapshot.get("mtime_ns")):
         return "every reference is stale: the session record's size or modification time changed since the report"
     rows: dict[int, dict[str, Any]] = {}
+    if not refs:
+        return rows
     last = max(refs)
     try:
         with path.open("rb") as handle:

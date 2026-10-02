@@ -19,18 +19,23 @@ import stat
 from tempfile import TemporaryDirectory
 import tracemalloc
 import unittest
+from unittest import mock
 
 from _cli_harness import run_cli
 from _credential_fixtures import AWS_ACCESS_KEY_ID
+from omh.quality import agent_debug_incident
 from omh.quality.agent_debug_incident import (
     AgentDebugIncidentError,
     agent_debug_export_leaks,
+    agent_debug_export_target_problem,
     agent_debug_incident_errors,
     agent_failure_capture_errors,
     agent_failure_pattern_hypothesis_errors,
     bind_receipts,
     build_agent_debug_export,
     build_agent_debug_incident,
+    build_agent_failure_capture,
+    build_agent_failure_pattern_hypothesis,
     contained_recovery_action_errors,
     format_agent_debug_incident,
     write_agent_debug_export,
@@ -266,6 +271,26 @@ class BudgetTests(unittest.TestCase):
         self.assertLess(peak, line_bytes // 4)
         self.assertFalse(budget["complete"])
 
+    def test_state_db_rows_are_reduced_as_they_arrive_not_held_in_memory(self) -> None:
+        # 600 rows, each cell cut at the 32 KiB budget inside SQLite: holding
+        # every row before reducing it would keep ~19 MiB of cells at once.
+        cell = 32 * 1024
+        rows = [(1, SESSION, "user", RAW_PROMPT, None, None, T0, None, 0)]
+        for index in range(2, 602):
+            rows.append((index, SESSION, "tool", "z" * cell, f"c{index}", "terminal", T0 + index, None, 0))
+        with TemporaryDirectory() as tmp:
+            home = Path(tmp) / ".hermes"
+            _write_db(home, rows=rows)
+            tracemalloc.start()
+            try:
+                report = build_agent_debug_report(home, SESSION, max_row_bytes=cell)
+                _, peak = tracemalloc.get_traced_memory()
+            finally:
+                tracemalloc.stop()
+        self.assertEqual((report["budget"]["rows_read"], report["budget"]["complete"]), (601, True))
+        self.assertGreaterEqual(report["budget"]["bytes_read"], 600 * cell)
+        self.assertLess(peak, 600 * cell // 4)
+
     def test_a_long_record_stops_at_the_line_budget(self) -> None:
         rows = [(index, SESSION, "tool", json.dumps({"exit_code": 1}), f"c{index}", "terminal", T0 + index, None, 0) for index in range(1, 501)]
         with TemporaryDirectory() as tmp:
@@ -289,10 +314,16 @@ class ReferenceTests(unittest.TestCase):
             return agent_debug_reference_errors(report, hermes_home=home)
 
     def test_missing_foreign_stale_and_mismatched_references_are_refused(self) -> None:
-        self.assertEqual(self._mutated("DELETE FROM messages WHERE id = ?", (12,)), ["tool_error:12 reference 12 is missing from the source"])
+        # Deleting or moving a row also changes the session's row count, so the
+        # snapshot names every reference stale alongside the specific fault.
+        moved = "every reference is stale: the session's rows in state.db changed since the report"
+        self.assertEqual(
+            self._mutated("DELETE FROM messages WHERE id = ?", (12,)),
+            [moved, "tool_error:12 reference 12 is missing from the source"],
+        )
         self.assertEqual(
             self._mutated("UPDATE messages SET session_id = ? WHERE id = ?", (SIBLING, 12)),
-            ["tool_error:12 reference 12 is foreign: it belongs to another session"],
+            [moved, "tool_error:12 reference 12 is foreign: it belongs to another session"],
         )
         self.assertEqual(
             self._mutated("UPDATE messages SET timestamp = ? WHERE id = ?", (T0 + 99, 12)),
@@ -306,6 +337,22 @@ class ReferenceTests(unittest.TestCase):
             self._mutated("UPDATE messages SET _compressed_summary = 0 WHERE id = ?", (9,)),
             ["compaction_boundary:9 reference 9 is mismatched: the row is not a compaction summary"],
         )
+
+    def test_a_row_added_to_the_session_after_the_report_makes_it_stale(self) -> None:
+        added = (16, SESSION, "tool", json.dumps({"exit_code": 0}), "c5", "terminal", T0 + 13, None, 0)
+        quiet = [row for row in _session_rows() if row[0] in (1, 13, 15)]
+        for name, rows in (("with findings", None), ("without findings", quiet)):
+            with self.subTest(name), TemporaryDirectory() as tmp:
+                home = Path(tmp) / ".hermes"
+                path = _write_db(home, rows=rows)
+                report = build_agent_debug_report(home, SESSION)
+                self.assertEqual(agent_debug_reference_errors(report, hermes_home=home), [])
+                connection = sqlite3.connect(path)
+                with connection:
+                    connection.execute("INSERT INTO messages VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", added)
+                connection.close()
+                errors = agent_debug_reference_errors(report, hermes_home=home)
+            self.assertEqual(errors, ["every reference is stale: the session's rows in state.db changed since the report"])
 
     def test_a_changed_record_makes_every_reference_stale(self) -> None:
         with TemporaryDirectory() as tmp:
@@ -375,6 +422,41 @@ class HypothesisTests(unittest.TestCase):
         self.assertEqual(incident["agent_failure_pattern_hypothesis"]["resolution"], "unresolved")
         self.assertIn("compaction_boundary", [item["evidence"] for item in incident["agent_failure_capture"]["unavailable"]])
         self.assertIn("host_runtime", [item["evidence"] for item in incident["agent_failure_capture"]["unavailable"]])
+
+    def test_a_capture_claiming_a_kind_the_report_never_checked_is_refused(self) -> None:
+        report, incident = self._incident("context_loss", full_schema=False)
+        honest = incident["agent_failure_capture"]
+        self.assertNotIn("compaction_boundary", report["checked_kinds"])
+        forged = copy.deepcopy(honest)
+        forged["checked_kinds"].append("compaction_boundary")
+        forged["unavailable"] = [item for item in forged["unavailable"] if item["evidence"] != "compaction_boundary"]
+        errors = agent_failure_capture_errors(forged, report)
+        self.assertIn("checked_kinds must equal the report's checked_kinds", errors)
+        self.assertIn("unavailable must list exactly the evidence the report could not see", errors)
+        with self.assertRaisesRegex(AgentDebugIncidentError, "checked_kinds must equal"):
+            build_agent_failure_pattern_hypothesis(forged, report)
+        # Had the forged capture been trusted, its absence would rule context
+        # loss out; an incident carrying that verdict is refused as a whole.
+        with mock.patch.object(agent_debug_incident, "agent_failure_capture_errors", return_value=[]):
+            forged_hypothesis = build_agent_failure_pattern_hypothesis(forged, report)
+        self.assertEqual(forged_hypothesis["hypotheses"][0]["status"], "ruled_out")
+        forged_incident = {
+            "agent_failure_capture": forged,
+            "agent_failure_pattern_hypothesis": forged_hypothesis,
+            "contained_recovery_action": agent_debug_incident.build_contained_recovery_action(forged_hypothesis),
+        }
+        self.assertIn("checked_kinds must equal the report's checked_kinds", agent_debug_incident_errors(report, forged_incident))
+        honest_first = incident["agent_failure_pattern_hypothesis"]["hypotheses"][0]
+        self.assertEqual((honest_first["pattern"], honest_first["status"]), ("context_loss_after_compaction", "unresolved"))
+        # A report whose own checked_kinds disagrees with its unavailable list
+        # cannot carry the claim either, and neither can a recounted capture.
+        lying_report = copy.deepcopy(report)
+        lying_report["checked_kinds"] = list(lying_report["checked_kinds"]) + ["compaction_boundary"]
+        with self.assertRaisesRegex(AgentDebugIncidentError, "checked_kinds must be every finding kind"):
+            build_agent_failure_capture(lying_report)
+        recounted = copy.deepcopy(honest)
+        recounted["finding_counts"]["tool_error"] = 0
+        self.assertIn("finding_counts must equal the report's finding_counts", agent_failure_capture_errors(recounted, report))
 
     def test_the_validators_refuse_unsupported_or_overclaimed_hypotheses(self) -> None:
         report, incident = self._incident("looping")
@@ -502,6 +584,14 @@ class ReceiptBindingTests(unittest.TestCase):
             ],
         )
 
+    def test_a_session_with_no_recorded_start_binds_no_freshness(self) -> None:
+        report = copy.deepcopy(self._report())
+        report["session"]["started_at"] = None
+        unit = {"unit_id": "api", "run_ref": "run-1", "origin_session_id": SESSION}
+        bound = bind_receipts(report, [("a.json", self._summary([unit]))])
+        self.assertEqual(bound["accepted"], [])
+        self.assertEqual(bound["rejected"], [{"receipt": "a.json", "unit_id": "api", "reason": "freshness_unbound"}])
+
     def test_one_run_and_unit_under_two_configurations_is_refused(self) -> None:
         report = self._report()
         unit = {"unit_id": "api", "run_ref": "run-1", "origin_session_id": SESSION}
@@ -621,6 +711,107 @@ class RedactionAndExportTests(unittest.TestCase):
             narrative["findings"][0]["narrative"] = "the agent was confused"
             with self.assertRaisesRegex(AgentDebugIncidentError, "outside the finding shape"):
                 build_agent_debug_export(narrative, hermes_home=home)
+
+    def test_a_key_outside_the_artifact_shapes_never_reaches_the_package(self) -> None:
+        with TemporaryDirectory() as tmp:
+            home = Path(tmp) / ".hermes"
+            _write_db(home)
+            payload = self._payload(home)
+            self.assertEqual(payload["source"]["requested_session"], SESSION)
+            package = build_agent_debug_export(payload, hermes_home=home)
+            planted = {
+                "payload.reviewer_note": lambda p: p.update(reviewer_note="looks fine"),
+                "payload.incident.contained_recovery_action.memo": lambda p: p["incident"]["contained_recovery_action"].update(
+                    memo="restart it"
+                ),
+                "payload.source.comment": lambda p: p["source"].update(comment="from my laptop"),
+            }
+            refused = {}
+            for where, plant in planted.items():
+                tampered = copy.deepcopy(payload)
+                plant(tampered)
+                with self.assertRaises(AgentDebugIncidentError) as caught:
+                    build_agent_debug_export(tampered, hermes_home=home)
+                refused[where] = str(caught.exception)
+        for where, message in refused.items():
+            with self.subTest(where=where):
+                self.assertIn(f"keys outside the export shape: {where}", message)
+        # The typed selector is dropped like the path, and the package says so.
+        self.assertEqual(sorted(package["report"]["source"]), ["kind", "label", "locator", "selection", "snapshot"])
+        self.assertEqual(package["redaction"]["dropped"], ["source.path", "source.requested_session"])
+
+    @unittest.skipUnless(
+        hasattr(os, "O_NOFOLLOW") and hasattr(os, "symlink"),
+        "needs O_NOFOLLOW and symlinks; Windows has neither in the os module form this checks",
+    )
+    def test_the_export_never_writes_through_a_link(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            home = root / ".hermes"
+            _write_db(home)
+            package = build_agent_debug_export(self._payload(home), hermes_home=home)
+            elsewhere = root / "elsewhere.json"
+            dangling_out = root / "out.json"
+            dangling_out.symlink_to(elsewhere)
+            dangling_in = root / "in.json"
+            dangling_in.symlink_to(home / "planted.json")
+            linked_dir = root / "linked"
+            linked_dir.symlink_to(home, target_is_directory=True)
+            # The preview sees a dangling link as taken, before any write.
+            preview = agent_debug_export_target_problem(dangling_out, hermes_home=home)
+            messages = {}
+            for name, output in (("out", dangling_out), ("in", dangling_in), ("dir", linked_dir / "incident.json")):
+                with self.assertRaises(AgentDebugIncidentError) as caught:
+                    write_agent_debug_export(package, output, hermes_home=home)
+                messages[name] = str(caught.exception)
+            self.assertFalse(elsewhere.exists())
+            self.assertFalse((home / "planted.json").exists())
+            self.assertFalse((home / "incident.json").exists())
+        self.assertEqual(preview, "out.json already exists; an export never overwrites")
+        self.assertIn("out.json already exists", messages["out"])
+        self.assertIn("in.json already exists", messages["in"])
+        self.assertIn("inside the Hermes home", messages["dir"])
+
+    def test_a_failed_write_leaves_no_partial_file(self) -> None:
+        with TemporaryDirectory() as tmp:
+            home = Path(tmp) / ".hermes"
+            _write_db(home)
+            package = build_agent_debug_export(self._payload(home), hermes_home=home)
+            output = Path(tmp) / "incident.json"
+
+            def failing_fdopen(descriptor, *args, **kwargs):
+                handle = open(descriptor, *args, **kwargs)
+                handle.write = mock.Mock(side_effect=OSError(28, "No space left on device"))
+                return handle
+
+            with mock.patch.object(agent_debug_incident.os, "fdopen", failing_fdopen):
+                with self.assertRaises(OSError):
+                    write_agent_debug_export(package, output, hermes_home=home)
+            self.assertFalse(output.exists())
+
+    def test_the_preview_names_an_output_it_could_not_write(self) -> None:
+        with TemporaryDirectory() as tmp:
+            home = Path(tmp) / ".hermes"
+            _write_db(home)
+            saved = Path(tmp) / "reviewed.json"
+            saved.write_text(json.dumps(self._payload(home)), encoding="utf-8")
+            taken = Path(tmp) / "taken.json"
+            taken.write_text("{}", encoding="utf-8")
+            common = ["--omh-home", str(Path(tmp) / ".omh"), "--hermes-home", str(home), "quality-evidence", "agent-debug-export", "--report", str(saved)]
+            listing = sorted(str(item.relative_to(tmp)) for item in Path(tmp).rglob("*"))
+            exists = run_cli([*common, "--output", str(taken)], output_json=False)
+            inside = run_cli([*common, "--output", str(home / "incident.json"), "--json"], output_json=False)
+            fresh = run_cli([*common, "--output", str(Path(tmp) / "new.json"), "--json"], output_json=False)
+            self.assertEqual(sorted(str(item.relative_to(tmp)) for item in Path(tmp).rglob("*")), listing)
+            self.assertEqual(taken.read_text(encoding="utf-8"), "{}")
+        self.assertEqual(exists[0], 0, exists[2])
+        self.assertIn("--output cannot take this package: taken.json already exists", exists[1])
+        self.assertIn("Not written", exists[1])
+        self.assertEqual(inside[0], 0, inside[2])
+        self.assertEqual(
+            json.loads(inside[1])["output_problem"], "the export may not be written inside the Hermes home it was read from"
+        )
+        self.assertIsNone(json.loads(fresh[1])["output_problem"])
 
 
 class DocumentedExampleTests(unittest.TestCase):

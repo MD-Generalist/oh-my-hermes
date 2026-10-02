@@ -338,8 +338,11 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # offering only `none`) and one four-candidate non-request it must
             # keep asking.
             # #1799 adds six: human agents, a database compaction, an app's API
-            # bill, and a recursive function, none of which is an agent run.
-            expected=422,
+            # bill, and a recursive function, none of which is an agent run;
+            # and six more that carry the incident phrases themselves (goal
+            # drift, redoing work, looping, context lost after compaction) in a
+            # human or non-agent sense.
+            expected=428,
             sites=(
                 "tests/test_cli.py",
                 "tests/test_hermes_ux_quality.py",
