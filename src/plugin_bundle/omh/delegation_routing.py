@@ -36,7 +36,7 @@ from typing import Any, Mapping
 
 ROUTABLE_KEYS = ("model", "reasoning_effort", "provider")
 
-_VALUE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$")
+_VALUE_RE = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9._/-]|:(?=[A-Za-z0-9])){0,127}$")
 _SECTION_RE = re.compile(r"^delegation:\s*(#.*)?$")
 _MODEL_SECTION_RE = re.compile(r"^model:\s*(#.*)?$")
 _MODEL_PROVIDER_RE = re.compile(r"^\s+provider\s*:")

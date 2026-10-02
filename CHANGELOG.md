@@ -4,6 +4,18 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **Named custom providers route through delegation.** A provider id such
+  as `custom:cli-proxy`, the form Hermes gives a named custom provider, was
+  refused as an unsupported mapping by the route writer, the route reader,
+  and every routing document. A colon is now admitted when an alphanumeric
+  character follows it, so `custom:cli-proxy` and tagged model ids such as
+  `qwen3:8b` validate. `custom: x`, `custom:`, and `a::b` are still
+  refused, as is any token over 128 characters. A reasoning effort stays a
+  bare word. `omh model-chains set` reads the text after the last colon as
+  the effort only when it names one, so `custom:cli-proxy:xhigh` splits
+  once and `qwen3:8b` stays a model id. Linked-provider detection keeps its narrower grammar. (#1976, thanks
+  @mazzy89)
+
 - **GPT-6.1 Sol, Claude Sonnet 5.5, and Grok Build 0.1 are registered, and
   four stale price rows are corrected.** A sweep of every shipped family
   against vendor docs and the Hermes upstream catalog (2026-10-01) found

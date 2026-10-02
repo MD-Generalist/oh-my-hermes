@@ -62,7 +62,16 @@ class TableTests(unittest.TestCase):
         for name, provider_id in detection.HERMES_ENV_KEY_PROVIDERS.items():
             with self.subTest(name=name):
                 self.assertIn(provider_id, detection.HERMES_PROVIDER_KINDS)
-        self.assertEqual(detection.PROVIDER_ID_RE.pattern, _CHAIN_TOKEN_RE.pattern)
+        # Detection deliberately keeps its own narrower token grammar; stored
+        # routing ids may name Hermes' custom provider, but this reader does
+        # not infer a linked account from an unrecognized config/auth key.
+        self.assertTrue(_CHAIN_TOKEN_RE.fullmatch("custom:cli-proxy"))
+        self.assertFalse(detection.PROVIDER_ID_RE.fullmatch("custom:cli-proxy"))
+        for token in ("openai-codex", "vendor/model", "bad id", "a" * 129):
+            self.assertEqual(
+                bool(detection.PROVIDER_ID_RE.fullmatch(token)),
+                bool(_CHAIN_TOKEN_RE.fullmatch(token)),
+            )
 
     def test_generic_and_implicit_tokens_are_not_provider_evidence(self) -> None:
         # Hermes' registry lists CLAUDE_CODE_OAUTH_TOKEN under its implicit
