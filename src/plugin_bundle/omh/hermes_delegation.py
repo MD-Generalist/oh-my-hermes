@@ -164,6 +164,10 @@ HERMES_MIXTURE_CATEGORY_CHAINS: dict[str, tuple[tuple[str, str], ...]] = {
 # smuggle structure into config.yaml via a later omh_delegate_route write.
 MIXTURE_CHAIN_OVERRIDES_SCHEMA_VERSION = "mixture_chain_overrides/v1"
 _CHAIN_TOKEN_RE = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9._/-]|:(?=[A-Za-z0-9])){0,127}$")
+# A reasoning effort is a bare word (`low`, `xhigh`); the colon admitted above
+# for named provider ids (`custom:cli-proxy`) and tagged model ids has no
+# meaning in an effort and would make `model:effort` text ambiguous.
+_EFFORT_TOKEN_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$")
 
 
 def mixture_chain_overrides_path(omh_home: str | Path | None = None) -> Path:
@@ -227,7 +231,7 @@ def parse_mixture_chain_overrides(
             if not isinstance(model, str) or not _CHAIN_TOKEN_RE.fullmatch(model):
                 return {}, f"invalid: category {name!r} names a non-token model"
             if not isinstance(effort, str) or (
-                effort and not _CHAIN_TOKEN_RE.fullmatch(effort)
+                effort and not _EFFORT_TOKEN_RE.fullmatch(effort)
             ):
                 return {}, f"invalid: category {name!r} names a non-token effort"
             chain.append((model, effort))

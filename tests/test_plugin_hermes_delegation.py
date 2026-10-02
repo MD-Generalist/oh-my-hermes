@@ -683,6 +683,12 @@ class MixtureChainOverridesTest(unittest.TestCase):
                     "models": {"safe": {"provider": invalid, "model": "safe"}},
                 })[1].startswith("invalid:"))
         self.assertTrue(is_provider_id_token("a" * 128))
+        # An effort stays a bare word: the colon admitted for model and
+        # provider ids would make `model:effort` text ambiguous.
+        self.assertTrue(parse_mixture_chain_overrides({
+            "schema_version": "mixture_chain_overrides/v1",
+            "categories": {"quick": [{"model": "kimi-k3", "reasoning_effort": "x:high"}]},
+        })[1].startswith("invalid:"))
 
     def test_provider_routes_reject_non_string_scalars(self):
         routes, status = parse_model_provider_routes(
