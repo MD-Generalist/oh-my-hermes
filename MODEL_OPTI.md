@@ -645,6 +645,18 @@ pairing so a benchmark claim can never mix in other prompt changes.
   the user", and every "otherwise, continue toward completing the task"
   tail. The 2026-09-05 Astra measurement is why: the one clause with that
   reading cost +5,419 tokens per instance for the same pass set.
+- **Measured (2026-10-02, `benchmarks/live-model-tools/v1`):** four arms at
+  `high` on the Codex subscription, 30 instances each. Two `optimized` arms,
+  one `family` arm, and one GPT-6 Sol arm. Every arm passed the same 18
+  instances.
+  - The override cost +1.9% and +3.2% tokens per instance against the
+    family block, with nearly identical tool calls (351 / 352 vs 360). Both
+    CIs span zero, and same-text drift was +1.3%. No measurable effect
+    either way. It stays, unproven for 6.1 Sol.
+  - Against GPT-6 Sol, 6.1 Sol used about 8% fewer tokens (CI spans zero)
+    and 14% fewer tool calls (351 vs 409) for the same pass set. That
+    supports the slot swap.
+  - Full tables are in the benchmark README.
 - **Version rule:** the override is keyed to `gpt-6.1-sol` only (and the
   forms that project onto it). GPT-6 Sol keeps the `gpt` family block
   unchanged; a later Sol generation gets this block only through its own
@@ -858,11 +870,21 @@ pairing so a benchmark claim can never mix in other prompt changes.
   work is done; start no further review rounds and no reviewer sub-agents
   unless a criterion asks for one. Same three-constraint budget as the
   family block. **Composer:** the family block verbatim.
-- **Evidence:** vendor-measured, not OMH-measured. The guide: the stop
-  instruction "stopped the model from launching reviewer subagents and cut
-  session cost by about a third, with no change in quality" on coding tasks
-  at `max`. The OMH pair (`family` vs `optimized` on
-  `benchmarks/live-model-tools/v1` at `max`) is the follow-up.
+- **Evidence:** vendor-measured, and not reproduced in OMH. The guide says
+  the stop instruction "stopped the model from launching reviewer subagents
+  and cut session cost by about a third, with no change in quality" on
+  coding tasks at `max`.
+  - **OMH run (2026-10-02, `benchmarks/live-model-tools/v1` at `max`, Claude
+    Code subscription):** two `optimized` arms and one `family` arm, 30
+    instances each.
+  - **Result:** the override arms used +4.0% and −6.3% tokens per instance
+    against the family block, and same-text drift was −9.7% (CI excludes
+    zero). Drift exceeds any override effect, and the pass sets match (18,
+    18, and 17 plus one provider crash).
+  - **Why it may not reproduce:** the corpus asks for no review, and the
+    Hermes child path ran no reviewer sub-agents, so the clause may have
+    nothing to suppress here.
+  - **Decision:** the block stays, unproven, because it is not worse.
 - **Explicitly not imported:** the guide's fix for early check-ins at low
   effort ("Keep working until everything the user asked for is done"). It
   pushes the model to keep working, which `docs/MODEL-ONBOARDING.md` §2

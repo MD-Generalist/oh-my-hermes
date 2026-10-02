@@ -4,6 +4,18 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **GPT-6.1 Sol and Claude Sonnet 5.5 placements are measured.** Each was
+  run on its subscription route against `benchmarks/live-model-tools/v1`
+  (30 instances per arm, with a same-text repeat for drift). Full tables are
+  in the benchmark README; the summary is in MODEL_OPTI.md.
+  - GPT-6.1 Sol solves the same instances as GPT-6 Sol with 14% fewer tool
+    calls and about 8% fewer tokens, so the #1975 slot swap holds. Its
+    Astra-text override shows no measurable effect against the `gpt` family
+    block.
+  - The Sonnet 5.5 override's vendor-reported cost cut does not reproduce on
+    this corpus, because run-to-run drift (about 10%) exceeds any difference.
+  - Both overrides stay, recorded as unproven. Neither measured worse.
+
 - **Named custom providers route through delegation.** A provider id such
   as `custom:cli-proxy`, the form Hermes gives a named custom provider, was
   refused as an unsupported mapping by the route writer, the route reader,
