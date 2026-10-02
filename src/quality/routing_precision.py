@@ -3364,6 +3364,108 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
         "",
         expected_route_question=ROUTE_QUESTION_ASKED,
     ),
+    # The agent-debug incident phrases (#1799) name an AI agent run: a human
+    # agent, a database compaction, an app's bill, or a function that repeats
+    # itself is not an agent run and must not dispatch to agent-debug. The three
+    # human-agent sentences may still list agent-debug among the clarification
+    # candidates (the scorer reads "agent" with "context" or "drift" that way on
+    # main too), so they pin the route action only.
+    RoutingPrecisionCase(
+        "human-travel-agent-lost-track-stays-out-of-agent-debug",
+        "A travel agent losing track of a booking is not an agent run",
+        "the travel agent lost track of my booking",
+        "answer_clarification",
+        "",
+    ),
+    RoutingPrecisionCase(
+        "human-support-agent-drift-stays-out-of-agent-debug",
+        "A support agent drifting from a call script is not goal drift in an agent run",
+        "our support agent drifted from the script on the call",
+        "answer_clarification",
+        "",
+    ),
+    RoutingPrecisionCase(
+        "human-sales-agent-context-stays-out-of-agent-debug",
+        "A sales agent losing the context of a deal is not context loss in an agent run",
+        "the sales agent lost context of the deal",
+        "answer_clarification",
+        "",
+    ),
+    RoutingPrecisionCase(
+        "database-compaction-stays-out-of-agent-debug",
+        "Rows lost after a database compaction are not agent context loss",
+        "why did my database lose rows after compaction",
+        "answer_clarification",
+        "",
+        "agent-debug",
+    ),
+    RoutingPrecisionCase(
+        "app-api-cost-stays-out-of-agent-debug",
+        "An application's API bill going up is not an agent run's unexpected cost",
+        "the API costs of my app went up this month",
+        "answer_directly",
+        "direct_answer",
+        "agent-debug",
+    ),
+    RoutingPrecisionCase(
+        "recursive-function-repeat-stays-out-of-agent-debug",
+        "A recursive function redoing a computation is application code, not repeated agent work",
+        "my recursive function keeps redoing the same computation",
+        "answer_clarification",
+        "",
+        "agent-debug",
+    ),
+    # Each sentence below carries one of the incident observables' words in a
+    # human or non-agent sense -- "drifted from the goal", "keeps redoing
+    # work", "keeps looping", "lost context after compaction". The fast path
+    # once dispatched all six; the shipped phrases now need an agent-run
+    # context (a tool call, turns, a compaction, "agent run"). Five of them
+    # still name agent-debug among the clarification candidates, exactly as
+    # they do on main without these phrases, so they pin the route action
+    # only; the insurance sentence never names it and forbids it.
+    RoutingPrecisionCase(
+        "real-estate-agent-goal-drift-stays-out-of-agent-debug",
+        "A real estate agent drifting from a negotiation goal is not goal drift in an agent run",
+        "the real estate agent drifted from the goal of the negotiation",
+        "answer_clarification",
+        "",
+    ),
+    RoutingPrecisionCase(
+        "insurance-agent-redoing-work-stays-out-of-agent-debug",
+        "An insurance agent redoing work on a claim is not repeated work in an agent run",
+        "my insurance agent keeps redoing work on my claim",
+        "answer_clarification",
+        "",
+        "agent-debug",
+    ),
+    RoutingPrecisionCase(
+        "travel-agent-looping-menu-stays-out-of-agent-debug",
+        "A travel agent looping a caller through a phone menu is not an agent run looping",
+        "the travel agent keeps looping me back to the same menu",
+        "answer_clarification",
+        "",
+    ),
+    RoutingPrecisionCase(
+        "secret-agent-goal-drift-stays-out-of-agent-debug",
+        "A film's secret agent drifting from the goal is not goal drift in an agent run",
+        "the secret agent drifted from the goal in the movie",
+        "answer_clarification",
+        "",
+    ),
+    RoutingPrecisionCase(
+        "editor-compaction-context-stays-out-of-agent-debug",
+        "An editor losing context after compaction is not an agent run's context loss",
+        "my editor lost context after compaction",
+        "answer_clarification",
+        "",
+    ),
+    RoutingPrecisionCase(
+        "sqlite-vacuum-compaction-context-stays-out-of-agent-debug",
+        "A SQLite vacuum compaction is a database operation, not an agent run's context loss",
+        "the vacuum lost context after compaction in sqlite",
+        "answer_clarification",
+        "",
+    ),
 )
 
 
@@ -8334,6 +8436,52 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "stuck-agent-retry-loop-reaches-agent-debug",
         "An agent stuck retrying a tool reaches agent debugging",
         "the agent run is stuck in a tool retry loop again, capture what it is doing",
+        "dispatch",
+        "agent-debug",
+        "prepare_agent_debug",
+        "agent_debug",
+    ),
+    # The five incident observables #1799 names, each in a user's words.
+    RoutingInterventionCase(
+        "looping-agent-reaches-agent-debug",
+        "An agent looping on one tool call reaches agent debugging",
+        "why does my agent keep looping on the same tool call",
+        "dispatch",
+        "agent-debug",
+        "prepare_agent_debug",
+        "agent_debug",
+    ),
+    RoutingInterventionCase(
+        "repeated-agent-work-reaches-agent-debug",
+        "An agent redoing work across turns reaches agent debugging",
+        "the agent keeps redoing work across turns",
+        "dispatch",
+        "agent-debug",
+        "prepare_agent_debug",
+        "agent_debug",
+    ),
+    RoutingInterventionCase(
+        "agent-goal-drift-reaches-agent-debug",
+        "An agent drifting from its goal reaches agent debugging",
+        "the agent drifted away from the goal I gave it, find out why",
+        "dispatch",
+        "agent-debug",
+        "prepare_agent_debug",
+        "agent_debug",
+    ),
+    RoutingInterventionCase(
+        "agent-context-loss-reaches-agent-debug",
+        "An agent losing context after compaction reaches agent debugging",
+        "the agent lost context after compaction and forgot the plan",
+        "dispatch",
+        "agent-debug",
+        "prepare_agent_debug",
+        "agent_debug",
+    ),
+    RoutingInterventionCase(
+        "agent-run-unexpected-cost-reaches-agent-debug",
+        "An agent run that cost unexpectedly many tokens reaches agent debugging",
+        "why did that agent run cost so many tokens",
         "dispatch",
         "agent-debug",
         "prepare_agent_debug",

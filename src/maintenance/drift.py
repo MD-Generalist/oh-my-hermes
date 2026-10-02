@@ -337,7 +337,12 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # predicate declines (a one-word approval, a thank-you, a Choice
             # offering only `none`) and one four-candidate non-request it must
             # keep asking.
-            expected=416,
+            # #1799 adds six: human agents, a database compaction, an app's API
+            # bill, and a recursive function, none of which is an agent run;
+            # and six more that carry the incident phrases themselves (goal
+            # drift, redoing work, looping, context lost after compaction) in a
+            # human or non-agent sense.
+            expected=428,
             sites=(
                 "tests/test_cli.py",
                 "tests/test_hermes_ux_quality.py",
@@ -416,7 +421,9 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # #1817 adds three: a single-candidate clarify the route question's
             # decline predicate declines, and a one-word request and a
             # four-candidate clarify it keeps.
-            expected=622,
+            # #1799 adds five: looping, repeated work, goal drift, context loss
+            # and unexpected cost in an agent run, each reaching agent-debug.
+            expected=627,
             sites=(
                 "tests/test_cli.py",
                 "tests/test_hermes_ux_quality.py",

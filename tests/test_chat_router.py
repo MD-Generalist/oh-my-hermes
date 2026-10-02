@@ -3866,6 +3866,13 @@ selected_workflow=ultraprocess
             "agent run stuck repeating the same command and burning tokens",
             "tool retry loop with context drift in this agent run",
             "에이전트 반복 실패 디버그해줘",
+            # The #1799 incident observables: looping, repeated work, goal
+            # drift, context loss, unexpected cost.
+            "why does my agent keep looping on the same tool call",
+            "the agent keeps redoing work across turns",
+            "the agent drifted away from the goal I gave it, find out why",
+            "the agent lost context after compaction and forgot the plan",
+            "why did that agent run cost so many tokens",
         )
 
         for message in debug_cases:
@@ -3885,6 +3892,26 @@ selected_workflow=ultraprocess
             "long-running task is burning tokens; review context budget",
             source="discord",
         )
+
+        # Application-code debugging that shares the words loop, repeat, cost
+        # or compaction is not an agent run and never reaches agent-debug.
+        for message in (
+            "debug why my python while loop never terminates",
+            "my for loop repeats the same work twice, fix the function",
+            "why does my react component re-render in a loop",
+            "my recursive function keeps redoing the same computation",
+            "the API costs of my app went up this month",
+            "why did my database lose rows after compaction",
+            # The incident phrases themselves, said of a person or a database.
+            "the real estate agent drifted from the goal of the negotiation",
+            "my insurance agent keeps redoing work on my claim",
+            "the travel agent keeps looping me back to the same menu",
+            "the secret agent drifted from the goal in the movie",
+            "my editor lost context after compaction",
+            "the vacuum lost context after compaction in sqlite",
+        ):
+            with self.subTest(message=message):
+                self.assertNotEqual(route_chat_message(message, source="discord")["selected_skill"], "agent-debug")
 
         self.assertEqual(setup_health["selected_skill"], "doctor")
         self.assertEqual(ops_status["selected_skill"], "agent-ops-review")
