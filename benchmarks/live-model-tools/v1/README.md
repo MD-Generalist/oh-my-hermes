@@ -504,3 +504,126 @@ that added this section.
 Results describe this pinned corpus, OMH version, Hermes version, provider,
 model id and conditions only. They do not establish universal model
 superiority.
+
+### 2026-10-02 `gpt-6.1-sol` generation and override evaluation (PR #1975 follow-up)
+
+Two questions from the GPT-6.1 Sol onboarding (#1975). Does 6.1 Sol hold the
+slots GPT-6 Sol held? And does its exact-model override (GPT-6 Astra's text,
+byte for byte) beat the `gpt` family block it replaced?
+
+The setup:
+
+- The same pinned evaluation corpus as above (30 instances, digest
+  `c4ea899a8e727fcc531776e56306ff0e83d129e2248fe4362614b3d186fa7b33`).
+- The `hermes_current_session` path on the Codex subscription
+  (`openai-codex`), so every record reports `cost_usd` 0.
+- omh at `1e4728607`, the PR #1975 tree. Hermes Agent 0.21.5+4533
+  (`39faafb`, 2026.9.24).
+- A targeted manifest with both ids at `high`, the effort `deep` routes them
+  at. Every arm used `--split evaluation` and `--max-paid-calls 30`.
+
+Arms ran on 2026-10-01/02 UTC, sequentially within the lane. A Claude lane
+(below) ran in parallel on a different provider, so wall clock was contended
+and is not compared.
+
+- **G1:** 6.1 Sol `optimized`, 23:00 to 23:30Z.
+- **G2:** 6.1 Sol `family`, 23:30 to 00:00Z.
+- **G3:** GPT-6 Sol `optimized`, 00:00 to 00:35Z. 6 Sol has no override, so
+  this arm sends the `gpt` family block.
+- **G4:** 6.1 Sol `optimized` again, for same-text drift, 01:01 to 02:22Z.
+  The first G4 attempt was stopped at 23 instances by a shell time limit. It
+  was discarded, and the arm was rerun from the start.
+
+The slow G4 window holds one 52-minute instance (E-CALLFLOW-104729), which
+completed normally. Every record in every arm completed.
+
+| Arm | What the prompt carries | Passed | Total tokens | Mean tokens | Tool calls | API turns |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| G1 6.1 Sol optimized | `MODEL_HIGH_EFFORT_CALIBRATIONS["gpt-6.1-sol"]` | 18 / 30 | 2,006,957 | 66,898 | 351 | 203 |
+| G2 6.1 Sol family | inherited `HIGH_EFFORT_CALIBRATIONS["gpt"]` | 18 / 30 | 1,970,421 | 65,680 | 360 | 204 |
+| G3 6 Sol optimized | `HIGH_EFFORT_CALIBRATIONS["gpt"]` (no override) | 18 / 30 | 2,192,285 | 73,076 | 409 | 213 |
+| G4 6.1 Sol optimized | same as G1, repeated | 18 / 30 | 2,032,796 | 67,759 | 352 | 204 |
+
+Tool calls and API turns are out-of-harness observations. They were read
+from the Hermes `sessions` table over each arm's exact window, and each arm
+has exactly 30 root sessions.
+
+All four arms passed the same 18 instances, so McNemar's test has zero
+discordant pairs and p = 1.0. Paired token deltas per instance, with a
+template-cluster bootstrap (10,000 draws, seed 20260813):
+
+| Pair | Mean delta | 95% CI | Instances lower |
+| --- | ---: | --- | ---: |
+| G4 − G1 (same text, drift) | +861 (+1.3%) | [−2,879, +4,375] | 14 / 30 |
+| G1 − G2 (override vs family) | +1,218 (+1.9%) | [−3,895, +6,150] | 8 / 30 |
+| G4 − G2 (override vs family) | +2,079 (+3.2%) | [−877, +6,021] | 7 / 30 |
+| G1 − G3 (6.1 Sol vs 6 Sol) | −6,178 (−8.5%) | [−22,358, +2,697] | 11 / 30 |
+| G4 − G3 (6.1 Sol vs 6 Sol) | −5,316 (−7.3%) | [−22,547, +5,504] | 11 / 30 |
+
+Reading:
+
+- **The generation swap holds.** 6.1 Sol solves the same instances with
+  14% fewer tool calls and about 8% fewer tokens. The token CIs span zero.
+  Most of the difference sits in one template: DIAGNOSTICS took 569,062
+  tokens on 6 Sol and 339,522 / 342,168 on 6.1 Sol.
+- **The override shows no effect on this corpus.** Both override arms land
+  1.9–3.2% above the family block, with nearly identical tool calls and
+  turns. That is within one same-text drift, and every CI spans zero. It is
+  not worse by the MODEL-ONBOARDING §8 rule, so it stays, recorded as
+  unproven for 6.1 Sol.
+
+### 2026-10-02 `claude-sonnet-5-5` override evaluation (PR #1975 follow-up)
+
+This evaluation asks whether the Sonnet 5.5 override beats the `claude`
+family block. The override is that block plus one clause: once the checks
+pass, start no further review rounds and no reviewer sub-agents. Anthropic's
+prompting guide reports that clause cutting session cost by about a third at
+`max`.
+
+The setup:
+
+- The same corpus as above.
+- The `hermes_current_session` path through Hermes' `anthropic` provider on
+  the Claude Code OAuth subscription. No API key was configured.
+- `claude-sonnet-5-5` at `max`.
+- The same omh and Hermes builds as the 6.1 Sol evaluation, running in
+  parallel with it.
+
+Arms:
+
+- **S1** `optimized`: 23:00Z to 00:04Z.
+- **S2** `family`: 01:01Z to 02:56Z. A shell time limit stopped the first S2
+  attempt at 23 instances. It was discarded and the arm was rerun from the
+  start.
+- **S3** `optimized` again, for same-text drift: 02:56Z to 03:51Z.
+
+During S2 the provider slowed sharply, and one instance failed as
+`process_crash` (E-BUGFIX-155921). Pairs against S2 drop that instance
+(n = 29). Records report `cost_usd` as a list-price estimate, because Hermes
+marks only the Codex route as subscription-included.
+
+| Arm | What the prompt carries | Passed | Total tokens | Mean tokens | Tool calls | API turns |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| S1 optimized | `MODEL_HIGH_EFFORT_CALIBRATIONS["claude-sonnet-5-5"]` | 18 / 30 | 4,817,735 | 160,591 | 402 | 230 |
+| S2 family | inherited `HIGH_EFFORT_CALIBRATIONS["claude"]` | 17 / 30 (1 crash) | 4,431,596 | 152,814 (29) | 411 | 223 |
+| S3 optimized | same as S1, repeated | 18 / 30 | 4,348,654 | 144,955 | 375 | 217 |
+
+Paired token deltas per instance, with the same bootstrap:
+
+| Pair | Mean delta | 95% CI | Instances lower |
+| --- | ---: | --- | ---: |
+| S3 − S1 (same text, drift) | −15,636 (−9.7%) | [−24,697, −6,831] | 22 / 30 |
+| S1 − S2 (override vs family) | +6,100 (+4.0%) | [−4,186, +14,503] | 11 / 29 |
+| S3 − S2 (override vs family) | −9,573 (−6.3%) | [−16,762, −2,254] | 17 / 29 |
+
+Reading:
+
+- **Drift is the largest effect here.** Re-running the same prompt moved
+  tokens by about 10%, with a CI that excludes zero. The two override arms
+  land on either side of the family arm.
+- **The vendor's one-third cut does not reproduce.** This corpus may not
+  exercise what the clause targets: no instance asks for a review, and the
+  Hermes child path ran no reviewer sub-agents to suppress.
+- **The override stays, unproven.** It is not worse by the MODEL-ONBOARDING
+  §8 rule. A follow-up should use a corpus where the model actually starts
+  extra review rounds.
