@@ -764,11 +764,11 @@ Rules, all applied at freeze time:
   so a frozen contract names the exact basis it was resolved from; the
   file's presence is the opt-in, and codex/claude-only contracts stay
   byte-identical across machines that have not created it. The built-in
-  `codex` table names `gpt-6-sol` in every category GPT-6 Astra does not
-  head; the Codex client repository's model catalog lists 0.155.0 as Sol's
-  minimum client version (official-client, openai/codex `models.json`; the
-  catalog the backend serves does not carry the field), so run Codex CLI
-  0.155.0 or later for those rows or override them. Edit it with
+  `codex` table names `gpt-6.1-sol` in every category GPT-6 Astra does not
+  head; the Codex client repository's model catalog lists 0.153.0 as its
+  minimum client version (official-client, openai/codex `models.json`, read
+  2026-10-01), so run Codex CLI 0.153.0 or later for those rows or override
+  them. Edit it with
   `omh coding category-maestro set <profile> <category> <model[:effort]>...`
   (the tail after the last colon is the effort only when it is a known level
   — off/minimal/low/medium/high/xhigh/max/auto — so colon-tagged model ids
@@ -992,6 +992,53 @@ Rules, all applied at freeze time:
   to the child. Treat the fence as confining the child's own writes, not as
   containing a child that is actively trying to escape on a host where those
   sockets are reachable.
+
+  **Windows has no backend, and that is a measured answer** (#1357). The two
+  native mechanisms that could draw "writes outside the unit root fail, reads
+  are unrestricted" without a dependency were both built with `ctypes` and run
+  on the GitHub-hosted Windows runner (elevated, 2026-10-01). Each fails the
+  contract, on a different side:
+
+  - A **write-restricted token** (`CreateRestrictedToken` with
+    `WRITE_RESTRICTED`, each write root granted to its own SID) draws the file
+    boundary exactly. `python`, `git` and `node` start under it only when
+    Everyone and RESTRICTED are in the restricting set as well; without them
+    each exits `0xC0000142` during DLL initialization. With them, writes into
+    the granted root succeeded and all fifteen other locations tried were
+    refused: the profile, `AppData\Local`, `AppData\Roaming`,
+    `AppData\LocalLow`, `%TEMP%` and a directory under it, `C:\Users\Public`,
+    `ProgramData`, `C:\`, `D:\`, `C:\Windows\Temp`, `C:\Windows\Tasks`,
+    `C:\Windows\tracing`, `System32\Tasks` and `spool\drivers\color`. What it
+    breaks is the child's own pipes. A named pipe created with default security
+    gets a fixed DACL that ignores the token's default DACL; on the runner it
+    read `O:BAD:(A;;FA;;;SY)(A;;FA;;;BA)(A;;FA;;;BA)(A;;FR;;;WD)(A;;FR;;;AN)`
+    whether or not a default DACL was set. Write access to it therefore needs
+    SYSTEM, Administrators or the pipe's owner in the restricting set, and the
+    creator could not open its own pipe for writing (error 5, read-only opens
+    succeeded). Node's `child_process` with piped stdio failed with `EPERM`,
+    while `ignore` and `inherit` stdio worked. A coding owner CLI runs its tools
+    as piped children, so this fence would fail dispatch the way #1358 failed
+    it on macOS. Putting the owner or Administrators in the restricting set to
+    fix that readmits nearly every path the user can write.
+  - **Low integrity** (a Low-IL token, write roots labelled Low) keeps pipes
+    working: a piped `node` child, `git --version` and a write into the
+    labelled root all succeeded, and the root's parent, `%TEMP%` and the profile
+    were refused. Low, however, is one level shared by the whole host. A second
+    unit's labelled worktree and `AppData\LocalLow` were both writable from the
+    first unit's child. The owner CLI's state would also have to be labelled
+    Low to stay writable, which is a durable change: any Low process on the
+    host, including every other confined unit of any owner, could then write
+    `~/.claude` or `~/.codex`.
+
+  AppContainer was not built. It confines reads too, so a CLI could not read
+  its own install, the repository or `~/.gitconfig` unless the package SID were
+  granted read across the user's tree, which is the opposite of the read
+  boundary the receipt attests. Not measured: a non-elevated host, and an owner
+  CLI other than `node` under either token. A Windows dispatch therefore stays
+  unconfined and records `no_os_confinement_backend_on_this_platform`. Shipping
+  the Low-integrity variant would mean deciding to accept a write domain shared
+  across the host and a persistent label on owner state.
+
   `executor_honours_declared_targets` is advisory everywhere: a unit's
   file boundary is frozen in the contract and checked for overlaps at prepare
   time, but nothing constrains the spawned CLI to it at runtime.

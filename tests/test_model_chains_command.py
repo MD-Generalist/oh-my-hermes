@@ -18,7 +18,7 @@ from unittest.mock import patch
 
 from _cli_harness import run_cli
 
-from omh.commands.model_chains import _ultrafast_variant
+from omh.commands.model_chains import _parsechain_text, _ultrafast_variant
 from omh.plugin_bundle.omh.hermes_delegation import HERMES_MIXTURE_CATEGORY_CHAINS
 
 
@@ -89,7 +89,7 @@ class ModelChainsSetTests(unittest.TestCase):
                 _base(root) + ["model-chains", "set", "deep", "--clear"], output_json=False
             )
             self.assertEqual((status, stderr), (0, ""))
-            self.assertIn("deep: gpt-6-sol:high, deepseek-flash:high (default)", stdout)
+            self.assertIn("deep: gpt-6.1-sol:high, deepseek-flash:high (default)", stdout)
             document = json.loads(_chains_path(root).read_text(encoding="utf-8"))
             self.assertNotIn("deep", document["categories"])
 
@@ -602,6 +602,23 @@ class ModelChainsSetupTerminalTests(unittest.TestCase):
                 json.loads(_chains_path(root).read_text(encoding="utf-8"))["categories"],
                 {"writing": [{"model": "qwen3-coder", "reasoning_effort": "high"}]},
             )
+
+
+class ChainTextParserTests(unittest.TestCase):
+    """A model id may carry a colon (named providers, tagged ids), so only a
+    known effort after the last colon is read as the entry's effort."""
+
+    def test_the_tail_is_an_effort_only_when_it_names_one(self):
+        self.assertEqual(
+            _parsechain_text("kimi-k3:low, custom:cli-proxy:xhigh, qwen3:8b, custom:cli-proxy"),
+            (("kimi-k3", "low"), ("custom:cli-proxy", "xhigh"), ("qwen3:8b", ""), ("custom:cli-proxy", "")),
+        )
+
+    def test_malformed_colon_forms_are_refused(self):
+        for text in ("custom::proxy", "custom: proxy:low", ":low", "custom:proxy!:low"):
+            with self.subTest(text=text):
+                with self.assertRaises(ValueError):
+                    _parsechain_text(text)
 
 
 if __name__ == "__main__":

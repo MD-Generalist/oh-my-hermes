@@ -246,6 +246,102 @@ class ProfileStoreChoiceTests(_IsolatedHome):
         self.assertEqual(plugin_omh_home_setting(self.profile_config(own)), profile_store.as_posix())
 
 
+    def update_at(self, store: Path) -> None:
+        status, _stdout, stderr = run_cli(
+            ["--omh-home", str(store), "--hermes-home", str(self.hermes_home), "update", "--json"],
+            output_json=False,
+        )
+        self.assertEqual(status, 0, stderr)
+
+    def test_update_takes_back_its_setting_once_the_profile_env_names_a_store(self) -> None:
+        # #1973: the `.env` choice came after OMH's write, and the setting
+        # outranks it in the plugin's resolver until it goes.
+        bare = self.profile("bare", "version: 1\n")
+        store = self.root / "isolated-omh"
+        self.setup_at(store)
+        self.assertEqual(plugin_omh_home_setting(self.profile_config(bare)), store.as_posix())
+        (bare / ".env").write_text("OMH_HOME=/stores/bot\n", encoding="utf-8")
+
+        self.update_at(store)
+
+        self.assertNotIn("omh_home", self.profile_config(bare))
+        self.assertNotIn("entries:", self.profile_config(bare))
+
+    def test_a_setting_written_back_after_the_reclaim_is_the_persons(self) -> None:
+        # The reclaim clears OMH's record, so the same value written again
+        # by hand is no longer OMH's to take.
+        bare = self.profile("bare")
+        store = self.root / "isolated-omh"
+        self.setup_at(store)
+        (bare / ".env").write_text("OMH_HOME=/stores/bot\n", encoding="utf-8")
+        self.update_at(store)
+        restored = ensure_plugin_omh_home(self.profile_config(bare), store)
+        self.assertTrue(restored.changed, restored.message)
+        (bare / "config.yaml").write_text(restored.text, encoding="utf-8")
+
+        self.update_at(store)
+
+        self.assertEqual(plugin_omh_home_setting(self.profile_config(bare)), store.as_posix())
+
+    def test_setup_reports_the_reclaim_in_the_profile_row(self) -> None:
+        bare = self.profile("bare")
+        store = self.root / "isolated-omh"
+        first = self.setup_at(store)
+        self.assertNotIn("omh_home_reclaimed", first["hermes_profiles"][0])
+        (bare / ".env").write_text("OMH_HOME=/stores/bot\n", encoding="utf-8")
+
+        payload = self.setup_at(store)
+
+        rows = {row["profile"]: row for row in payload["hermes_profiles"]}
+        self.assertEqual(rows["bare"]["omh_home_reclaimed"], store.as_posix())
+
+    def test_update_keeps_a_setting_it_did_not_write_beside_an_env_store(self) -> None:
+        own_setting = "plugins:\n  entries:\n    omh:\n      settings:\n        omh_home: /stores/own\n"
+        own = self.profile("own", own_setting, env="OMH_HOME=/stores/bot\n")
+        store = self.root / "isolated-omh"
+        self.setup_at(store)
+
+        self.update_at(store)
+
+        self.assertEqual(plugin_omh_home_setting(self.profile_config(own)), "/stores/own")
+
+    def test_update_keeps_a_value_changed_by_hand_after_it_wrote_one(self) -> None:
+        bare = self.profile("bare")
+        store = self.root / "isolated-omh"
+        self.setup_at(store)
+        elsewhere = self.root / "elsewhere"
+        (bare / "config.yaml").write_text(
+            self.profile_config(bare).replace(f"'{store.as_posix()}'", f"'{elsewhere.as_posix()}'"), encoding="utf-8"
+        )
+        (bare / ".env").write_text("OMH_HOME=/stores/bot\n", encoding="utf-8")
+
+        self.update_at(store)
+
+        self.assertEqual(plugin_omh_home_setting(self.profile_config(bare)), elsewhere.as_posix())
+
+    def test_update_keeps_its_setting_on_a_profile_without_an_env_store(self) -> None:
+        bare = self.profile("bare")
+        other = self.profile("other", env="OPENAI_API_KEY=x\n")
+        store = self.root / "isolated-omh"
+        self.setup_at(store)
+
+        self.update_at(store)
+
+        self.assertEqual(plugin_omh_home_setting(self.profile_config(bare)), store.as_posix())
+        self.assertEqual(plugin_omh_home_setting(self.profile_config(other)), store.as_posix())
+
+    def test_update_under_a_default_primary_leaves_an_env_profile_alone(self) -> None:
+        envbot = self.profile("envbot", "version: 1\n", env="OMH_HOME=/stores/bot\n")
+        store = self.root / ".omh"
+        self.setup_at(store)
+        before = self.profile_config(envbot)
+
+        self.update_at(store)
+
+        self.assertEqual(self.profile_config(envbot), before)
+        self.assertNotIn("omh_home", before)
+
+
 class DoctorBindingTests(_IsolatedHome):
     def doctor_row(self, store: Path) -> dict:
         _status, stdout, _stderr = run_cli(
@@ -332,6 +428,46 @@ class DoctorProfileBindingTests(_IsolatedHome):
                 )
         store = self.root / "isolated-omh"
         self.setup_at(store, "--with-plugin")
+
+        self.assertEqual(self.doctor_rows(store), {})
+
+    def assert_foreign_setting_shadowing_the_env_store_warns(self, store: Path) -> None:
+        # #1973: update takes back only its own write, so a setting somebody
+        # else put there keeps outranking the `.env` choice, and doctor says so.
+        home = self.hermes_home / "profiles" / "own"
+        home.mkdir(parents=True)
+        (home / "config.yaml").write_text(
+            "plugins:\n  entries:\n    omh:\n      settings:\n        omh_home: /stores/own\n", encoding="utf-8"
+        )
+        self.setup_at(store, "--with-plugin")
+        self.assertEqual(self.doctor_rows(store), {})
+        baseline = self.doctor_status
+        (home / ".env").write_text("OMH_HOME=/stores/bot\n", encoding="utf-8")
+
+        rows = self.doctor_rows(store)
+
+        row = rows["plugin_omh_home_binding:own"]
+        self.assertTrue(row["ok"], row)
+        self.assertEqual(row["severity"], "warning", row)
+        self.assertIn("/stores/own", row["message"])
+        self.assertIn(str(home / ".env"), row["message"])
+        self.assertIn(str(home / "config.yaml"), row["next_action"])
+        self.assertEqual(self.doctor_status, baseline)
+
+    def test_a_foreign_setting_shadowing_the_env_store_warns(self) -> None:
+        self.assert_foreign_setting_shadowing_the_env_store_warns(self.root / "isolated-omh")
+
+    def test_a_foreign_setting_shadowing_the_env_store_warns_under_a_default_primary(self) -> None:
+        # The shadow does not depend on where the primary's store is.
+        self.assert_foreign_setting_shadowing_the_env_store_warns(self.root / ".omh")
+
+    def test_the_setting_omh_wrote_beside_an_env_store_is_not_reported(self) -> None:
+        # Update takes it back; doctor reports only what update will not fix.
+        home = self.hermes_home / "profiles" / "bare"
+        home.mkdir(parents=True)
+        store = self.root / "isolated-omh"
+        self.setup_at(store, "--with-plugin")
+        (home / ".env").write_text("OMH_HOME=/stores/bot\n", encoding="utf-8")
 
         self.assertEqual(self.doctor_rows(store), {})
 

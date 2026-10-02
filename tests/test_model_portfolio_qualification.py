@@ -186,6 +186,7 @@ class PortfolioTests(unittest.TestCase):
             # gpt-6-astra) was widened, not appended: the table is keyed by id.
             "gpt-5.6-sol": ("gpt-6-sol", "2026-09-23"),
             "gpt-5.6-terra": ("gpt-6-sol", "2026-09-23"),
+            "gpt-6-sol": ("gpt-6.1-sol", "2026-10-01"),
         }
         rows = rows_for(*successors)
         for model, (successor, decision_date) in successors.items():
@@ -200,8 +201,8 @@ class PortfolioTests(unittest.TestCase):
         # `all_shipped_chains` scope changes the disposition is held on a
         # patched row shaped like GPT-5.6 Sol's 2026-09-11 decision.
         scoped = {**RETIREMENT_DECISIONS["gpt-5.6-sol"], "successor": "gpt-6-astra", "scope": "frontier_slots"}
-        with patch.dict(RETIREMENT_DECISIONS, {"gpt-6-sol": scoped}):
-            sol = rows_for("gpt-6-sol")["gpt-6-sol"]
+        with patch.dict(RETIREMENT_DECISIONS, {"gpt-6.1-sol": scoped}):
+            sol = rows_for("gpt-6.1-sol")["gpt-6.1-sol"]
         self.assertEqual(sol["disposition"], "recommended")
         self.assertEqual(sol["retirement_decisions"][0]["successor"], "gpt-6-astra")
         self.assertEqual(sol["retirement_decisions"][0]["disposition"], "excluded_superseded")
@@ -211,7 +212,7 @@ class PortfolioTests(unittest.TestCase):
         report = build_model_portfolio_qualification(
             {"models": ["anthropic/claude-opus-5", "claude-opus-5-5", "gpt-5.6-luna",
                         "deepseek-v3.2", "deepseek-flash", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-6-sol",
-                        "gpt-6-luna-9"]},
+                        "gpt-6.1-sol", "gpt-6-luna-9"]},
             required_models=["claude-opus-5-5"],
         )
         rows = {row["requested_model"]: row for row in report["comparison"]["models"]}
@@ -231,10 +232,15 @@ class PortfolioTests(unittest.TestCase):
                 "decision_date": "2026-09-23", "successor_in_inventory": True, "advisory": True,
             })
             self.assertEqual(rows[model]["disposition"], "excluded_superseded")
+        # GPT-6 Sol's own successor (2026-10-01), present in this inventory.
+        self.assertEqual(rows["gpt-6-sol"]["superseded_by"], {
+            "successor": "gpt-6.1-sol", "scope": "all_shipped_chains",
+            "decision_date": "2026-10-01", "successor_in_inventory": True, "advisory": True,
+        })
         # No version-string parsing: the successor and an id that merely
         # sorts later carry no link of their own.
         self.assertIsNone(rows["claude-opus-5-5"]["superseded_by"])
-        self.assertIsNone(rows["gpt-6-sol"]["superseded_by"])
+        self.assertIsNone(rows["gpt-6.1-sol"]["superseded_by"])
         self.assertIsNone(rows["gpt-6-luna-9"]["superseded_by"])
         # Advisory only: the link neither blocks the report nor fails the command.
         self.assertFalse(report["blocking"])

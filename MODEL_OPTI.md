@@ -48,7 +48,7 @@ identical prompt. Nothing else about the pipeline changes per model.
 | `gemini` | `gemini-` | `gemini-3.1-pro` |
 | `kimi` | `kimi-` | `kimi-k3`, `kimi-k3-ultrafast` |
 | `glm` | `glm-` | `glm-5.3`, `glm-5.3-flash`, `glm-5.2-ultrafast` |
-| `grok` | `grok-` | `grok-code-fast-1` |
+| `grok` | `grok-` | `grok-build-0.1` |
 | `qwen` | `qwen-`, aliases `qwen3-` and `qwen3.` | `qwen3-coder`, `qwen/qwen3.8-flash` |
 | `deepseek` | `deepseek-` | `deepseek-v4.1-flash`, `deepseek-flash` (the first-party pointer), `deepseek/deepseek-v4.1-flash` |
 | `mistral` | `mistral-` | Mistral Large / Medium ids |
@@ -456,7 +456,11 @@ pairing so a benchmark claim can never mix in other prompt changes.
     beyond this corpus, and `low` vs `medium` at any placement other than
     `quick` / `simple-work`. Archive (outside git, owner checkout):
     `.omc/research/opus55-luna-bench-2026-09-24/`.
-- **GPT-6 Sol: documented traits, no counter shipped.** `gpt-6-sol` has an
+- **GPT-6 Sol: documented traits, no counter shipped.** Since 2026-10-01
+  GPT-6 Sol holds no shipped slot (GPT-6.1 Sol took all of them, see
+  `gpt-6.1-sol` below); it stays recognized, priced, and on this family
+  block, byte-stable, for a machine-level override. What follows records
+  the 2026-09-23 placement. `gpt-6-sol` has an
   exact contract but no exact calibration, the Luna precedent. Unlike Luna,
   its placement reaches the calibrated tiers: it heads `deep` at `high`,
   where the subagent block fires, and it is a `main` role suggestion, so it
@@ -551,7 +555,7 @@ pairing so a benchmark claim can never mix in other prompt changes.
   with no textual CoT; that is not evidence of less overthinking, lower
   latency, or better task results, and a test pins the override free of it.
 - **Throughput overlay:** unchanged. The `gpt_sol_codex_handoff` overlay stays
-  gated to `*-sol` (GPT-6 Sol included, by decision) and the Hermes
+  gated to `*-sol` (GPT-6 Sol and GPT-6.1 Sol included, by decision) and the Hermes
   `ultrawork` overlay stays family-wide;
   neither has an Astra measurement, so Astra on codex gets the base rules.
 - **Routing:** heads `ultrabrain` and the GPT slot of `architect` in both
@@ -559,8 +563,9 @@ pairing so a benchmark claim can never mix in other prompt changes.
   superseded generations left every shipped chain (owner decision). Since
   2026-09-23 GPT-6 Sol holds every slot GPT-5.6 Sol and GPT-5.6 Terra held
   (the shared last resort, the head of `deep`, the `main` suggestion, and
-  the codex lighter categories), each at its previous effort; Astra lists
-  at 5x Sol, so it heads no cost-tier slot. The Luna lane is a cost-tier
+  the codex lighter categories), each at its previous effort, and since
+  2026-10-01 GPT-6.1 Sol holds every one of them; Astra lists at 5x Sol, so
+  it heads no cost-tier slot. The Luna lane is a cost-tier
   pick and stays as it was. An
   account the staged rollout has not reached gets a provider rejection and
   the chain falls through to the next ecosystem.
@@ -601,7 +606,85 @@ pairing so a benchmark claim can never mix in other prompt changes.
   evaluation, and system card, read 2026-09-04), plus the 2026-09-05
   measurement above for the first sentence's wording.
 
-### `claude` (Fable 5.1, Mythos 5.1, Fable 5, Opus 5.5, Opus 5, Sonnet, Haiku)
+### `gpt-6.1-sol` (GPT-6.1 Sol, exact-model override on the `gpt` family)
+
+- **Documented contract:** `gpt-6.1-sol` (released 2026-09-29) is the exact
+  contract; `gpt-6.1-sol-pro` is its declared pro-reasoning-mode projection
+  (the Astra `-pro` shape; no `-fast` / `-flex` row) and a dated
+  `gpt-6.1-sol-YYYY-MM-DD` id projects onto the base. 1,050,000-token
+  context, 922,000 max input (derived: context minus output), 128,000 max
+  output, knowledge cutoff 2026-04-30. Reasoning effort `low` through `max`
+  with `medium` the API default; unlike GPT-6 Sol there is no `none` rung,
+  so `off` and `minimal` are raised to the `low` floor on record
+  (`floor_raised`), Astra's shape. The Codex client's ladder (no `none`,
+  plus a Codex-only `ultra` that no OMH ladder carries) and its `low`
+  default are recorded in `surface_notes` / `surface_efforts`.
+- **Model trait (official, latest-model guide, read 2026-10-01):** the
+  guide states every trait for the GPT-6 family "from behavior observed
+  with GPT-6 Astra": asks the user a question more readily; more sensitive
+  to instructions contained in skills; tends toward detailed, formatted
+  responses; may delegate less often than desired; thorough in testing
+  before considering a task complete. Official-client: the vendor's Codex
+  model catalog gives 6.1 Sol GPT-6 Astra's base prompt plus one
+  apology-restraint paragraph, where GPT-6 Sol keeps an older prompt.
+- **What OMH injects:** Astra's two blocks, byte for byte
+  (`MODEL_HIGH_EFFORT_CALIBRATIONS["gpt-6.1-sol"]` and
+  `MODEL_COMPOSITION_CALIBRATIONS["gpt-6.1-sol"]` equal the `gpt-6-astra`
+  entries; a test pins the equality). Subagent: the user's instructions
+  outrank skill text and the numbered criteria are the complete task; ask
+  one focused question only when a missing input would materially change
+  the result, otherwise state the assumption and proceed; size tests to the
+  change. Composer: the user's intent above skill text in each unit;
+  delegate every independent unit; set each unit's effort from its task
+  state, the documented floor (`low`) for routine follow-ups.
+- **Explicitly not imported:** every sentence that pushes the model to keep
+  working — the guide's "bias towards action and carry the user's intended
+  task to completion", "persist until the user's intended goal is
+  complete", "Do not settle for a partial or 'helpful enough' solution",
+  the Codex prompt's "continue work without ending the turn to clarify with
+  the user", and every "otherwise, continue toward completing the task"
+  tail. The 2026-09-05 Astra measurement is why: the one clause with that
+  reading cost +5,419 tokens per instance for the same pass set.
+- **Measured (2026-10-02, `benchmarks/live-model-tools/v1`):** four arms at
+  `high` on the Codex subscription, 30 instances each. Two `optimized` arms,
+  one `family` arm, and one GPT-6 Sol arm. Every arm passed the same 18
+  instances.
+  - The override cost +1.9% and +3.2% tokens per instance against the
+    family block, with nearly identical tool calls (351 / 352 vs 360). Both
+    CIs span zero, and same-text drift was +1.3%. No measurable effect
+    either way. It stays, unproven for 6.1 Sol.
+  - Against GPT-6 Sol, 6.1 Sol used about 8% fewer tokens (CI spans zero)
+    and 14% fewer tool calls (351 vs 409) for the same pass set. That
+    supports the slot swap.
+  - Full tables are in the benchmark README.
+- **Version rule:** the override is keyed to `gpt-6.1-sol` only (and the
+  forms that project onto it). GPT-6 Sol keeps the `gpt` family block
+  unchanged; a later Sol generation gets this block only through its own
+  row and its own evidence.
+- **Throughput overlay:** `gpt_sol_codex_handoff` matches `*-sol`, so 6.1
+  Sol as a Codex main agent inherits it, consistent with taking every GPT-6
+  Sol slot (owner decision, 2026-10-01); `tests/test_executor_prompting.py`
+  names `gpt-6.1-sol` so the inheritance is reviewed, not a suffix accident.
+- **Routing:** holds every slot GPT-6 Sol held, each at its effort: `deep`
+  head at `high`, `last_resort.any` at `medium`, `role_suggestions.main` at
+  `high`, and the Maestro `codex` rows GPT-6 Astra does not head. The five
+  `codex` categories that left the effort to the CLI now name `medium`,
+  because the Codex catalog defaults GPT-6 Sol to `medium` but 6.1 Sol to
+  `low`, so an empty effort would have lowered them silently.
+- **Pricing:** 2/10 list, cached input 0.10 (5% of input, an
+  `APPROX_CACHE_READ_RATIO` row), cache write 2.5; `-pro` inherits the base
+  row through its projection (pro mode bills at the selected model's
+  standard rates). Long-context, batch/flex, and fast-mode multipliers stay
+  in the contract.
+- **Source:** official (model page, latest-model and reasoning guides,
+  pricing page, API changelog, read 2026-10-01) and official-client (the
+  openai/codex model catalog, read 2026-10-01). The wording is
+  Astra-measured (2026-09-05); for 6.1 Sol it is editorial and unmeasured.
+  The named follow-up is a `family` vs `optimized` pair on `gpt-6.1-sol` at
+  `high` (the `deep` rung), and `gpt-6-sol` vs `gpt-6.1-sol` at `medium`
+  (the last-resort rung).
+
+### `claude` (Fable 5.1, Mythos 5.1, Fable 5, Opus 5.5, Opus 5, Sonnet 5.5, Sonnet 5, Haiku)
 
 - **Model trait:** conscientious to a fault. Left alone it grows the
   checklist mid-run ("while I'm here…"), adds just-to-be-sure verification
@@ -742,7 +825,7 @@ pairing so a benchmark claim can never mix in other prompt changes.
   (official,
   https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-opus-5-5.md;
   the Opus 5.5 migration guide's checklist says the same), `medium` is the rung Opus 5.5 already carries in
-  `unspecified-high` and `capable`, and GPT-6 Sol beside it already names `medium`. No
+  `unspecified-high` and `capable`, and GPT-6.1 Sol beside it already names `medium`. No
   calibration block fires at `medium`, and the vendor order is unchanged.
   Named follow-up: bench arm O4 (Opus 5.5 at `medium` on
   `benchmarks/live-model-tools/v1`), the arm skipped above.
@@ -756,6 +839,59 @@ pairing so a benchmark claim can never mix in other prompt changes.
   2026-09-23 push-sentence removal above is measured on 5.1 in this repo. The
   block as a whole is not measured against no calibration, and the Fable 5 vs
   5.1 benchmark pair is still the named follow-up.
+
+### `claude-sonnet-5-5` (Claude Sonnet 5.5, exact-model override on the `claude` family)
+
+- **Documented contract:** `claude-sonnet-5-5` (released 2026-09-28,
+  retirement not sooner than 2027-09-28) is the exact contract; the Bedrock
+  id `anthropic.claude-sonnet-5-5` and OpenRouter's dotted
+  `claude-sonnet-5.5` are declared projections. 1M context, 128K max output,
+  list price 2/10 per MTok. Effort `low` through `max`, API default `high`
+  (recalibrated against Sonnet 5). `thinking.type=disabled` and a manual
+  budget return HTTP 400; the API's one thinking-off mode,
+  `between_tools`, is a request neither Hermes nor Claude Code sends, so
+  `off` / `none` / `minimal` are raised to `low` on record and
+  `omh_delegate_route` refuses a no-thinking effort for it.
+- **Placement:** none (owner decision, 2026-10-01). No pinned Sonnet id
+  sits in a shipped chain. The Maestro Claude Code rows `unspecified-low`
+  and `artistry` name the `sonnet` alias, which Claude Code resolves to
+  Sonnet 5.5 on the Anthropic API from v2.1.284 and to Sonnet 4.5 on
+  Bedrock, Google Cloud, and Foundry; that alias carries no contract, so the
+  override fires only when a request names `claude-sonnet-5-5` (or a form
+  that projects onto it) at `high` or above.
+- **Model trait (official, Sonnet 5.5 prompting guide, read 2026-10-01):**
+  "At these levels [`xhigh`, `max`] the model is especially thorough. After
+  it finishes a task, it can start its own rounds of review and
+  verification, sometimes with subagents." It also adds tests and docs
+  nobody asked for (the family block already counters that), and at `low`
+  and `medium` it can stop to check in early.
+- **What OMH injects (subagent):** the `claude` family block with one clause
+  added to its verification sentence: once the criteria's checks pass the
+  work is done; start no further review rounds and no reviewer sub-agents
+  unless a criterion asks for one. Same three-constraint budget as the
+  family block. **Composer:** the family block verbatim.
+- **Evidence:** vendor-measured, and not reproduced in OMH. The guide says
+  the stop instruction "stopped the model from launching reviewer subagents
+  and cut session cost by about a third, with no change in quality" on
+  coding tasks at `max`.
+  - **OMH run (2026-10-02, `benchmarks/live-model-tools/v1` at `max`, Claude
+    Code subscription):** two `optimized` arms and one `family` arm, 30
+    instances each.
+  - **Result:** the override arms used +4.0% and −6.3% tokens per instance
+    against the family block, and same-text drift was −9.7% (CI excludes
+    zero). Drift exceeds any override effect, and the pass sets match (18,
+    18, and 17 plus one provider crash).
+  - **Why it may not reproduce:** the corpus asks for no review, and the
+    Hermes child path ran no reviewer sub-agents, so the clause may have
+    nothing to suppress here.
+  - **Decision:** the block stays, unproven, because it is not worse.
+- **Explicitly not imported:** the guide's fix for early check-ins at low
+  effort ("Keep working until everything the user asked for is done"). It
+  pushes the model to keep working, which `docs/MODEL-ONBOARDING.md` §2
+  forbids; the guide's first remedy, a higher effort, is a placement lever.
+- **Version rule:** keyed to `claude-sonnet-5-5` and the forms that project
+  onto it. Sonnet 5, Opus 5.5, and Fable 5.1 keep the family block
+  byte-stable.
 
 ### `gemini` (Gemini 3.1 Pro)
 
@@ -774,7 +910,16 @@ pairing so a benchmark claim can never mix in other prompt changes.
 - **Source:** observed failure modes in live usage (authored in the
   per-family calibration commit; no upstream text existed for this shape).
 
-### `grok` (Grok Code Fast)
+### `grok` (Grok Build 0.1, formerly Grok Code Fast)
+
+- **Generation note (2026-10-01):** xAI retired Grok Code Fast on
+  2026-05-15; its model page lists `grok-code-fast-1`, the bare
+  `grok-code-fast`, and `grok-code-fast-1-0825` as aliases of
+  `grok-build-0.1`, so on xAI's API the `x_platform_data` slot already ran
+  Build 0.1 before the chain named it. Other routes may differ: the Hermes
+  retirement map sends `grok-code-fast-1` to `grok-4.3`. The block below was written for Grok Code Fast and carries over
+  unchanged; it is unmeasured on Build 0.1. xAI documents no effort
+  parameter for it, and Hermes sends none.
 
 - **Model trait:** speed-first, search-heavy. The risk profile is the inverse
   of the deep reasoners: not over-verification but *under*-verification —
@@ -987,8 +1132,8 @@ pairing so a benchmark claim can never mix in other prompt changes.
   cache hits → byte-identical preamble; three-rung ladder with a published
   mapping → name a documented rung on every unit.
 - **Routing:** takes the slots DeepSeek V3.2 held — the reasoning-capable
-  budget fall-through behind GPT-6 Sol on `deep` at `high` (behind GPT-5.6
-  Terra until 2026-09-23), and the
+  budget fall-through behind GPT-6.1 Sol on `deep` at `high` (behind GPT-5.6
+  Terra until 2026-09-23, GPT-6 Sol until 2026-10-01), and the
   DeepSeek entry on `unspecified-low` at `low`. Both efforts are documented
   rungs. The chain alias is `deepseek-flash`, the id the vendor's API
   serves and Hermes forwards: the first-party endpoint rejects the
@@ -1005,7 +1150,7 @@ pairing so a benchmark claim can never mix in other prompt changes.
   with the other superseded generations on 2026-09-11 and stays
   recognized, priced, and provider-mapped for a machine-level override. It
   does not head `deep`: that lane was Terra's by owner decision (#1313)
-  and is GPT-6 Sol's since 2026-09-23, and no OMH measurement of this model
+  was GPT-6 Sol's from 2026-09-23 and is GPT-6.1 Sol's since 2026-10-01, and no OMH measurement of this model
   exists yet to argue otherwise.
 - **What the Hermes lane does with it (observed in the Hermes Agent source,
   v0.21.1 and origin/main, 2026-09-11 — recorded so nobody looks for an
@@ -1453,7 +1598,8 @@ choose models by, not a guarantee for another persona or skill.
 | five declared Astra mode/tier aliases | yes → `gpt` | yes, inherited from canonical `gpt-6-astra` | bounded declared inheritance for contract, effort, calibration, provider/category metadata, and price; unknown suffixes remain missing |
 | `deepseek-v4.1-flash` (exact-model override) | yes → `deepseek` | yes, both override tables, resolved before the family block | exact documented contract (three-rung ladder, no floor) plus stop-shaped counters for the documented traits; the family-vs-optimized pair is the named follow-up, blocked on a served route |
 | `deepseek-flash` (declared pointer alias) | yes → `deepseek` | yes, inherited from canonical `deepseek-v4.1-flash` | the vendor's moving "current Flash" id, declared with a read date; `deepseek-v4-flash`, `deepseek-v4-pro`, and every other DeepSeek id keep the family block |
-| `gpt-6-sol` (exact contract, no exact calibration) | yes → `gpt` | yes, through the family block | exact documented contract (the API `none`-to-`max` ladder; the Codex client's ladder recorded beside it without `none` and without the Codex-only `ultra`); no exact counter yet although `deep@high` and `main` reach the calibrated tiers, because the Codex Sol prompt's keep-working sentence is not importable and no `family` vs `optimized` pair has run; the three generation pairs are the named follow-up |
+| `gpt-6.1-sol` (exact-model override) | yes → `gpt` | yes, both override tables (Astra's wording, byte for byte), resolved before the family block | exact documented contract (Astra's `low`-floor ladder, no `none`; the Codex client's ladder recorded beside it without the Codex-only `ultra`); `gpt-6.1-sol-pro` inherits through a declared projection; editorial for 6.1 Sol, the `family` vs `optimized` pair is the named follow-up |
+| `gpt-6-sol` (exact contract, no exact calibration; retired from the shipped chains 2026-10-01) | yes → `gpt` | yes, through the family block | exact documented contract (the API `none`-to-`max` ladder; the Codex client's ladder recorded beside it without `none` and without the Codex-only `ultra`); no exact counter: while it held `deep@high` and `main` (until 2026-10-01) those slots reached the calibrated tiers, and none was added because the Codex Sol prompt's keep-working sentence is not importable and no `family` vs `optimized` pair has run; the three generation pairs are the named follow-up |
 | `gpt-6-luna`, `claude-opus-5-5` (exact contracts, no exact calibration) | yes → `gpt` / `claude` | yes, through the family block | exact documented contracts (Luna's `none`-to-`max` ladder; Opus 5.5's always-on thinking, forced-`tool_choice` 400, and 0.05x cache reads); no exact counter because neither shipped placement reaches the high-effort tier on the subagent side and the Opus composer block is kept byte-stable per the vendor's Opus 5.5 prompting guide; the old-vs-new generation pairs are the named follow-up |
 | `openai-gpt-`, `anthropic-claude-` (design-qualified aliases) | yes → `gpt` / `claude` | yes, through the design family | concrete models.dev/OpenCode serving ids carry these sub-prefixes; their catalog `base_model` fields establish the underlying design family |
 | other `openai-`, `anthropic-` vendor-qualified ids | recognized as model targets, family `unknown` | no → `generic` | vendor qualification alone does not establish a design; O-series, image, and emerging ids remain uncalibrated |
@@ -1519,7 +1665,8 @@ comparison establishes that dimension; this pass fabricates none. Caller
 not an observed model failure. Retirements carry successor, scope, and owner
 decision date. GPT-5.6 Sol's 2026-09-11 frontier-slot retirement was widened
 on 2026-09-23 to every shipped chain (successor `gpt-6-sol`), and GPT-5.6
-Terra was retired the same day to the same successor. Older ids stay
+Terra was retired the same day to the same successor. GPT-6 Sol was retired
+from every shipped chain on 2026-10-01 (successor `gpt-6.1-sol`). Older ids stay
 routable, priced, and provider-mapped.
 
 The report imports the contract audit's inventory parser, unions `models`,
@@ -1577,6 +1724,7 @@ not a stronger design-brief expectation, governs these boundaries:
   Reviewable editorial retirements already exist for Fable 5 and GLM 5.2 in
   that inventory, with the owner-decision evidence in onboarding section 4.
   GPT-5.6 Sol's frontier-slot retirement was widened to every shipped chain
-  on 2026-09-23, when GPT-6 Sol took its last-resort slot.
+  on 2026-09-23, when GPT-6 Sol took its last-resort slot; GPT-6.1 Sol took
+  that slot from GPT-6 Sol on 2026-10-01.
   Tests pin zero unsupported dominance findings separately from those honest,
   evidence-linked retirement decisions.

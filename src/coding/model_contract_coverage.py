@@ -45,8 +45,10 @@ _SOURCE_LINEAGE_KEY: Final[str] = "provenance"
 _MODEL_DOCS: Final[dict[str, tuple[str, ...]]] = {
     "gpt-6-astra": ("MODEL_OPTI.md", "docs/MODEL-ONBOARDING.md"),
     "gpt-6-sol": ("MODEL_OPTI.md", "docs/MODEL-ONBOARDING.md"),
+    "gpt-6.1-sol": ("MODEL_OPTI.md", "docs/MODEL-ONBOARDING.md"),
     "gpt-6-luna": ("MODEL_OPTI.md", "docs/MODEL-ONBOARDING.md"),
     "claude-opus-5-5": ("MODEL_OPTI.md", "docs/MODEL-ONBOARDING.md"),
+    "claude-sonnet-5-5": ("MODEL_OPTI.md", "docs/MODEL-ONBOARDING.md"),
     "deepseek-v4.1-flash": ("MODEL_OPTI.md", "docs/MODEL-ONBOARDING.md"),
     "jev-1.13.0": ("MODEL_OPTI.md", "docs/MODEL-ONBOARDING.md"),
 }

@@ -357,6 +357,44 @@ MODEL_HIGH_EFFORT_CALIBRATIONS: Final[dict[str, str]] = {
         "assumption and proceed. Size tests to the change: a reversible, low-impact edit that mirrors "
         "its implementation needs no new test, and a green check is re-run only when its inputs changed."
     ),
+    # GPT-6.1 Sol: Astra's wording, byte for byte. The vendor's Codex client
+    # gives 6.1 Sol GPT-6 Astra's base prompt (GPT-6 Sol keeps an older one),
+    # and the latest-model guide states every countered trait for the GPT-6
+    # family from behaviour observed with Astra. Measured on Astra
+    # (2026-09-05), editorial and unmeasured for 6.1 Sol until a `family` vs
+    # `optimized` pair runs. The guide's keep-working prompts are not
+    # imported. GPT-6 Sol keeps the family block.
+    "gpt-6.1-sol": (
+        "High-effort calibration: the user's instructions outrank any skill or guideline text, and "
+        "the numbered criteria are the complete task — nothing outside them is owed. Ask one focused "
+        "question only when a missing input would materially change the result; otherwise state the "
+        "assumption and proceed. Size tests to the change: a reversible, low-impact edit that mirrors "
+        "its implementation needs no new test, and a green check is re-run only when its inputs changed."
+    ),
+    # Claude Sonnet 5.5: the `claude` family block with one clause added to
+    # its verification sentence. Anthropic's Sonnet 5.5 prompting guide
+    # (read 2026-10-01) says that at `xhigh` and `max` the model "can start
+    # its own rounds of review and verification, sometimes with subagents",
+    # and that telling it to stop when checks pass "stopped the model from
+    # launching reviewer subagents and cut session cost by about a third,
+    # with no change in quality" (vendor-measured at `max`; unmeasured in
+    # OMH). The clause stops work; the guide's keep-working fix for early
+    # check-ins at low effort is not imported. Opus 5.5 and Fable 5.1 keep
+    # the family block byte-stable.
+    "claude-sonnet-5-5": (
+        "High-effort calibration: follow the numbered criteria as the complete checklist — do not "
+        "grow the checklist mid-run, and once you have enough to act, act instead of gathering more "
+        "context. Deliberate deeply only where correctness is genuinely at risk; mechanical steps run"
+        " directly and the single verification pass proves them, and once the criteria's checks pass "
+        "the work is done — start no further review rounds and no reviewer sub-agents unless a "
+        "criterion asks for one. Edit surgically rather than rewriting a file; fix only what the "
+        "criteria name and report adjacent findings instead of changing them; keep scratch checks out"
+        " of the repository, and commit tests only where a criterion asks for them or the repo "
+        "already keeps tests for this kind of change, sized like their neighbors. Add no helpers, "
+        "fallbacks, validation, flags, or shims beyond what the criteria name; when you can just "
+        "change the code, change it. Every progress claim points at a tool result from this run — a "
+        "failed check is reported with its output, a skipped step as skipped."
+    ),
     # DeepSeek V4.1 Flash, per the vendor's API guides and model card
     # (2026-09-10): thinking on by default, reasoning_content returned on
     # every tool-calling turn, post-trained on synthesized long-horizon agent
@@ -394,6 +432,18 @@ MODEL_COMPOSITION_CALIBRATIONS: Final[dict[str, str]] = {
         "evidence, and a change of effort lands on the next prepared unit rather than on a claimed "
         "mid-conversation switch."
     ),
+    # GPT-6.1 Sol: Astra's composer wording, byte for byte, on the evidence
+    # above; its documented floor is `low`, as Astra's is.
+    "gpt-6.1-sol": (
+        "Composition calibration: write the user's intent into each unit prompt above any skill "
+        "text, so a delegate that meets conflicting guidance follows the unit contract rather than "
+        "pausing. Delegate every unit that is independent of the work you keep — this model "
+        "delegates less than a fanout expects, and an undelegated independent unit is latency you "
+        "chose. Set each unit's effort from its task state: the documented floor for routine "
+        "follow-ups, deeper only while a criterion holds unresolved hard reasoning or contradictory "
+        "evidence, and a change of effort lands on the next prepared unit rather than on a claimed "
+        "mid-conversation switch."
+    ),
     "deepseek-v4.1-flash": (
         "Composition calibration: the composer runs on DeepSeek V4.1 Flash with thinking on by "
         "default and its reasoning returned on every tool turn, so the visible composition is the "
@@ -403,6 +453,19 @@ MODEL_COMPOSITION_CALIBRATIONS: Final[dict[str, str]] = {
         "across sibling units and every per-unit difference goes after it. A unit routed to this model "
         "takes low, high, or max — its documented ladder; the vendor's own table turns medium and xhigh "
         "into high, so an undocumented rung is a rung you did not choose. Validate once and stop."
+    ),
+    # Claude Sonnet 5.5: the `claude` family composition block verbatim; the
+    # two exact-model tables share one key set, and the composer already
+    # forbids a unit whose only job is re-checking the split.
+    "claude-sonnet-5-5": (
+        "Composition calibration: split only what the goal requires — no speculative units, and no "
+        "unit whose only job is re-checking the split itself; a fresh-context review of a unit's "
+        "deliverable against its criteria is a legitimate unit. Delegate a unit when it is "
+        "independent of the work you keep and its completion can be judged from the evidence it "
+        "returns; keep in line anything that finishes in a handful of tool calls. The criteria you "
+        "write are a closed checklist: state them once, completely, and freeze. Your closing report "
+        "is the reader's first look at the run — lead with the outcome in plain sentences, drop the "
+        "working shorthand, and give the one or two things you need from them."
     ),
 }
 

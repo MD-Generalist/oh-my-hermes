@@ -100,8 +100,8 @@ RECOMMENDATION_DECISIONS: Final[dict[str, tuple[str, ...]]] = {
         "categories:architect", "categories:deep-work", "categories:ultrabrain", "role_suggestions:main",
     ),
     "gpt-6-luna": ("categories:quick", "categories:simple-work"),
-    "gpt-6-sol": ("categories:deep", "last_resort:any", "role_suggestions:main"),
-    "grok-code-fast": ("domain_affinities:x_platform_data",),
+    "gpt-6.1-sol": ("categories:deep", "last_resort:any", "role_suggestions:main"),
+    "grok-build-0.1": ("domain_affinities:x_platform_data",),
     "kimi-k3": (
         "categories:architect", "categories:artistry", "categories:capable", "categories:quick",
         "categories:unspecified-high", "categories:visual-engineering", "categories:writing",
@@ -134,6 +134,10 @@ RETIREMENT_DECISIONS: Final[dict[str, dict[str, object]]] = {
         # stays in docs/MODEL-ONBOARDING.md.
         ("gpt-5.6-sol", "gpt-6-sol", "all_shipped_chains", "2026-09-23"),
         ("gpt-5.6-terra", "gpt-6-sol", "all_shipped_chains", "2026-09-23"),
+        # xAI retired Grok Code Fast on 2026-05-15 and lists its ids as
+        # aliases of Grok Build 0.1.
+        ("grok-code-fast", "grok-build-0.1", "all_shipped_chains", "2026-10-01"),
+        ("gpt-6-sol", "gpt-6.1-sol", "all_shipped_chains", "2026-10-01"),
     )
 }
 

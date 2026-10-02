@@ -95,14 +95,14 @@ class TaskScaleVocabularyTests(unittest.TestCase):
 class TaskScaleResolutionTests(unittest.TestCase):
     def test_scale_moves_the_selected_model_on_codex(self) -> None:
         # Three distinct rungs: quick -> the default working model -> ultrabrain.
-        # The first two share GPT-6 Sol and differ by effort.
+        # The first two share GPT-6.1 Sol and differ by effort.
         small = resolve_model_route("codex", role="implementation", requested_scale="small")
         standard = resolve_model_route("codex", role="implementation", requested_scale="standard")
         large = resolve_model_route("codex", role="implementation", requested_scale="large")
-        self.assertEqual(small["selected_model"], "gpt-6-sol")
+        self.assertEqual(small["selected_model"], "gpt-6.1-sol")
         self.assertEqual(small["selected_reasoning_effort"], "low")
-        self.assertEqual(standard["selected_model"], "gpt-6-sol")
-        self.assertEqual(standard["selected_reasoning_effort"], "")
+        self.assertEqual(standard["selected_model"], "gpt-6.1-sol")
+        self.assertEqual(standard["selected_reasoning_effort"], "medium")
         self.assertEqual(large["selected_model"], "gpt-6-astra")
         self.assertEqual(large["selected_reasoning_effort"], "xhigh")
 
@@ -131,7 +131,7 @@ class TaskScaleResolutionTests(unittest.TestCase):
     def test_an_unknown_scale_is_named_not_rejected(self) -> None:
         route = resolve_model_route("codex", role="implementation", requested_scale="enormous")
         self.assertEqual(route["status"], "routed")
-        self.assertEqual(route["selected_model"], "gpt-6-sol")
+        self.assertEqual(route["selected_model"], "gpt-6.1-sol")
         self.assertEqual(_scale_stage(route)["outcome"], "unknown_scale")
 
     def test_research_keeps_its_depth_dial_and_says_so(self) -> None:

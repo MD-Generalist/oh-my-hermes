@@ -190,6 +190,33 @@ class DelegationRouteWriterTest(unittest.TestCase):
         self.assertEqual(result["status"], "error")
         self.assertFalse(self.config.exists())
 
+    def test_named_provider_scalars_are_read_written_and_bounded(self):
+        self.config.write_text(
+            "model:\n  provider: custom:cli-proxy\n"
+            "delegation:\n  provider: \"custom:cli-proxy\"\n",
+            encoding="utf-8",
+        )
+        self.assertEqual(read_session_provider(self.home), "custom:cli-proxy")
+        self.assertEqual(read_delegation_route(self.home), {"provider": "custom:cli-proxy"})
+        self.config.write_text(
+            "model:\n  provider: 'custom:cli-proxy'\n"
+            "delegation:\n  provider: custom:cli-proxy\n",
+            encoding="utf-8",
+        )
+        self.assertEqual(read_session_provider(self.home), "custom:cli-proxy")
+        self.assertEqual(read_delegation_route(self.home), {"provider": "custom:cli-proxy"})
+        result = write_delegation_route(self.home, model="vendor/model", provider="custom:cli-proxy")
+        self.assertEqual(result["status"], "routed")
+        self.assertEqual(result["previous"], {"provider": "custom:cli-proxy"})
+        self.assertEqual(read_delegation_route(self.home), {"model": "vendor/model", "provider": "custom:cli-proxy"})
+        self.assertIn("provider: 'custom:cli-proxy'", self.config.read_text(encoding="utf-8"))
+        for invalid in ("custom: cli-proxy", "custom:", "custom::cli-proxy", "custom:cli-proxy!", "a" * 129):
+            with self.subTest(invalid=invalid):
+                before = self.config.read_bytes()
+                self.assertEqual(write_delegation_route(self.home, provider=invalid)["status"], "error")
+                self.assertEqual(self.config.read_bytes(), before)
+        self.assertEqual(write_delegation_route(self.home, provider="a" * 128)["status"], "routed")
+
     def test_a_symlinked_config_is_refused_not_replaced(self):
         real = self.home / "real-config.yaml"
         real.write_text("model: kimi-k3\n", encoding="utf-8")
@@ -339,6 +366,28 @@ class DelegateRouteToolTest(unittest.TestCase):
                 "reasoning_effort": "xhigh",
             },
         )
+
+    def test_named_provider_mapping_survives_set_fallback_and_clear(self):
+        self._write_overrides({"quick": [
+            {"model": "first", "reasoning_effort": "low"},
+            {"model": "second", "reasoning_effort": "low"},
+        ]})
+        self._write_provider_routes({
+            "first": {"provider": "custom:cli-proxy", "model": "vendor/first"},
+            "second": {"provider": "custom:cli-proxy", "model": "vendor/second"},
+        })
+        first = self._call(action="set", category="quick")
+        self.assertEqual(first["status"], "routed")
+        self.assertEqual(first["applied"]["provider"], "custom:cli-proxy")
+        self.assertEqual(read_delegation_route(self.home), {
+            "model": "vendor/first", "reasoning_effort": "low", "provider": "custom:cli-proxy",
+        })
+        second = self._call(action="fallback", category="quick")
+        self.assertEqual(second["status"], "fell_back")
+        self.assertEqual(second["applied"]["provider"], "custom:cli-proxy")
+        self.assertEqual(read_delegation_route(self.home)["model"], "vendor/second")
+        self.assertEqual(self._call(action="clear")["status"], "cleared")
+        self.assertEqual(read_delegation_route(self.home), {})
 
     def test_an_unrouted_alias_dispatches_unchanged_with_no_provider(self):
         self._write_provider_routes(
@@ -801,6 +850,22 @@ class DelegateRouteToolTest(unittest.TestCase):
         self.assertEqual(result["status"], "routed")
         result = self._call(action="set", model="anthropic.claude-opus-5", reasoning_effort="none")
         self.assertEqual(result["status"], "routed")
+        # Sonnet 5.5 joined on 2026-10-01 (its migration guide: `disabled` is
+        # a 400; `between_tools` is a request no Hermes build sends). Sonnet 5
+        # and the bare `sonnet` word, which Claude Code resolves to Sonnet 4.5
+        # off the Anthropic API, keep the no-thinking rung.
+        for model in (
+            "claude-sonnet-5-5",
+            "anthropic/claude-sonnet-5.5",
+            "anthropic.claude-sonnet-5-5",
+            "us.anthropic.claude-sonnet-5-5",
+        ):
+            result = self._call(action="set", model=model, reasoning_effort="none")
+            self.assertEqual(result["status"], "error", model)
+            self.assertIn("always thinks", result["error"])
+        for model in ("claude-sonnet-5", "sonnet"):
+            result = self._call(action="set", model=model, reasoning_effort="none")
+            self.assertEqual(result["status"], "routed", model)
         # Opus 5.5 at a documented rung is untouched by the guard.
         result = self._call(action="set", model="claude-opus-5-5", reasoning_effort="low")
         self.assertEqual(result["status"], "routed")

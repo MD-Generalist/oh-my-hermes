@@ -36,7 +36,7 @@ from ..coding.data_handling_policy import (
     SENSITIVE_WORK_CHAIN_CLAIM_BOUNDARY,
     data_handling_filtered_chain,
 )
-from ..coding.model_routing import NON_GENERATIVE_MODEL_CLASS, model_class
+from ..coding.model_routing import NON_GENERATIVE_MODEL_CLASS, REASONING_EFFORT_LADDER, model_class
 from ..local_store import atomic_write_text
 from ..plugin_bundle.omh.hermes_delegation import (
     APPROX_PRICE_PER_MTOK,
@@ -76,6 +76,10 @@ from .quickstart import _use_color
 from .theme_picker import picker_available
 
 _ENTRY_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$")
+# A model id may carry a colon (`custom:cli-proxy`, an Ollama tag such as
+# `qwen3:8b`), the same grammar the override document accepts.
+_MODEL_ENTRY_RE = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9._/-]|:(?=[A-Za-z0-9])){0,127}$")
+_CHAIN_EFFORTS = frozenset((*REASONING_EFFORT_LADDER, "none", "auto"))
 
 # The Ultrafast-tier interview option: a chain member is offered its
 # `<model>-ultrafast` speed variant when that token is a known model (shipped
@@ -98,10 +102,14 @@ def _parsechain_text(text: str) -> tuple[tuple[str, str], ...]:
         piece = piece.strip()
         if not piece:
             continue
-        model, _, effort = piece.partition(":")
+        # The tail after the last colon is an effort only when it names one,
+        # so `qwen3:8b` stays a model id and `custom:proxy:low` splits once.
+        model, sep, effort = piece.rpartition(":")
+        if not sep or effort.strip().casefold() not in _CHAIN_EFFORTS:
+            model, effort = piece, ""
         model = model.strip()
         effort = effort.strip()
-        if not _ENTRY_RE.match(model):
+        if not _MODEL_ENTRY_RE.fullmatch(model):
             raise ValueError(f"{model!r} is not a plain model identifier")
         if effort and not _ENTRY_RE.match(effort):
             raise ValueError(f"{effort!r} is not a plain reasoning-effort token")

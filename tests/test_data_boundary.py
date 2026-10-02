@@ -398,19 +398,25 @@ class EnforcementFactsTests(unittest.TestCase):
         and "bwrap is the backend here and is actually installed".
         """
         import omh.quality.safety_preflight as module
+        from omh.quality.cross_harness_adapter_sandbox import backend
 
-        with mock.patch("sys.platform", "sunos5"):
-            unsupported = module.data_boundary_enforcement_facts()
-        self.assertEqual(unsupported["host_confinement_backend"], "unsupported")
-        self.assertFalse(unsupported["host_confinement_available"])
-        self.assertEqual(
-            unsupported["host_confinement_unavailable_reason"], "no_os_confinement_backend_on_this_platform"
-        )
-        for entry in unsupported["limits"]:
-            if entry["enforcement_kind"] == "host_confinement":
-                with self.subTest(limit=entry["limit"]):
-                    self.assertFalse(entry["host_can_enforce"])
-                    self.assertEqual(entry["blocked_by"], "no_os_confinement_backend_on_this_platform")
+        # Windows is named on its own: its answer is a measured finding
+        # (#1357), so a backend that appears there must revisit that finding.
+        for platform in ("sunos5", "win32"):
+            with mock.patch("sys.platform", platform):
+                unsupported = module.data_boundary_enforcement_facts()
+                selected = backend("auto")
+            self.assertEqual(selected, "unsupported")
+            self.assertEqual(unsupported["host_confinement_backend"], "unsupported")
+            self.assertFalse(unsupported["host_confinement_available"])
+            self.assertEqual(
+                unsupported["host_confinement_unavailable_reason"], "no_os_confinement_backend_on_this_platform"
+            )
+            for entry in unsupported["limits"]:
+                if entry["enforcement_kind"] == "host_confinement":
+                    with self.subTest(platform=platform, limit=entry["limit"]):
+                        self.assertFalse(entry["host_can_enforce"])
+                        self.assertEqual(entry["blocked_by"], "no_os_confinement_backend_on_this_platform")
 
         with mock.patch("sys.platform", "linux"), mock.patch.object(module, "_trusted_bwrap_present", lambda: False):
             untrusted = module.data_boundary_enforcement_facts()

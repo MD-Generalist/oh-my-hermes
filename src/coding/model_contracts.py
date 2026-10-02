@@ -379,6 +379,144 @@ _GPT_6_SOL: Final[dict[str, object]] = {
     "claim_boundary": MODEL_CONTRACT_CLAIM_BOUNDARY,
 }
 
+# GPT-6.1 Sol, the Sol tier's successor (owner decision, 2026-10-01: it takes
+# every slot GPT-6 Sol held). Astra's ladder shape, not GPT-6 Sol's: the model
+# page lists no `none` rung, so `off` and `minimal` are raised to the `low`
+# floor on record instead of being sent as `none`. `generation` is `gpt-6.1`,
+# the vendor's own versioning (the Opus 5.5 / DeepSeek V4.1 precedent): no
+# code reads the field to group or route models, so it is descriptive only,
+# and a value shared with GPT-6 Sol would claim a sameness the ladder denies.
+# The Codex client's ladder and defaults and the Hermes-build gap are recorded
+# in `surface_notes`, beside the API record rather than folded into it.
+_GPT_6_1_SOL: Final[dict[str, object]] = {
+    "schema_version": MODEL_CONTRACT_SCHEMA_VERSION,
+    "model_id": "gpt-6.1-sol",
+    "reasoning_mode": "standard",
+    "service_tier": "standard",
+    "family": "gpt",
+    "generation": "gpt-6.1",
+    # The API changelog entry date ("Sep 29 ... Released GPT-6.1 Sol").
+    "released": "2026-09-29",
+    "rollout": (
+        "in Codex and ChatGPT Work, availability depends on plan, client, and workspace settings; "
+        "not available in ChatGPT Chat; the default model of Codex CLI 0.159.1's bundled catalog; "
+        "a released id is not account-level readiness evidence"
+    ),
+    "knowledge_cutoff": "2026-04-30",
+    "context_window_tokens": 1_050_000,
+    "max_input_tokens": 922_000,
+    "max_output_tokens": 128_000,
+    "limits_note": (
+        "the model page documents a 1,050,000-token context and 128,000 max output and prints no "
+        "max-input figure; 922,000 is context minus output, the figure OpenRouter's endpoint "
+        "publishes, and the bound Hermes upstream probed live on 2026-09-29"
+    ),
+    # The API page's ladder. Unlike GPT-6 Sol there is no `none` rung, so
+    # `low` is the documented floor a lower request is raised to on record.
+    "reasoning_efforts": ("low", "medium", "high", "xhigh", "max"),
+    "effort_floor": "low",
+    "effort_default": "medium",
+    "unsupported_efforts": {
+        "off": "`none` is not supported (model page); the migration guide says use `low` instead",
+        "minimal": "not supported (model page); the migration guide says start with `low`",
+    },
+    "tool_calling": {
+        "api": "responses",
+        "note": (
+            "tool calling requires the Responses API; Chat Completions serves requests without "
+            "tool calling at every effort, since there is no `none` rung"
+        ),
+    },
+    "unsupported_parameters": ("temperature", "top_p", "top_logprobs"),
+    "unsupported_parameters_note": (
+        "always rejected, since every documented effort is above `none`; on Chat Completions "
+        "`logprobs` is rejected too, and on Responses `message.output_text.logprobs` is removed "
+        "from `include`"
+    ),
+    # Astra's block: the reasoning guide states the mechanism for the GPT-6
+    # family, and the Codex catalog sets `supports_reasoning_effort_updates`.
+    "dynamic_effort": {
+        "mechanism": "configuration_update",
+        "scope": "standard single-agent mode only",
+        "constraints": (
+            "not combinable with automatic compaction or automatic truncation",
+            "two adjacent configuration_update items are rejected",
+            "the original prompt prefix is preserved for prompt caching",
+        ),
+        "compatible_profiles": (),
+        "status": "documented_not_observed",
+    },
+    "runtime_mechanisms": {
+        "persisted_reasoning_all_turns": "documented_not_observed",
+        "multi_agent_beta": "documented_not_observed",
+        "async_tool_calling": "documented_not_observed",
+        "mid_turn_steering": "documented_not_observed",
+        "pro_reasoning_mode": "documented_not_observed",
+    },
+    "surface_notes": {
+        "codex": (
+            "the Codex client's model catalog lists `low` through `max` (no `none`) plus a "
+            "Codex-only `ultra` rung that no OMH ladder or chain carries, a `low` default where "
+            "the API defaults to `medium`, `low` default verbosity, `xhigh` multi-agent effort, "
+            "reasoning-effort updates enabled, and a 272K context window with an 872K maximum; it "
+            "names no default service tier and does not list GPT-6.1 Sol as GPT-6 Sol's upgrade"
+        ),
+        "hermes": (
+            "an installed Hermes build without upstream `NO_DISABLE_TIER_PREFIXES` (absent at "
+            "39faafb6168, 2026-09-28; present at 040b6df2c40, 2026-10-01) treats this id with the "
+            "legacy `none`..`xhigh` ladder: `max` is clamped to `xhigh` without a notice, a "
+            "disable sends `none`, and no price is known; a build that carries it omits the "
+            "reasoning field on a disable, so the API default `medium` runs rather than `low`; "
+            "observed in the Hermes source, not a vendor statement"
+        ),
+    },
+    # The Codex client's model-catalog ladder from `surface_notes.codex`,
+    # without `ultra` (owner decision, 2026-09-23: no OMH ladder or chain
+    # carries it).
+    "surface_efforts": {
+        "codex": ("low", "medium", "high", "xhigh", "max"),
+    },
+    "documented_traits": (
+        "stated for the GPT-6 family from behaviour observed with GPT-6 Astra: asks the user a "
+        "question more readily",
+        "stated for the GPT-6 family: follows instructions more strictly and is more sensitive to "
+        "instructions contained in skills",
+        "stated for the GPT-6 family: tends toward detailed, formatted responses",
+        "stated for the GPT-6 family: may delegate less often than desired",
+        "stated for the GPT-6 family: tends to be thorough in testing before considering a task "
+        "complete",
+        "the vendor's Codex client gives it GPT-6 Astra's base prompt plus an apology-restraint "
+        "paragraph, where GPT-6 Sol keeps an older prompt",
+    ),
+    # OpenAI list price (developers.openai.com model and pricing pages, read
+    # 2026-10-01). No promotion mark. The cached rate is 5% of input, not the
+    # approximation table's default tenth, so `APPROX_CACHE_READ_RATIO`
+    # carries a row for it.
+    "pricing_usd_per_mtok": {
+        "input": 2.0,
+        "cached_input": 0.10,
+        "cache_write": 2.5,
+        "output": 10.0,
+        "long_context_over_272k_input": "2x input and cache rates, 1.5x output, for the full request",
+        "batch_and_flex": "0.5x every standard rate",
+        "fast_mode": "2x every applicable rate; unavailable with EU data residency",
+        "ultrafast": "not offered (the Ultrafast table lists only GPT-6 Astra)",
+        "regional_processing": "+10% where available",
+    },
+    "data_handling": _DATA_HANDLING_NOT_READ,
+    "sources": (
+        "https://developers.openai.com/api/docs/models/gpt-6.1-sol",
+        "https://developers.openai.com/api/docs/guides/latest-model",
+        "https://developers.openai.com/api/docs/guides/reasoning",
+        "https://developers.openai.com/api/docs/pricing",
+        "https://developers.openai.com/api/docs/changelog",
+        "https://learn.chatgpt.com/docs/models",
+        "https://learn.chatgpt.com/docs/changelog",
+    ),
+    "sources_read": "2026-10-01",
+    "claim_boundary": MODEL_CONTRACT_CLAIM_BOUNDARY,
+}
+
 # Claude Opus 5.5, the first Claude contract. Thinking is always on: a
 # thinking-disabled request or a manual budget returns HTTP 400, so a
 # no-thinking rung is raised to `low` on record. One optional key joins
@@ -469,6 +607,117 @@ _CLAUDE_OPUS_5_5: Final[dict[str, object]] = {
         "https://www.anthropic.com/claude-opus-5-5",
     ),
     "sources_read": "2026-09-23",
+    "claim_boundary": MODEL_CONTRACT_CLAIM_BOUNDARY,
+}
+
+# Claude Sonnet 5.5, the Opus 5.5 shape one tier down. Adaptive thinking is
+# on by default and `disabled` or a manual budget returns HTTP 400. The API
+# documents one thinking-off mode, `thinking.type=between_tools` at effort
+# `high` or below, but neither the installed Hermes build nor Claude Code
+# sends it, so a no-thinking rung is raised to `low` on record -- the
+# vendor's own first migration step.
+_CLAUDE_SONNET_5_5: Final[dict[str, object]] = {
+    "schema_version": MODEL_CONTRACT_SCHEMA_VERSION,
+    "model_id": "claude-sonnet-5-5",
+    "reasoning_mode": "thinking",
+    "service_tier": "standard",
+    "family": "claude",
+    "generation": "claude-sonnet-5.5",
+    "released": "2026-09-28",
+    "rollout": (
+        "available on the Claude API, Amazon Bedrock, Google Cloud, Microsoft Foundry (Azure-hosted, "
+        "Global Standard only), and Claude Platform on AWS; a released id is not account-level "
+        "readiness evidence"
+    ),
+    # A fixed id with no date suffix: the dateless id is the pinned snapshot.
+    "served_ids": {
+        "first_party": "claude-sonnet-5-5",
+        "bedrock": "anthropic.claude-sonnet-5-5",
+    },
+    "retirement": "not sooner than 2027-09-28",
+    "knowledge_cutoff": "2026-06",
+    "context_window_tokens": 1_000_000,
+    "max_input_tokens": 1_000_000,
+    "max_output_tokens": 128_000,
+    "limits_note": (
+        "1M context and 128K max output are documented; Message Batches allow up to 300K output "
+        "with the `output-300k-2026-03-24` beta header; no separate max-input figure is published"
+    ),
+    "reasoning_efforts": ("low", "medium", "high", "xhigh", "max"),
+    "effort_floor": "low",
+    # The API default when a request omits effort, unchanged from Sonnet 5,
+    # but the levels are recalibrated: a rung does not buy the thinking it
+    # bought on Sonnet 5.
+    "effort_default": "high",
+    "unsupported_efforts": {
+        "off": (
+            "`thinking.type=disabled` or a manual `budget_tokens` returns HTTP 400; the documented "
+            "thinking-off mode is `thinking.type=between_tools` at effort `high` or below, which no "
+            "OMH route emits"
+        ),
+        "minimal": "not in the documented ladder",
+    },
+    "tool_calling": {
+        "api": "messages",
+        "note": (
+            "forced `tool_choice` of type `any` or `tool` returns HTTP 400, on count_tokens as "
+            "well; use `auto` and say in the prompt when a tool applies"
+        ),
+    },
+    "unsupported_parameters": ("thinking.budget_tokens",),
+    "runtime_mechanisms": {
+        "preserved_thinking_blocks": "documented_not_observed",
+        "between_tools_thinking": "documented_not_observed",
+    },
+    "surface_notes": {
+        "claude_code": (
+            "the `sonnet` alias resolves to Sonnet 5.5 on the Anthropic API from Claude Code "
+            "v2.1.284, to Sonnet 4.6 on Claude Platform on AWS, and to Sonnet 4.5 on Bedrock, "
+            "Google Cloud, and Foundry; the client defaults Sonnet 5.5 to `medium` effort and "
+            "offers no thinking-off setting"
+        ),
+        "hermes": (
+            "Hermes origin/main 040b6df2c40 (2026-10-01) has no price row for this id, sends "
+            "`thinking.type=disabled` when reasoning is off (HTTP 400 here), and never sends "
+            "`between_tools`; context and output limits resolve through the `claude-sonnet-5` "
+            "substring rows; observed in the Hermes source, not a vendor statement"
+        ),
+    },
+    "documented_traits": (
+        "adaptive thinking is on by default; a request that disables it returns HTTP 400, and "
+        "`between_tools` is the lowest setting",
+        "effort levels are recalibrated from Sonnet 5; `high` stays the API default",
+        "a prompt asking it to think less has little effect; lowering effort does",
+        "at `low` and `medium`, on long agentic tasks, more likely to stop and check in before "
+        "finishing; at `low` it can report a change done without running a check that exercises it",
+        "adds tests, documentation, and small supporting files nobody asked for, at every effort "
+        "level and more at higher effort",
+        "at `xhigh` and `max` it can start its own review and verification rounds, including "
+        "reviewer subagents",
+        "thinking blocks are tied to the model and conversation that produced them",
+    ),
+    # Anthropic list price (platform.claude.com pricing, read 2026-10-01).
+    # Cache reads are the standard tenth of input.
+    "pricing_usd_per_mtok": {
+        "input": 2.0,
+        "cached_input": 0.20,
+        "cache_write_5m": 2.50,
+        "cache_write_1h": 4.0,
+        "output": 10.0,
+        "batch": "input 1.00, output 5.00 on Message Batches",
+        "long_context": "no premium: the full 1M window is billed at standard rates",
+    },
+    "data_handling": _DATA_HANDLING_NOT_READ,
+    "sources": (
+        "https://platform.claude.com/docs/en/about-claude/models/overview.md",
+        "https://platform.claude.com/docs/en/about-claude/pricing.md",
+        "https://platform.claude.com/docs/en/about-claude/model-deprecations",
+        "https://platform.claude.com/docs/en/models/sonnet-5-5/migration-guide",
+        "https://platform.claude.com/docs/en/models/sonnet-5-5/whats-new-sonnet-5-5",
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-sonnet-5-5",
+        "https://code.claude.com/docs/en/model-config",
+    ),
+    "sources_read": "2026-10-01",
     "claim_boundary": MODEL_CONTRACT_CLAIM_BOUNDARY,
 }
 
@@ -714,8 +963,10 @@ _JEV_1_13: Final[dict[str, object]] = {
 MODEL_CONTRACTS: Final[dict[str, Mapping[str, object]]] = {
     "gpt-6-astra": _GPT_6_ASTRA,
     "gpt-6-sol": _GPT_6_SOL,
+    "gpt-6.1-sol": _GPT_6_1_SOL,
     "gpt-6-luna": _GPT_6_LUNA,
     "claude-opus-5-5": _CLAUDE_OPUS_5_5,
+    "claude-sonnet-5-5": _CLAUDE_SONNET_5_5,
     "deepseek-v4.1-flash": _DEEPSEEK_V41_FLASH,
     "jev-1.13.0": _JEV_1_13,
 }
@@ -749,6 +1000,15 @@ DECLARED_MODEL_CONTRACT_PROJECTIONS: Final[dict[str, Mapping[str, str]]] = {
         "reasoning_mode": "pro",
         "service_tier": "flex",
     },
+    # GPT-6.1 Sol's pro reasoning mode (the reasoning guide, read 2026-10-01:
+    # `"model": "gpt-6.1-sol", "reasoning": {"mode": "pro"}`, billed at the
+    # selected model's standard rates). No `-fast` / `-flex` row: no host
+    # catalog declares either spelling.
+    "gpt-6.1-sol-pro": {
+        "contract_model_id": "gpt-6.1-sol",
+        "reasoning_mode": "pro",
+        "service_tier": "standard",
+    },
     # The first-party API's moving pointer to the current Flash generation
     # (api-docs.deepseek.com, read 2026-09-11: DeepSeek-V4.1-Flash). The next
     # Flash release moves it, which is exactly why it is a declared row with
@@ -773,6 +1033,20 @@ DECLARED_MODEL_CONTRACT_PROJECTIONS: Final[dict[str, Mapping[str, str]]] = {
     },
     "claude-opus-5.5": {
         "contract_model_id": "claude-opus-5-5",
+        "reasoning_mode": "thinking",
+        "service_tier": "standard",
+    },
+    # Claude Sonnet 5.5's second spellings, on the Opus 5.5 terms above: the
+    # Bedrock id is the contract's own `served_ids.bedrock`; the dotted form
+    # is OpenRouter's (`anthropic/claude-sonnet-5.5`, listed in the Hermes
+    # OpenRouter catalog read 2026-10-01).
+    "anthropic.claude-sonnet-5-5": {
+        "contract_model_id": "claude-sonnet-5-5",
+        "reasoning_mode": "thinking",
+        "service_tier": "standard",
+    },
+    "claude-sonnet-5.5": {
+        "contract_model_id": "claude-sonnet-5-5",
         "reasoning_mode": "thinking",
         "service_tier": "standard",
     },

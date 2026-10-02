@@ -30,6 +30,10 @@ from omh.plugin_bundle.omh.hermes_delegation import (
     effective_mixture_category_chains,
     load_delegation_route_provenance,
     load_mixture_chain_overrides,
+    is_provider_id_token,
+    parse_mixture_chain_overrides,
+    parse_model_price_overrides,
+    parse_provider_entitlements,
     mixture_category_for,
     mixture_chain_overrides_path,
     parse_model_provider_routes,
@@ -388,14 +392,17 @@ class MixtureCategoryProjectionTest(unittest.TestCase):
         # projection and the pointer through a direct chain match.
         contracts = {
             "gpt-6-astra": ("openai", "xhigh", "ultrabrain", "openai", "anthropic"),
+            "gpt-6.1-sol": ("openai", "high", "deep", "openai", "anthropic"),
             "deepseek-v4.1-flash": ("deepseek", "high", "deep", "deepseek", "anthropic"),
             "claude-opus-5-5": ("anthropic", "medium", "unspecified-high", "anthropic", "openai"),
         }
         # A contract in no shipped chain, named by no provider-family row,
         # has nothing for its aliases to inherit. Jev is that case by
         # decision -- a non-generative model is never a chain member -- so it
-        # is listed here rather than given invented chain metadata.
-        unchained = {"jev-1.13.0"}
+        # is listed here rather than given invented chain metadata. Sonnet
+        # 5.5 is the generative case (owner decision, 2026-10-01: contract,
+        # floor, and price only; no pinned Sonnet id sits in a shipped chain).
+        unchained = {"jev-1.13.0", "claude-sonnet-5-5"}
         for model_id in (*contracts, *expected):
             contract_id = expected.get(model_id, (model_id,))[0]
             if contract_id in unchained:
@@ -486,21 +493,21 @@ class MixtureCategoryProjectionTest(unittest.TestCase):
                 )
 
     def test_dated_snapshot_labels_its_base_category_price_and_provider(self) -> None:
-        # GPT-6 Sol heads the shipped deep chain; a provider that serves only
+        # GPT-6.1 Sol heads the shipped deep chain; a provider that serves only
         # a dated id (a shape reported for GPT-5.6 Terra on 2026-09-11; Terra
         # left the shipped chains on 2026-09-23) must label the same category,
         # price, and provider family as the base, while an unknown base with a
         # date gains nothing.
-        for spelling in ("gpt-6-sol-2026-09-22", "openai/gpt-6-sol-2026-09-22"):
+        for spelling in ("gpt-6.1-sol-2026-09-29", "openai/gpt-6.1-sol-2026-09-29"):
             with self.subTest(spelling=spelling):
                 self.assertEqual(
                     mixture_category_for(spelling, "high", parent_model="kimi-k3"),
-                    mixture_category_for("gpt-6-sol", "high", parent_model="kimi-k3"),
+                    mixture_category_for("gpt-6.1-sol", "high", parent_model="kimi-k3"),
                 )
                 self.assertEqual(mixture_category_for(spelling, "high", parent_model="kimi-k3"), "deep")
                 self.assertEqual(
                     hermes_delegation_module._approximate_cost_usd(spelling, 1000.0, 1000.0, 100.0),
-                    hermes_delegation_module._approximate_cost_usd("gpt-6-sol", 1000.0, 1000.0, 100.0),
+                    hermes_delegation_module._approximate_cost_usd("gpt-6.1-sol", 1000.0, 1000.0, 100.0),
                 )
                 self.assertIs(provider_serves_alias(spelling, "openai"), True)
                 self.assertIs(provider_serves_alias(spelling, "anthropic"), False)
@@ -517,7 +524,7 @@ class MixtureCategoryProjectionTest(unittest.TestCase):
         # model; the parent's own id is the base the reader knows, so this
         # holds for an alias no table describes as well.
         self.assertEqual(
-            mixture_category_for("gpt-6-sol-2026-09-22", "high", parent_model="gpt-6-sol"), "inherit"
+            mixture_category_for("gpt-6.1-sol-2026-09-29", "high", parent_model="gpt-6.1-sol"), "inherit"
         )
         self.assertEqual(
             mixture_category_for("zzz-mystery-2026-08-01", "high", parent_model="zzz-mystery"), "inherit"
@@ -526,16 +533,16 @@ class MixtureCategoryProjectionTest(unittest.TestCase):
         # child under a date-pinned parent, or a different date, is not the
         # parent's run and falls through to the chain match.
         self.assertEqual(
-            mixture_category_for("gpt-6-sol", "high", parent_model="openai/gpt-6-sol-2026-09-22"), "deep"
+            mixture_category_for("gpt-6.1-sol", "high", parent_model="openai/gpt-6.1-sol-2026-09-29"), "deep"
         )
         self.assertEqual(
-            mixture_category_for("gpt-6-sol-2026-10-01", "high", parent_model="gpt-6-sol-2026-09-22"), "deep"
+            mixture_category_for("gpt-6.1-sol-2026-10-01", "high", parent_model="gpt-6.1-sol-2026-09-29"), "deep"
         )
         self.assertEqual(
             mixture_category_for("zzz-mystery-2026-08-01", "high", parent_model="zzz-mystery-2026-07-09"), ""
         )
         # Bounds: an unknown base, a non-trailing date, and a compact shape.
-        for spelling in ("gpt-7-nova-2026-07-09", "gpt-6-sol-2026-09-22-fast", "gpt-6-sol-20260922"):
+        for spelling in ("gpt-7-nova-2026-07-09", "gpt-6.1-sol-2026-09-29-fast", "gpt-6.1-sol-20260922"):
             with self.subTest(spelling=spelling):
                 self.assertEqual(mixture_category_for(spelling, "high", parent_model="kimi-k3"), "")
                 self.assertIsNone(provider_serves_alias(spelling, "openai"))
@@ -645,6 +652,43 @@ class MixtureChainOverridesTest(unittest.TestCase):
                     effective_mixture_category_chains(tmp, Path(tmp) / "hermes"),
                     HERMES_MIXTURE_CATEGORY_CHAINS,
                 )
+
+    def test_named_provider_tokens_apply_across_routing_documents(self):
+        token = "custom:cli-proxy"
+        self.assertTrue(is_provider_id_token(token))
+        self.assertEqual(parse_mixture_chain_overrides({
+            "schema_version": "mixture_chain_overrides/v1",
+            "categories": {"quick": [{"model": token, "reasoning_effort": "low"}]},
+        }), ({"quick": ((token, "low"),)}, "applied"))
+        routes, status = parse_model_provider_routes({
+            "schema_version": "model_provider_routes/v1",
+            "models": {token: {"provider": token, "model": token}},
+        })
+        self.assertEqual((routes, status), ({token: (token, token)}, "applied"))
+        entitlements, status = parse_provider_entitlements({
+            "schema_version": "provider_entitlements/v1", "providers": {token: "gateway"},
+        })
+        self.assertEqual(status, "applied")
+        self.assertEqual(entitlements["providers"], {token: "gateway"})
+        self.assertEqual(parse_model_price_overrides({
+            "schema_version": "model_price_overrides/v1",
+            "models": {token: {"input_per_mtok": 1, "output_per_mtok": 2}},
+        })[1], "applied")
+
+        for invalid in ("custom: cli-proxy", "custom:", "custom::cli-proxy", "custom:cli-proxy!", "a" * 129):
+            with self.subTest(invalid=invalid):
+                self.assertFalse(is_provider_id_token(invalid))
+                self.assertTrue(parse_model_provider_routes({
+                    "schema_version": "model_provider_routes/v1",
+                    "models": {"safe": {"provider": invalid, "model": "safe"}},
+                })[1].startswith("invalid:"))
+        self.assertTrue(is_provider_id_token("a" * 128))
+        # An effort stays a bare word: the colon admitted for model and
+        # provider ids would make `model:effort` text ambiguous.
+        self.assertTrue(parse_mixture_chain_overrides({
+            "schema_version": "mixture_chain_overrides/v1",
+            "categories": {"quick": [{"model": "kimi-k3", "reasoning_effort": "x:high"}]},
+        })[1].startswith("invalid:"))
 
     def test_provider_routes_reject_non_string_scalars(self):
         routes, status = parse_model_provider_routes(
@@ -1926,7 +1970,7 @@ class HudMergeTest(unittest.TestCase):
                 [
                     {
                         "id": "20260818_100100_eeee55",
-                        "model": "gpt-6-sol",
+                        "model": "gpt-6.1-sol",
                         "effort": "high",
                         "started_at": time.time() - 30,
                         "usage": {
@@ -1945,7 +1989,7 @@ class HudMergeTest(unittest.TestCase):
             rows = payload["subagents"]["rows"]
             self.assertEqual(len(rows), 1)
             self.assertEqual(rows[0]["role"], "hermes-native")
-            # gpt-6-sol:high is the deep chain head and differs from the
+            # gpt-6.1-sol:high is the deep chain head and differs from the
             # parent model, so the routed category is visible in the HUD row.
             self.assertEqual(rows[0]["category"], "deep")
             # Nothing was dropped, so the disclosed hidden-row count is zero.

@@ -185,6 +185,13 @@ def backend(selected: str) -> str:
         return selected
     if sys.platform == "darwin":
         return "sandbox-exec"
+    # Windows is "unsupported" by measurement, not by omission (#1357; the
+    # runs are in docs/FANOUT.md under "Data boundary"). A write-restricted
+    # token draws the right file boundary but denies the child write access to
+    # its own default-security named pipes, so piped child processes fail
+    # (`EPERM` from Node's child_process). Low integrity keeps those pipes
+    # working, but every Low-labelled root is writable by every Low process on
+    # the host, other confined units included, so it is not a per-unit fence.
     return "bwrap" if sys.platform.startswith("linux") else "unsupported"
 
 

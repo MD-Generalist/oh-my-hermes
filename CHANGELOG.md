@@ -4,6 +4,82 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **GPT-6.1 Sol and Claude Sonnet 5.5 placements are measured.** Each was
+  run on its subscription route against `benchmarks/live-model-tools/v1`
+  (30 instances per arm, with a same-text repeat for drift). Full tables are
+  in the benchmark README; the summary is in MODEL_OPTI.md.
+  - GPT-6.1 Sol solves the same instances as GPT-6 Sol with 14% fewer tool
+    calls and about 8% fewer tokens, so the #1975 slot swap holds. Its
+    Astra-text override shows no measurable effect against the `gpt` family
+    block.
+  - The Sonnet 5.5 override's vendor-reported cost cut does not reproduce on
+    this corpus, because run-to-run drift (about 10%) exceeds any difference.
+  - Both overrides stay, recorded as unproven. Neither measured worse.
+
+- **Named custom providers route through delegation.** A provider id such
+  as `custom:cli-proxy`, the form Hermes gives a named custom provider, was
+  refused as an unsupported mapping by the route writer, the route reader,
+  and every routing document. A colon is now admitted when an alphanumeric
+  character follows it, so `custom:cli-proxy` and tagged model ids such as
+  `qwen3:8b` validate. `custom: x`, `custom:`, and `a::b` are still
+  refused, as is any token over 128 characters. A reasoning effort stays a
+  bare word. `omh model-chains set` reads the text after the last colon as
+  the effort only when it names one, so `custom:cli-proxy:xhigh` splits
+  once and `qwen3:8b` stays a model id. Linked-provider detection keeps its narrower grammar. (#1976, thanks
+  @mazzy89)
+
+- **GPT-6.1 Sol, Claude Sonnet 5.5, and Grok Build 0.1 are registered, and
+  four stale price rows are corrected.** A sweep of every shipped family
+  against vendor docs and the Hermes upstream catalog (2026-10-01) found
+  three models OMH did not register.
+  - GPT-6.1 Sol (`gpt-6.1-sol`, released 2026-09-29) takes every slot
+    GPT-6 Sol held, at the effort each slot carried: `deep` head `high`,
+    the shared last resort `medium`, the main-role suggestion `high`, and
+    every Maestro Codex row (owner decision). GPT-6 Sol leaves the shipped
+    chains and stays recognized, priced, and provider-mapped. 6.1 Sol has
+    no `none` rung, so `off` and `minimal` are raised to `low` on record;
+    the five Maestro Codex rows that named no effort now name `medium`,
+    because the Codex client's default for 6.1 Sol is `low` and leaving
+    the effort unset would have lowered them silently. `gpt-6.1-sol-pro` is
+    a declared pro-mode projection. Price 2/10 with cached input at 5% of
+    input. The calibration is GPT-6 Astra's override text, byte for byte:
+    the vendor's Codex client gives 6.1 Sol Astra's base prompt.
+    Editorial and unmeasured for 6.1 Sol.
+  - Claude Sonnet 5.5 (`claude-sonnet-5-5`, released 2026-09-28) gets an
+    exact contract. Its declared spellings are the Bedrock id and
+    OpenRouter's dotted id. A no-thinking rung is raised to `low`, because
+    `disabled` is HTTP 400 on this model, and `omh_delegate_route` refuses
+    that rung for it. It is priced at 2/10. It joins no chain (owner
+    decision). Its high-effort block adds one clause to the Claude block:
+    once the checks pass, start no further review rounds and no reviewer
+    sub-agents. Anthropic measured that instruction at `max` effort as
+    cutting session cost by about a third with no change in quality.
+    It is unmeasured in OMH.
+  - Grok Build 0.1 (`grok-build-0.1`) takes the `x_platform_data` slot.
+    xAI retired Grok Code Fast on 2026-05-15 and lists `grok-code-fast-1`,
+    `grok-code-fast`, and `grok-code-fast-1-0825` as Build 0.1 aliases, so
+    on xAI's API the slot already ran it. Both ids are now priced at the
+    Build 0.1 list rate of 1/2, with cached input at a fifth of input; the
+    old 0.2/1.5 rate under-reported runs on xAI's API after the reroute.
+  - Corrected list prices: Kimi K3 0.6/2.5 → 3/15 (it was the K2-era rate);
+    Kimi K3 Ultrafast 0.3/1.25 → 3/15, carrying the base rate because
+    Moonshot publishes no tier rate; Gemini 3.1 Pro 1.25/10 → 2/12 (it was
+    Gemini 2.5 Pro's rate).
+
+- **Update takes back a bot profile's store setting once its `.env` names
+  one.** Setup and update give a storeless bot profile
+  `plugins.entries.omh.settings.omh_home` under a non-default primary store
+  (#1967). If `OMH_HOME` was added to the profile's `.env` afterwards, that
+  setting outranked it and the profile kept binding the primary's store.
+  Setup and update now remove the setting when the profile's `.env` names
+  `OMH_HOME` and the value is still the one OMH's write record says it
+  wrote, clear that record entry, and report the removed value per profile
+  (`omh_home_reclaimed` in the profile row, and a line in the human output).
+  A setting OMH did not write, or one changed by hand since, is kept.
+  `omh doctor` adds a warning under `plugin_omh_home_binding:<profile>` when
+  a setting OMH did not write outranks the profile's `.env` `OMH_HOME`; it
+  never blocks. (#1973)
+
 - **The file-operation, coding-handoff, and review workflows cite
   `session_file_activity/v1`.** `workspace-file-operator` names it inside
   `file_observation_manifest/v1`, and `maestro` and `code-review` name it for
@@ -15,6 +91,20 @@ All notable changes will be documented here.
   CLI under `HERMES_HOME`. Containment stays lexical, so a symlink inside the
   workspace that points outside shows its in-workspace spelling; resolving
   links would stat named files, which the receipt never does. (#1813)
+
+- **Windows fanout dispatch stays unconfined, now as a measured finding.**
+  Both native ways to give `omh coding fanout dispatch` a write fence on
+  Windows without a dependency were built and run on the Windows CI runner,
+  and neither holds the contract. A write-restricted token refuses writes
+  outside the unit root but also denies the child its own default-security
+  named pipes, so Node's piped `child_process` fails with `EPERM`. That is
+  how every coding owner CLI runs its tools. Low integrity keeps the pipes
+  working, but any Low process on the host can write every Low-labelled root,
+  including another unit's worktree and `AppData\LocalLow`, and owner state
+  would have to be labelled Low for good. Behaviour does not change: Windows
+  still dispatches unconfined and records
+  `no_os_confinement_backend_on_this_platform`. `docs/FANOUT.md` records what
+  was measured and what was not. (#1357)
 
 - **Bot profiles under a non-default primary OMH home bind the primary's
   store.** `omh setup --omh-home X` recorded `plugins.entries.omh.settings.omh_home`

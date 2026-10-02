@@ -114,7 +114,7 @@
           </p>
           <div class="reference-grid">
             <a class="reference-link" href="#missing"><span>ultrabrain</span><h3>Deepest reasoning</h3><p>GPT-6 Astra.</p></a>
-            <a class="reference-link" href="#missing"><span>deep</span><h3>Strong default tier</h3><p>GPT-6 Sol → DeepSeek Flash (V4.1).</p></a>
+            <a class="reference-link" href="#missing"><span>deep</span><h3>Strong default tier</h3><p>GPT-6.1 Sol → DeepSeek Flash (V4.1).</p></a>
             <a class="reference-link" href="#missing"><span>architect</span><h3>Architecture and system design</h3><p>Claude Fable 5.1 → GPT-6 Astra → Kimi K3.</p></a>
             <a class="reference-link" href="#missing"><span>unspecified-high</span><h3>Default working model</h3><p>Kimi K3 → Claude Opus 5.5.</p></a>
             <a class="reference-link" href="#missing"><span>unspecified-low</span><h3>Cheaper fallback</h3><p>GLM 5.3 → DeepSeek Flash (V4.1) → Claude Opus 5.5.</p></a>
@@ -131,7 +131,7 @@
             and preserves the remaining active candidates as fallbacks. Only
             after every selected category, role-slot, and domain chain is
             exhausted does OMH consult one shared final order: Claude Opus 5.5,
-            then GPT-6 Sol. If neither is confirmed active, the selected owner
+            then GPT-6.1 Sol. If neither is confirmed active, the selected owner
             keeps its default model. An override cannot add a category, invent
             a role slot, or carry provider configuration, and secret-looking
             fields are rejected.
@@ -175,7 +175,7 @@ Do not replace the resolved SHA with main. Execute the pinned protocol's OS-appr
               You are not expected to hold every model. Resolution walks the
               chain, skips candidates that are not confirmed active, and selects
               the next eligible one. When all selected chains are exhausted,
-              resolution checks the shared Claude Opus 5.5 then GPT-6 Sol final
+              resolution checks the shared Claude Opus 5.5 then GPT-6.1 Sol final
               order. When no candidate is confirmed anywhere, the result is
               <code>owner_default</code> &mdash; the selected owner keeps its
               native default without blocking the surrounding installation.

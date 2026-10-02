@@ -55,7 +55,11 @@ client's catalog lists `low` through `max` with a 272K window (official-client),
 and a Hermes build older than upstream `79ec1f2a34` clamps `max` to `xhigh`
 (observed). GPT-6 Sol adds a rung the API does not have: the Codex catalog
 lists a Codex-only `ultra`, which stays out of every OMH ladder, including
-the machine-readable `surface_efforts`. Record the API ladder and limits as the contract and put each
+the machine-readable `surface_efforts`. A ladder can also move between
+generations of one tier: GPT-6.1 Sol's API page drops the `none` rung GPT-6
+Sol documents, so 6.1 Sol takes Astra's shape (`low` floor, `off` and
+`minimal` raised on record) while GPT-6 Sol keeps sending `none`; copy the
+ladder from the new page, never from the predecessor's contract. Record the API ladder and limits as the contract and put each
 other surface in `surface_notes`, labeled; do not average them and do not
 let the narrowest surface overwrite the API record.
 
@@ -362,7 +366,8 @@ Rules that have held across every onboarding so far:
   and GPT-5.6 Sol behind GPT-6 Astra on the two frontier slots; applied again
   on 2026-09-23 to Claude Opus 5 behind Opus 5.5 and GPT-5.6 Luna behind
   GPT-6 Luna, and the same day to GPT-5.6 Sol and GPT-5.6 Terra behind GPT-6
-  Sol). Record each retirement as a `RETIREMENT_DECISIONS` row with its
+  Sol; applied again on 2026-10-01 to GPT-6 Sol behind GPT-6.1 Sol and Grok
+  Code Fast behind Grok Build 0.1). Record each retirement as a `RETIREMENT_DECISIONS` row with its
   own `decision_date`. The table is keyed by model id, so a second
   retirement of the same id rewrites its row rather than adding one: GPT-5.6
   Sol's 2026-09-11 row (scope `frontier_slots`, successor `gpt-6-astra`) was
@@ -412,7 +417,11 @@ Rules that have held across every onboarding so far:
   lane's Claude Code rows name the `opus` alias, which moves without an OMH
   edit — but on the client's terms, not OMH's: Claude Code resolves `opus`
   to Opus 5.5 only from v2.1.280, and to Opus 4.6 on Microsoft Foundry
-  (official, code.claude.com/docs/en/model-config). An alias slot therefore
+  (official, code.claude.com/docs/en/model-config). The `sonnet` rows
+  (`unspecified-low`, `artistry`) work the same way: Claude Code resolves
+  `sonnet` to Sonnet 5.5 on the Anthropic API from v2.1.284, to Sonnet 4.6 on
+  Claude Platform on AWS, and to Sonnet 4.5 on Bedrock, Google Cloud, and
+  Foundry (official, same page, read 2026-10-01). An alias slot therefore
   needs a docs caveat rather than an id change, and the same entry can run
   different generations on different machines.
 - Shipped defaults change only with explicit owner approval; the operator's
@@ -454,8 +463,9 @@ entry; absence renders no estimate. A serving tier of a priced model whose
 vendor publishes no separate tier rate may carry the base model's documented
 list price, never an invented discount, with a comment naming the base source
 and saying the tier rate is unpublished; `glm-5.3-ultrafast` and
-`deepseek-v4.1-flash-ultrafast` take this shape. The older halved speed-tier
-rows (`glm-5.2-ultrafast`, `kimi-k3-ultrafast`) predate this rule. A new price
+`deepseek-v4.1-flash-ultrafast` take this shape, and `kimi-k3-ultrafast`
+moved to it on 2026-10-01 along with the corrected K3 base rate. The older
+halved `glm-5.2-ultrafast` row predates this rule. A new price
 row also widens what `omh model-chains interview` offers, since it proposes a
 member's `-ultrafast` variant only when that id is priced. For an explicitly declared alias,
 an exact user `model-prices.json` row wins first, then a base-contract row may
