@@ -13,7 +13,12 @@ from _local_package import load_local_package
 
 load_local_package()
 
-from omh.coding.unit_prompt_protocol import HIGH_EFFORT_CALIBRATIONS, MODEL_HIGH_EFFORT_CALIBRATIONS  # noqa: E402
+from omh.coding.unit_prompt_protocol import (  # noqa: E402
+    HIGH_EFFORT_CALIBRATIONS,
+    MODEL_HIGH_EFFORT_CALIBRATIONS,
+    PARENT_CLARIFICATION_PROTOCOL,
+    shared_unit_preamble_lines,
+)
 
 
 BASE = Path(__file__).resolve().parents[1] / "benchmarks" / "live-model-tools" / "v1"
@@ -205,6 +210,77 @@ class OmhLiveAdapterTests(unittest.TestCase):
         self.assertEqual(prompts["family"].split("\n\n", 1)[1], prompts["baseline"])
         self.assertEqual({module.task_digest(prompt) for prompt in prompts.values()}, {module.task_digest(prompts["baseline"])})
         self.assertEqual(module.prompt_for_condition(task, route, "unknown-condition"), prompts["baseline"])
+
+    def test_unit_condition_sends_the_product_head_before_the_optimized_prompt(self) -> None:
+        module = _load_omh_live()
+        task = "Read TARGET.txt and return its exact contents."
+        route = {
+            "selected_model": "gpt-6-astra",
+            "selected_reasoning_effort": "xhigh",
+            "model_family": "gpt",
+        }
+        head = "\n".join(shared_unit_preamble_lines(module.UNIT_HEAD_GOAL))
+        baseline = module.prompt_for_condition(task, route, "baseline")
+        unit = module.prompt_for_condition(task, route, "unit")
+        override = MODEL_HIGH_EFFORT_CALIBRATIONS["gpt-6-astra"]
+        self.assertEqual(
+            unit,
+            "\n\n".join((head, override, module.UNIT_DELIVERABLE_PRECEDENCE, baseline)),
+        )
+        self.assertIn(PARENT_CLARIFICATION_PROTOCOL, unit)
+        self.assertNotIn(task, head)
+        self.assertEqual(module.task_digest(unit), module.task_digest(baseline))
+        # Without a high-effort route there is no calibration paragraph, and the
+        # head is still sent.
+        low = {**route, "selected_reasoning_effort": "low"}
+        self.assertEqual(
+            module.prompt_for_condition(task, low, "unit"),
+            "\n\n".join((head, module.UNIT_DELIVERABLE_PRECEDENCE, module.prompt_for_condition(task, low, "baseline"))),
+        )
+
+    def test_unit_head_blocks_reproduce_the_product_head_bytes(self) -> None:
+        module = _load_omh_live()
+        blocks = module.unit_head_blocks()
+        self.assertEqual(
+            "\n".join(blocks.values()).encode("utf-8"),
+            "\n".join(shared_unit_preamble_lines(module.UNIT_HEAD_GOAL)).encode("utf-8"),
+        )
+        self.assertEqual(module.unit_head(), "\n".join(blocks.values()))
+        self.assertTrue(set(module.UNIT_LEAN_OMITTED_BLOCKS) <= set(blocks))
+        with self.assertRaisesRegex(ValueError, "unknown unit head blocks"):
+            module.unit_head(("NOT_A_BLOCK",))
+
+    def test_unit_lean_omits_exactly_the_declared_head_blocks(self) -> None:
+        module = _load_omh_live()
+        task = "Read TARGET.txt and return its exact contents."
+        route = {
+            "selected_model": "deepseek-v4-pro",
+            "selected_reasoning_effort": "high",
+            "model_family": "deepseek",
+        }
+        blocks = module.unit_head_blocks()
+        omitted = module.UNIT_LEAN_OMITTED_BLOCKS
+        self.assertEqual(omitted, ("PARENT_CLARIFICATION",))
+        unit = module.prompt_for_condition(task, route, "unit")
+        lean = module.prompt_for_condition(task, route, "unit_lean")
+        expected = unit
+        for name in omitted:
+            expected = expected.replace("\n" + blocks[name], "", 1)
+            self.assertNotIn(blocks[name], lean)
+        self.assertEqual(lean, expected)
+        for name, text in blocks.items():
+            if name not in omitted:
+                self.assertIn(text, lean, name)
+        self.assertEqual(
+            len(unit.encode("utf-8")) - len(lean.encode("utf-8")),
+            sum(len(("\n" + blocks[name]).encode("utf-8")) for name in omitted),
+        )
+        self.assertNotIn("fanout_unit_result/v1\",\"unit_id\"", lean)
+        self.assertEqual(module.task_digest(lean), module.task_digest(unit))
+        self.assertEqual(
+            {condition: module.head_omitted_blocks(condition) for condition in ("baseline", "optimized", "family", "unit", "unit_lean")},
+            {"baseline": None, "optimized": None, "family": None, "unit": [], "unit_lean": list(omitted)},
+        )
 
     def test_snapshot_and_changed_paths_use_canonical_posix_keys(self) -> None:
         with TemporaryDirectory() as root_text:
