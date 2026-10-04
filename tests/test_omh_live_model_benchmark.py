@@ -19,6 +19,7 @@ from omh.coding.unit_prompt_protocol import (  # noqa: E402
     PARENT_CLARIFICATION_PROTOCOL,
     shared_unit_preamble_lines,
 )
+from omh.coding.unit_prompt_assembly import BLOCK_NAMES, assemble_unit_prompt  # noqa: E402
 
 
 BASE = Path(__file__).resolve().parents[1] / "benchmarks" / "live-model-tools" / "v1"
@@ -238,17 +239,18 @@ class OmhLiveAdapterTests(unittest.TestCase):
             "\n\n".join((head, module.UNIT_DELIVERABLE_PRECEDENCE, module.prompt_for_condition(task, low, "baseline"))),
         )
 
-    def test_unit_head_blocks_reproduce_the_product_head_bytes(self) -> None:
+    def test_unit_head_is_the_assemblers_shared_head(self) -> None:
         module = _load_omh_live()
-        blocks = module.unit_head_blocks()
+        route = {"selected_model": "kimi-k3", "selected_reasoning_effort": "low", "model_family": "kimi"}
+        head, calibration = module.unit_head_and_calibration(route)
         self.assertEqual(
-            "\n".join(blocks.values()).encode("utf-8"),
+            head.encode("utf-8"),
             "\n".join(shared_unit_preamble_lines(module.UNIT_HEAD_GOAL)).encode("utf-8"),
         )
-        self.assertEqual(module.unit_head(), "\n".join(blocks.values()))
-        self.assertTrue(set(module.UNIT_LEAN_OMITTED_BLOCKS) <= set(blocks))
-        with self.assertRaisesRegex(ValueError, "unknown unit head blocks"):
-            module.unit_head(("NOT_A_BLOCK",))
+        self.assertEqual(calibration, "")
+        self.assertTrue(set(module.UNIT_LEAN_OMITTED_BLOCKS) <= BLOCK_NAMES)
+        with self.assertRaisesRegex(ValueError, "unknown unit prompt blocks"):
+            module.unit_head_and_calibration(route, ("NOT_A_BLOCK",))
 
     def test_unit_lean_omits_exactly_the_declared_head_blocks(self) -> None:
         module = _load_omh_live()
@@ -258,9 +260,14 @@ class OmhLiveAdapterTests(unittest.TestCase):
             "selected_reasoning_effort": "high",
             "model_family": "deepseek",
         }
-        blocks = module.unit_head_blocks()
+        blocks = {
+            block.name: block.text
+            for block in assemble_unit_prompt({"unit_id": "benchmark"}, module.UNIT_HEAD_GOAL, route=route).blocks
+            if block.zone == "shared_head"
+        }
         omitted = module.UNIT_LEAN_OMITTED_BLOCKS
-        self.assertEqual(omitted, ("PARENT_CLARIFICATION",))
+        self.assertEqual(omitted, ("head.parent_clarification",))
+        self.assertIn(PARENT_CLARIFICATION_PROTOCOL, blocks["head.parent_clarification"])
         unit = module.prompt_for_condition(task, route, "unit")
         lean = module.prompt_for_condition(task, route, "unit_lean")
         expected = unit

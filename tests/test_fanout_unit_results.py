@@ -80,24 +80,26 @@ class FanoutUnitResultTests(unittest.TestCase):
         # so the executor-facing prompt is the ONLY channel that communicates
         # the closed vocabularies. Every literal must appear verbatim, sourced
         # from the validator's own tuples so the two can never drift.
-        from omh.coding.fanout_dispatch import _unit_result_prompt_lines
+        from omh.coding.unit_prompt_assembly import assemble_unit_prompt
         from omh.coding.fanout_unit_results import (
             FANOUT_UNIT_RESULT_CHECK_STATUSES,
             FANOUT_UNIT_RESULT_DECLINE_REASONS,
             FANOUT_UNIT_RESULT_PROCESS_STATUSES,
         )
 
-        prompt = "\n".join(
-            _unit_result_prompt_lines(
-                {
-                    "path": "/tmp/unit-result.json",
-                    "unit_id": "core",
-                    "run_id": "run-1",
-                    "fanout_id": "fanout-0123456789ab",
-                    "base_sha": "0" * 40,
-                }
-            )
+        assembled = assemble_unit_prompt(
+            {"unit_id": "core"},
+            "goal",
+            route=None,
+            binding={
+                "path": "/tmp/unit-result.json",
+                "unit_id": "core",
+                "run_id": "run-1",
+                "fanout_id": "fanout-0123456789ab",
+                "base_sha": "0" * 40,
+            },
         )
+        prompt = next(block.text for block in assembled.blocks if block.name == "tail.unit_result_contract")
         for literal in (
             FANOUT_UNIT_RESULT_PROCESS_STATUSES
             + FANOUT_UNIT_RESULT_CHECK_STATUSES

@@ -99,9 +99,11 @@ python benchmarks/live-model-tools/v1/bench.py run \
 Two more conditions measure the shared unit head, the block every real
 dispatched fanout unit prompt starts with:
 
-- `unit` sends the product's own head, built by calling
-  `shared_unit_preamble_lines()` with a fixed goal line (so it tracks `src/`
-  and stays byte-identical across instances, the way sibling units share it).
+- `unit` sends the product's own head: the `shared_head` blocks of
+  `assemble_unit_prompt()` (`src/coding/unit_prompt_assembly.py`, the
+  assembler every dispatch path uses) with a fixed goal line, so it tracks
+  `src/` and stays byte-identical across instances, the way sibling units
+  share it.
   The `optimized` calibration follows the head, then a deliverable-precedence
   note, then the same task and completion contract as every other condition.
   The head tells a unit to end with a `fanout_unit_result/v1` block and to
@@ -111,9 +113,9 @@ dispatched fanout unit prompt starts with:
   unit arms carry the note.
 - `unit_lean` sends `unit` with the head blocks named in
   `UNIT_LEAN_OMITTED_BLOCKS` (`lib/omh_live.py`) removed, and nothing else.
-  The first set is `PARENT_CLARIFICATION`, which also holds the head's only
-  JSON example. `unit_head_blocks()` names every head block. A later arm can
-  vary the set by name.
+  The names are the assembler's block names, and the assembler rejects one
+  it does not know. The first set is `head.parent_clarification`, which also
+  holds the head's only JSON example. A later arm can vary the set by name.
 
 Every run record carries `prompt_digest`, the SHA-256 of the exact prompt text
 its condition sent (the text itself is never kept). It also carries

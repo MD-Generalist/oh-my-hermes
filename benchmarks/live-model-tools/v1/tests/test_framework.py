@@ -241,7 +241,7 @@ class OmhBenchmarkFrameworkTests(unittest.TestCase):
                 records[condition] = rows[1:]
             self.assertEqual([row["head_omitted_blocks"] for row in records["unit"]], [[]] * 10)
             self.assertEqual(
-                [row["head_omitted_blocks"] for row in records["unit_lean"]], [["PARENT_CLARIFICATION"]] * 10
+                [row["head_omitted_blocks"] for row in records["unit_lean"]], [["head.parent_clarification"]] * 10
             )
             for unit, lean in zip(records["unit"], records["unit_lean"], strict=True):
                 self.assertEqual(unit["task_digest"], lean["task_digest"])

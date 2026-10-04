@@ -20,9 +20,7 @@ from _local_package import load_local_package
 
 load_local_package()
 
-from omh.coding.fanout_clarification_dispatch import parent_decision_prompt  # noqa: E402
-from omh.coding.fanout_dispatch import build_unit_prompt  # noqa: E402
-from omh.coding.fanout_repair import repair_brief_prompt  # noqa: E402
+from omh.coding.unit_prompt_assembly import AssembledPrompt, assemble_unit_prompt  # noqa: E402
 
 GOLDEN_FIXTURE = Path(__file__).resolve().parent / "fixtures" / "unit_prompt_golden_digests.json"
 
@@ -148,30 +146,28 @@ def _sidecar_contract(unit: dict[str, object]) -> dict[str, str]:
     }
 
 
-def compose(path: str, unit: dict[str, object], variant: str) -> str:
-    """The prompt the named path sends, composed the way `_dispatch_unit` did."""
+def assemble(path: str, unit: dict[str, object], variant: str, *, binding_path: str = SIDECAR_PATH) -> AssembledPrompt:
+    """The prompt the named path sends, through the one assembler."""
+    route = unit["handoff"]["model_route"]  # type: ignore[index]
     if path == "recovery":
-        return build_unit_prompt(unit, GOAL)
+        return assemble_unit_prompt(unit, GOAL, route=route)
     flags = set(variant.split("+"))
     owner = str(unit["handoff"]["executor_target"])  # type: ignore[index]
-    discovery = DISCOVERIES[owner] if "discovery" in flags else None
-    prompt = build_unit_prompt(
+    if "retry" in flags:
+        binding_path = RETRY_SIDECAR_PATH
+    return assemble_unit_prompt(
         unit,
         GOAL,
-        discovery,
-        unit_result_contract=_sidecar_contract(unit) if "sidecar" in flags else None,
+        route=route,
+        binding={**_sidecar_contract(unit), "path": binding_path} if "sidecar" in flags else None,
+        discovery=DISCOVERIES[owner] if "discovery" in flags else None,
+        repair=REPAIR if "repair" in flags else None,
+        parent_decision=PARENT_DECISION if "parent" in flags else None,  # type: ignore[arg-type]
     )
-    if "repair" in flags:
-        prompt += repair_brief_prompt(
-            attempt=int(REPAIR["attempt"]),
-            max_repair_attempts=int(REPAIR["max_repair_attempts"]),
-            failing_checks=list(REPAIR["failing_checks"]),
-        )
-    if "parent" in flags:
-        prompt += parent_decision_prompt(PARENT_DECISION)  # type: ignore[arg-type]
-    if "retry" in flags:
-        prompt = prompt.replace(SIDECAR_PATH, RETRY_SIDECAR_PATH)
-    return prompt
+
+
+def compose(path: str, unit: dict[str, object], variant: str) -> str:
+    return assemble(path, unit, variant).text
 
 
 def _render_golden_fixture() -> dict[str, object]:

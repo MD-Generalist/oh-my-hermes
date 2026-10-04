@@ -50,8 +50,8 @@ WORKSPACE_PREAMBLE = (
 #: out. `UNIT_RESULT_RETURN_PROTOCOL` and the unit-branch commit criterion are
 #: fanout *transport*: they exist so a dispatched worktree can be collected and
 #: merged. There is no fanout collector here, so including them would make the
-#: OMH arm spend tokens on an artifact nothing reads. Everything else in the
-#: product's unit prompt is included verbatim from the shipped constants.
+#: OMH arm spend tokens on an artifact nothing reads. The prompt is the
+#: product's own `assemble_unit_prompt` output with `OMITTED_BLOCKS` left out.
 #:
 #: One transport clause stays in, because it sits inside a shipped sentence
 #: rather than in a criterion of its own: `VERIFICATION_STOP_PROTOCOL` ends
@@ -131,9 +131,11 @@ def fanout_transport_criteria() -> tuple[str, ...]:
     from this lane's prompt without anything failing, and the lane would
     measure a product that does not exist.
 
-    They have to be dropped here because they are transport: they exist so a
-    dispatched worktree can be collected and merged, and this lane has no
-    collector. Leaving the commit criterion in put a direct contradiction in
+    The assembler carries the commit criterion as its own block, which
+    `OMITTED_BLOCKS` drops; this derivation is the independent check that no
+    transport criterion reaches the prompt. They have to be dropped because
+    they are transport: they exist so a dispatched worktree can be collected
+    and merged, and this lane has no collector. Leaving the commit criterion in put a direct contradiction in
     front of the model, which was told in the same prompt not to commit, and
     falsified `PROMPT_PROFILE`. Deriving the text rather than matching it means
     a rewording upstream stays filtered instead of silently reappearing.
@@ -149,37 +151,56 @@ def fanout_transport_criteria() -> tuple[str, ...]:
     return tuple(criteria[criteria.index(TRANSPORT_SENTINEL) + 1 :])
 
 
-def delegation_prompt(task_text: str, unit: Mapping[str, Any]) -> str:
-    """The OMH arm's prompt, composed from the shipped protocol constants."""
+#: The assembler blocks this lane leaves out, by `unit_prompt_assembly`
+#: block name. Each is fanout transport or fanout framing: the structured
+#: return and its parent-clarification escalation feed a collector this lane
+#: does not have; the unit title, scope sentence, sibling exclusions, and
+#: branch line frame a unit inside a fanout worktree (the scope itself still
+#: reaches the model as criterion 1); the commit criterion and the tail's
+#: commit instruction exist so a dispatched branch can be merged. Everything
+#: else the assembler emits for the unit reaches the model in the assembler's
+#: own order, so a block the product adds is a block this lane measures.
+OMITTED_BLOCKS: frozenset[str] = frozenset({
+    "head.unit_result_return",
+    "head.parent_clarification",
+    "unit.title",
+    "unit.scope",
+    "unit.do_not_touch",
+    "unit.branch",
+    "unit.commit_criterion",
+    "tail.unit_result_contract",
+    "tail.commit",
+})
 
-    protocol = prompt_protocol()
-    lines = [
-        f"Overall goal: {task_text.strip()}",
-        protocol.GOAL_ECHO_PROTOCOL,
-        protocol.VERIFICATION_STOP_PROTOCOL,
-        protocol.FAILURE_KIND_PROTOCOL,
-        protocol.STRUCTURAL_SEARCH_DISCIPLINE_GUIDANCE,
-        "",
-        WORKSPACE_PREAMBLE,
-        "",
-        "Done means, and only means:",
-    ]
-    transport = set(fanout_transport_criteria())
-    kept = [
-        criterion
-        for criterion in protocol.completion_criteria_for_unit(unit)
-        if str(criterion) not in transport
-    ]
-    for index, criterion in enumerate(kept, 1):
-        lines.append(f"{index}. {criterion}")
-    lines.append(protocol.TOOL_BATCHING_PROTOCOL)
-    calibration = protocol.calibration_for_route(
-        dict(unit["handoff"]["model_route"])
+
+def prompt_assembly() -> Any:
+    """`omh.coding.unit_prompt_assembly`, read in process like `prompt_protocol`."""
+
+    prompt_protocol()  # puts the checkout on sys.path
+    from omh.coding import unit_prompt_assembly  # noqa: PLC0415
+
+    return unit_prompt_assembly
+
+
+def delegation_prompt(task_text: str, unit: Mapping[str, Any]) -> str:
+    """The OMH arm's prompt: the product's assembled unit prompt minus transport.
+
+    The shared head, then `WORKSPACE_PREAMBLE`, then the unit zone (criteria,
+    tool batching, role, calibration, domain bundle, skills), then the
+    completion contract.
+    """
+
+    assembled = prompt_assembly().assemble_unit_prompt(
+        unit,
+        task_text,
+        route=dict(unit["handoff"]["model_route"]),
+        omit=OMITTED_BLOCKS,
     )
-    if calibration:
-        lines.append(calibration)
-    lines.extend(["", COMPLETION_CONTRACT])
-    return "\n".join(lines)
+
+    def zone(name: str) -> str:
+        return "\n".join(block.text for block in assembled.blocks if block.zone == name)
+
+    return "\n".join([zone("shared_head"), "", WORKSPACE_PREAMBLE, "", zone("unit"), "", COMPLETION_CONTRACT])
 
 
 #: The interpreter name a criterion shows the model. A stable token, never the

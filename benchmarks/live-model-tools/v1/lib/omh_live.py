@@ -14,16 +14,8 @@ from omh.coding.routing_observation import (
     build_routing_observation,
     validate_routing_observation,
 )
-from omh.coding.coding_contracts import STRUCTURAL_SEARCH_DISCIPLINE_GUIDANCE
-from omh.coding.unit_prompt_protocol import (
-    FAILURE_KIND_PROTOCOL,
-    GOAL_ECHO_PROTOCOL,
-    PARENT_CLARIFICATION_PROTOCOL,
-    UNIT_RESULT_RETURN_PROTOCOL,
-    VERIFICATION_STOP_PROTOCOL,
-    calibration_for_route,
-    shared_unit_preamble_lines,
-)
+from omh.coding.unit_prompt_assembly import assemble_unit_prompt
+from omh.coding.unit_prompt_protocol import calibration_for_route
 
 
 _TASK_START = "OMH benchmark task:\n"
@@ -193,11 +185,12 @@ def prompt_pair(task: str, route: Mapping[str, Any]) -> tuple[str, str]:
 # fanout share it, and so the task appears once, inside its digest boundary.
 UNIT_HEAD_GOAL = "Complete the OMH benchmark task below in this workspace."
 
-# Blocks `unit_lean` drops from the product head. Data, so a later arm can vary
-# it; every name must be a key of `unit_head_blocks()`. The first trim
-# candidate from the 2026-10-04 prompt audit: the parent-clarification block,
-# which also carries the head's only fanout_unit_result/v1 JSON example.
-UNIT_LEAN_OMITTED_BLOCKS: tuple[str, ...] = ("PARENT_CLARIFICATION",)
+# Blocks `unit_lean` drops from the product head, by the assembler's block
+# names (`unit_prompt_assembly.BLOCK_NAMES`). Data, so a later arm can vary it.
+# The first trim candidate from the 2026-10-04 prompt audit: the
+# parent-clarification block, which also carries the head's only
+# fanout_unit_result/v1 JSON example.
+UNIT_LEAN_OMITTED_BLOCKS: tuple[str, ...] = ("head.parent_clarification",)
 
 # The head's own return instructions name a fanout_unit_result/v1 block and an
 # input_required escalation to a parent; neither exists in a benchmark run.
@@ -212,50 +205,27 @@ UNIT_DELIVERABLE_PRECEDENCE = (
     "in your final reply is optional and is not graded."
 )
 
+# The unit the assembler is asked for. Only its shared head and calibration
+# blocks are sent; the rest of a fanout unit (scope, branch, criteria) has no
+# meaning in a single-workspace benchmark task.
+_BENCHMARK_UNIT: dict[str, Any] = {"unit_id": "benchmark"}
 
-def unit_head_blocks(goal_text: str = UNIT_HEAD_GOAL) -> dict[str, str]:
-    """Name each block of the product's shared unit head, in head order.
 
-    Built from `shared_unit_preamble_lines()` itself, so the bytes track
-    `src/`; the names only label the lines. The return line is split into its
-    own sentence and the parent-clarification block it ends with, because the
-    audit's trim candidate is the second half. A head line this table cannot
-    name raises, so a new head block has to be named here before an arm can
-    omit it or a test can claim the lean head drops nothing else.
+def unit_head_and_calibration(route: Mapping[str, Any], omitted: tuple[str, ...] = ()) -> tuple[str, str]:
+    """The product's shared unit head and the route's calibration block.
+
+    Both come from `assemble_unit_prompt`, the assembler every dispatch path
+    uses, so the bytes and block names are the product's. An omitted name the
+    assembler does not know raises there.
     """
-    named = {
-        GOAL_ECHO_PROTOCOL: "GOAL_ECHO",
-        VERIFICATION_STOP_PROTOCOL: "VERIFICATION_STOP",
-        FAILURE_KIND_PROTOCOL: "FAILURE_KIND",
-        STRUCTURAL_SEARCH_DISCIPLINE_GUIDANCE: "STRUCTURAL_SEARCH_DISCIPLINE",
-    }
-    return_sentence = UNIT_RESULT_RETURN_PROTOCOL.removesuffix("\n" + PARENT_CLARIFICATION_PROTOCOL)
-    if return_sentence == UNIT_RESULT_RETURN_PROTOCOL:
-        raise ValueError("UNIT_RESULT_RETURN_PROTOCOL no longer ends with PARENT_CLARIFICATION_PROTOCOL")
-    blocks: dict[str, str] = {}
-    lines = shared_unit_preamble_lines(goal_text)
-    for index, line in enumerate(lines):
-        if index == 0 and line.startswith("Overall goal: "):
-            blocks["OVERALL_GOAL"] = line
-        elif line == UNIT_RESULT_RETURN_PROTOCOL:
-            blocks["UNIT_RESULT_RETURN"] = return_sentence
-            blocks["PARENT_CLARIFICATION"] = PARENT_CLARIFICATION_PROTOCOL
-        elif line in named:
-            blocks[named[line]] = line
-        else:
-            raise ValueError(f"unnamed shared unit head line {index}; name it in unit_head_blocks()")
-    if "\n".join(blocks.values()) != "\n".join(lines):
-        raise ValueError("named unit head blocks do not reproduce the product head")
-    return blocks
-
-
-def unit_head(omitted: tuple[str, ...] = ()) -> str:
-    """The product's shared unit head, joined as `build_unit_prompt` joins it."""
-    blocks = unit_head_blocks()
-    unknown = sorted(set(omitted) - set(blocks))
-    if unknown:
-        raise ValueError(f"unknown unit head blocks: {', '.join(unknown)}")
-    return "\n".join(text for name, text in blocks.items() if name not in omitted)
+    assembled = assemble_unit_prompt(
+        _BENCHMARK_UNIT, UNIT_HEAD_GOAL, route=route, omit=frozenset(omitted)
+    )
+    head = "\n".join(block.text for block in assembled.blocks if block.zone == "shared_head")
+    calibration = next(
+        (block.text for block in assembled.blocks if block.base_name == "unit.calibration"), ""
+    )
+    return head, calibration
 
 
 def head_omitted_blocks(condition: str) -> list[str] | None:
@@ -289,8 +259,8 @@ def prompt_for_condition(task: str, route: Mapping[str, Any], condition: str) ->
         return baseline if not calibration else f"{calibration}\n\n{baseline}"
     omitted = head_omitted_blocks(condition)
     if omitted is not None:
-        calibration = calibration_for_route(route)
-        parts = [unit_head(tuple(omitted)), calibration, UNIT_DELIVERABLE_PRECEDENCE, baseline]
+        head, calibration = unit_head_and_calibration(route, tuple(omitted))
+        parts = [head, calibration, UNIT_DELIVERABLE_PRECEDENCE, baseline]
         return "\n\n".join(part for part in parts if part)
     return baseline
 

@@ -134,8 +134,9 @@ from .fanout_contracts import (
 )
 from .fanout_clarification_dispatch import (
     bind_clarification, clarification_resume_journal, claim_answered_worktree,
-    record_answer_redispatch, parent_decision_prompt, reported_producer_head,
+    record_answer_redispatch, reported_producer_head,
 )
+from .fanout_clarification_records import ClarificationRecord
 from .fanout_clarification_schema import ClarificationError
 from .fanout_clarification import read_clarification, clarification_path
 from .fanout_journal import (
@@ -171,7 +172,6 @@ from .fanout_repair import (
     declared_max_repair_attempts,
     observed_check_failure,
     project_unit_repair,
-    repair_brief_prompt,
     repair_record,
     repair_trigger_checks,
 )
@@ -188,7 +188,7 @@ from .unit_progress import (
     empty_progress_evidence,
     stalled_for_seconds,
 )
-from .unit_prompt_protocol import shared_unit_preamble_lines, unit_protocol_lines
+from .unit_prompt_assembly import AssembledPrompt, assemble_unit_prompt, unit_role as _unit_role
 from .workspace_preflight import (
     probe_workspace,
     workspace_preflight_reason,
@@ -202,9 +202,6 @@ from ..codegraph import build_codegraph
 from .verification_receipts import SingleFlight
 from .verification_runner import PlanRunContext, run_verification_plan
 from .fanout_unit_results import (
-    FANOUT_UNIT_RESULT_CHECK_STATUSES,
-    FANOUT_UNIT_RESULT_DECLINE_REASONS,
-    FANOUT_UNIT_RESULT_PROCESS_STATUSES,
     validate_check_rows,
     validate_unit_result,
     read_unit_result_input,
@@ -919,161 +916,23 @@ def build_unit_prompt(
     *,
     unit_result_contract: Mapping[str, Any] | None = None,
 ) -> str:
-    boundary = unit.get("boundary", {}) if isinstance(unit.get("boundary"), Mapping) else {}
-    file_scope = ", ".join(str(path) for path in boundary.get("file_scope", []))
-    do_not_touch = ", ".join(str(path) for path in boundary.get("do_not_touch", []))
-    # Shared preamble first: sibling prompts must share a byte-identical head
-    # so provider prefix caches serve every unit after the first (see
-    # PROMPT_CACHE_COMPOSITION_PROTOCOL).
-    lines = shared_unit_preamble_lines(goal_text)
-    lines.append(f"Work unit: {unit.get('title', unit.get('unit_id'))}")
-    lines.append(f"Stay strictly inside these paths: {file_scope}.")
-    if do_not_touch:
-        lines.append(f"Do not touch: {do_not_touch} (owned by sibling units).")
-    lines.append(f"Work on branch {unit.get('branch_suggestion', '')} in the current worktree.")
-    # A declared input budget states the ranges and the ceiling; an absent one
-    # leaves the prompt byte-identical.
-    lines.extend(unit_input_budget_lines(unit))
-    # Pre-declared completion criteria (absorbing the unit's integration
-    # checks) and — on high-effort routes — the per-family over-verification
-    # calibration; the unit-invariant discipline blocks already rode the
-    # shared preamble above.
-    lines.extend(unit_protocol_lines(unit))
-    # Skills the operator actually has, named with the invocation form their
-    # source directory implies. Absent discovery (the default, and every
-    # zero-skill environment) leaves the prompt byte-identical.
-    lines.extend(unit_skill_lines(unit, discovery))
-    if unit_result_contract is not None:
-        lines.extend(_unit_result_prompt_lines(unit_result_contract))
-    # Search guidance rides the shared head (capped structural search, which
-    # already says "structural search when available, grep otherwise"); the
-    # tool-preference sentence the delegation capability blocks carry is not
-    # repeated here.
-    lines.append("Commit your work; do not merge or push other branches.")
-    return "\n".join(lines)
+    """The unit prompt text for the unit's recorded route.
 
-
-def unit_input_budget_lines(unit: Mapping[str, Any]) -> list[str]:
-    """The input-budget block for one unit, or an empty list when undeclared.
-
-    Absent budgets leave the prompt byte-identical, the same additive rule
-    every other declared field follows.
+    A thin view of `assemble_unit_prompt`, which owns every block, its order,
+    and every dispatch variant.
     """
-    budget = unit.get("input_budget")
-    if not isinstance(budget, Mapping):
-        return []
-    chars = int(budget.get("chars", 0) or 0)
-    tokens = budget.get("tokens")
-    head = f"Input budget for this unit: at most {chars} characters"
-    if isinstance(tokens, int) and not isinstance(tokens, bool):
-        head += f" (about {tokens} tokens)"
-    lines = [head + " of source text; do not read past it."]
-    ranges = budget.get("source_ranges")
-    if isinstance(ranges, list) and ranges:
-        lines.append("Read only these source ranges:")
-        for position, item in enumerate(ranges, start=1):
-            if not isinstance(item, Mapping):
-                continue
-            text = f"{position}. {item.get('source', '')} — {item.get('span', '')}"
-            if isinstance(item.get("offset"), int) and isinstance(item.get("limit"), int):
-                text += f": read_file offset={item['offset']} limit={item['limit']}"
-                if isinstance(item.get("end_line"), int):
-                    text += f", continue via next_offset to line {item['end_line']}"
-            if isinstance(item.get("estimated_chars"), int):
-                text += f" (about {item['estimated_chars']} chars)"
-            lines.append(text)
-    return lines
+    return assemble_unit_prompt(
+        unit,
+        goal_text,
+        route=_recorded_model_route(unit),
+        binding=unit_result_contract,
+        discovery=discovery,
+    ).text
 
 
-def _unit_result_prompt_lines(contract: Mapping[str, Any]) -> list[str]:
-    """Executor-neutral, typed sidecar contract appended to a live unit prompt.
-
-    The closed enums are spelled out with their exact literals — imported from
-    the validator's own tuples so prompt and validation can never drift. The
-    validator deliberately never infers or aliases (a "success" it normalized
-    into "process_succeeded" would launder an executor claim), so this prompt
-    is the ONLY channel that tells a foreign executor which values validate;
-    omitting them produced real `unit_result_invalid` outcomes on work that
-    had succeeded (#1190).
-    """
-    process_values = " or ".join(f'"{value}"' for value in FANOUT_UNIT_RESULT_PROCESS_STATUSES)
-    decline_values = ", ".join(f'"{value}"' for value in FANOUT_UNIT_RESULT_DECLINE_REASONS)
-    check_values = ", ".join(f'"{value}"' for value in FANOUT_UNIT_RESULT_CHECK_STATUSES)
-    return [
-        "Before exiting, write one fanout_unit_result/v1 JSON sidecar to exactly "
-        f"{contract.get('path', '')}.",
-        "Top-level fields: schema_version, unit_id, run_id, fanout_id, base_sha, head_sha, "
-        "process_status, decline_reason (required only with process_status process_declined), "
-        "changed_paths, checks, findings, schema_error (optional).",
-        "Use these dispatch-bound values: "
-        f"schema_version=fanout_unit_result/v1, unit_id={contract.get('unit_id', '')}, "
-        f"run_id={contract.get('run_id', '')}, fanout_id={contract.get('fanout_id', '')}, "
-        f"base_sha={contract.get('base_sha', '')}; head_sha is the git HEAD you leave behind.",
-        f"process_status must be exactly {process_values} — no other value validates.",
-        "process_declined is a conclusive negative answer (the target does not exist, the request "
-        "is refused by policy, or the acceptance criteria are infeasible as specified), never a "
-        "retry candidate — do not report process_failed for it. When you report process_declined, "
-        f"decline_reason is required and must be exactly {decline_values} — omit decline_reason for "
-        "every other process_status.",
-        "Each checks row fields: command, status, evidence_ref, reported_by, observed_by, "
-        "observation_source.",
-        f"Each checks row status must be exactly one of {check_values} — no other value validates.",
-        "For every executor-authored checks row, set reported_by=executor. observed_by and "
-        "observation_source are dispatcher-owned; leave both null. Sidecar validation records "
-        "only a report and never verification.",
-    ]
-
-
-# The one hedge every emitted sequence carries: declared-on-disk is not loaded,
-# and a step the work does not need is droppable.
-_SKILL_SEQUENCE_PREAMBLE = (
-    "Suggested skill sequence for this unit, from what this environment declares. OMH read these "
-    "definitions on disk; it did not load or verify them, so resolve each one in your own registry, "
-    "skip any that does not resolve, and drop any step that does not fit the work:"
-)
-_DECLARED_SEQUENCE_PREAMBLE = (
-    "Operator-declared skill sequence for this unit. Resolve each one in your own registry and skip "
-    "any that does not resolve:"
-)
-
-
-def unit_skill_lines(unit: Mapping[str, Any], discovery: Mapping[str, Any] | None) -> list[str]:
-    """Return the skill-sequence block for one unit, or an empty list.
-
-    Precedence: an explicit `skill_sequence` on the unit always wins — a
-    non-empty list renders verbatim (interview option 4), an empty list
-    suppresses the block entirely (option 5, pure prompt). Otherwise the
-    recommended sequence is arranged from discovery; and with no discovery or
-    no matches the block is absent, so the modal operator — a fresh install
-    with no executor skills — gets exactly the prompt they get today.
-    """
-    from .executor_skill_discovery import suggested_skill_sequence
-
-    declared = unit.get("skill_sequence")
-    if isinstance(declared, (list, tuple)):
-        entries = [str(entry).strip() for entry in declared if str(entry).strip()]
-        if not entries:
-            return []
-        steps = [f"{index}. `{entry}`" for index, entry in enumerate(entries, start=1)]
-        return [_DECLARED_SEQUENCE_PREAMBLE, *steps]
-    if not isinstance(discovery, Mapping):
-        return []
-    steps = [
-        f"{index}. `{step['invocation']}` — {step['purpose']}"
-        for index, step in enumerate(suggested_skill_sequence(discovery, _unit_role(unit)), start=1)
-    ]
-    if not steps:
-        return []
-    return [_SKILL_SEQUENCE_PREAMBLE, *steps]
-
-
-def _unit_role(unit: Mapping[str, Any]) -> str:
+def _recorded_model_route(unit: Mapping[str, Any]) -> Mapping[str, Any] | None:
     handoff = unit.get("handoff", {}) if isinstance(unit.get("handoff"), Mapping) else {}
-    review_role = str(handoff.get("review_role", "") or "")
-    if review_role:
-        return review_role
-    route = handoff.get("model_route") if isinstance(handoff.get("model_route"), Mapping) else {}
-    return str(route.get("role", "") or "") if isinstance(route, Mapping) else ""
+    return handoff.get("model_route") if isinstance(handoff.get("model_route"), Mapping) else None
 
 
 def _owner_skill_discoveries(
@@ -3240,7 +3099,9 @@ def _hermes_recovery_dispatch(
     launch = (launch_gate or OwnerLaunchGate()).context(binding).launch
     try:
         attempt = dispatcher(
-            prompt=build_unit_prompt(unit, goal_text),
+            # The recovery variant: no sidecar contract and no discovery,
+            # because the Hermes child lane collects neither.
+            prompt=assemble_unit_prompt(unit, goal_text, route=_recorded_model_route(unit)).text,
             routing=routing,
             parent_run_id=run_ref,
             run_id=f"{run_ref}-hermes-recovery",
@@ -4289,30 +4150,27 @@ def _dispatch_unit(
     discovery = (discoveries or {}).get(owner)
     attempt_id = str(uuid4())
     sidecar_path = intake_root / f"{attempt_id}.json" if fanout_id else None
-    prompt = build_unit_prompt(
-        unit,
-        goal_text,
-        discovery,
-        unit_result_contract=(
-            {
-                "path": str(sidecar_path),
-                "unit_id": unit_id,
-                "run_id": run_ref,
-                "fanout_id": fanout_id,
-                "base_sha": base_sha,
-            }
-            if sidecar_path is not None
-            else None
-        ),
-    )
-    if repair is not None:
-        # Appended after the unchanged unit prompt, so the goal, scope, and
-        # criteria the executor reads are the ones it was first given.
-        prompt += repair_brief_prompt(
-            attempt=int(repair["attempt"]),
-            max_repair_attempts=int(repair["max_repair_attempts"]),
-            failing_checks=list(repair["failing_checks"]),
+    def _assemble_prompt(path: Path | None, decision: ClarificationRecord | None = None) -> AssembledPrompt:
+        # A repair or parent decision appends after the unchanged unit prompt,
+        # so the goal, scope, and criteria the executor reads are the ones it
+        # was first given; a retry re-assembles with its own sidecar path.
+        return assemble_unit_prompt(
+            unit,
+            goal_text,
+            route=model_route,
+            binding=(
+                {"path": str(path), "unit_id": unit_id, "run_id": run_ref,
+                 "fanout_id": fanout_id, "base_sha": base_sha}
+                if path is not None
+                else None
+            ),
+            discovery=discovery,
+            repair=repair,
+            parent_decision=decision,
         )
+
+    assembled = _assemble_prompt(sidecar_path)
+    prompt = assembled.text
     # The unit's prepared handoff routes a model whenever the contract
     # resolved one; when it did not (no route at all, or a route that
     # resolved with no model), the operator's dispatch-model preference fills
@@ -4495,7 +4353,8 @@ def _dispatch_unit(
             "worktree_path": str(worktree), "attempt_id": clarification["attempt_id"],
         })
         # The early read is not authority: serialize only the atomically validated claim.
-        prompt += parent_decision_prompt(clarification)
+        assembled = _assemble_prompt(sidecar_path, clarification)
+        prompt = assembled.text
         argv = build_dispatch_argv(owner, prompt, effective_model_route)
     known_secrets = (goal_text, prompt, *tuple(
         value for key, value in child_env.items()
@@ -4790,7 +4649,8 @@ def _dispatch_unit(
                 attempt_id = str(uuid4())
                 sidecar_path = intake_root / f"{attempt_id}.json" if fanout_id else None
                 if previous_path is not None and sidecar_path is not None:
-                    prompt = prompt.replace(str(previous_path), str(sidecar_path))
+                    assembled = _assemble_prompt(sidecar_path, clarification)
+                    prompt = assembled.text
                     argv = build_dispatch_argv(owner, prompt, effective_model_route)
                     assert argv is not None  # Same previously admitted owner and route.
                     argv = session_argv(argv)
