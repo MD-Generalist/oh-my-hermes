@@ -55,10 +55,12 @@ LOCAL_CAPABILITY_REPORT_ALLOWED_KINDS = (
     "worker_lane",
     "worktree",
 )
-# Executor-neutral structural-search guidance shared verbatim by both prepared
-# prompt lanes (coding_delegation capability blocks and fanout unit prompts) so
-# the two cannot drift. The final clause is required: no handoff field carries
-# a detection result, so the executor must not infer OMH already checked PATH.
+# Executor-neutral structural-search guidance carried by the coding_delegation
+# capability blocks. Fanout unit prompts do not repeat it: their shared head
+# carries STRUCTURAL_SEARCH_DISCIPLINE_GUIDANCE, which already says "structural
+# search when available, grep otherwise". The final clause is required: no
+# handoff field carries a detection result, so the executor must not infer OMH
+# already checked PATH.
 STRUCTURAL_SEARCH_GUIDANCE = (
     "Structural code search: if a structural search tool such as ast-grep is on PATH, prefer a "
     "structural query over line-based grep when the target is a syntactic shape rather than a "

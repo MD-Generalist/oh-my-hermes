@@ -52,7 +52,6 @@ from ..system.paths import OmhPaths
 from ._hermes_child_process import terminate_process_group
 from .action_gate import recheck_safety_profile_revision
 from .cause_recovery import attempt_conditions, limit_reset_text, plan_summary_line, recovery_plan
-from .coding_contracts import STRUCTURAL_SEARCH_GUIDANCE
 from .dispatch_failure_recovery import (
     FAILURE_KIND_CAPABILITY_GATE,
     HERMES_LANE_CONSENT,
@@ -946,10 +945,10 @@ def build_unit_prompt(
     lines.extend(unit_skill_lines(unit, discovery))
     if unit_result_contract is not None:
         lines.extend(_unit_result_prompt_lines(unit_result_contract))
-    # Unconditional shared-lane guidance: the same constant the capability
-    # blocks carry, so the two prepared prompt lanes cannot drift, and the
-    # no-discovery byte-identity contract stays intact (both sides gain it).
-    lines.append(STRUCTURAL_SEARCH_GUIDANCE)
+    # Search guidance rides the shared head (capped structural search, which
+    # already says "structural search when available, grep otherwise"); the
+    # tool-preference sentence the delegation capability blocks carry is not
+    # repeated here.
     lines.append("Commit your work; do not merge or push other branches.")
     return "\n".join(lines)
 

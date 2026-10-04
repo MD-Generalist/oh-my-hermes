@@ -502,7 +502,6 @@ class DeepSeekV41FlashTests(unittest.TestCase):
         self.assertIn("never only in reasoning", subagent)
         self.assertIn("exact literal strings", subagent)
         self.assertIn("report the blocker", subagent)
-        self.assertIn("byte-identical", composer)
         self.assertIn("low, high, or max", composer)
         self.assertIn("no synthetic thinking instructions", composer)
         for text in (subagent, composer):
@@ -1531,22 +1530,38 @@ class ClaudeSonnet55ContractTests(unittest.TestCase):
         self.assertIn("2027-09-28", contract["retirement"])
         self.assertEqual(contract["sources_read"], "2026-10-01")
 
-    def test_override_is_the_family_block_plus_the_vendor_measured_stop_clause(self) -> None:
-        override = MODEL_HIGH_EFFORT_CALIBRATIONS["claude-sonnet-5-5"]
-        family = HIGH_EFFORT_CALIBRATIONS["claude"]
-        clause = (
-            ", and once the criteria's checks pass the work is done — start no further review rounds "
-            "and no reviewer sub-agents unless a criterion asks for one."
-        )
-        self.assertEqual(override, family.replace("proves them.", "proves them" + clause))
-        route = {"selected_model": "claude-sonnet-5-5", "model_family": "claude", "selected_reasoning_effort": "max"}
-        self.assertEqual(calibration_for_route(route), override)
-        self.assertEqual(
-            composition_calibration_for_model("claude-sonnet-5-5"), MAIN_AGENT_COMPOSITION_CALIBRATIONS["claude"]
-        )
-        # Opus 5.5 keeps the family block byte-stable.
-        opus = {"selected_model": "claude-opus-5-5", "model_family": "claude", "selected_reasoning_effort": "max"}
-        self.assertEqual(calibration_for_route(opus), family)
+    def test_family_blocks_apply_since_the_override_was_removed(self) -> None:
+        # The exact override (family block plus a stop-review clause) measured
+        # no effect on 2026-10-02 (benchmarks/live-model-tools/v1/README.md)
+        # and no shipped slot reached it, so it was removed on 2026-10-04.
+        self.assertNotIn("claude-sonnet-5-5", MODEL_HIGH_EFFORT_CALIBRATIONS)
+        self.assertNotIn("claude-sonnet-5-5", MODEL_COMPOSITION_CALIBRATIONS)
+        for form in ("claude-sonnet-5-5", "anthropic/claude-sonnet-5-5", "claude-sonnet-5.5"):
+            with self.subTest(form=form):
+                route = resolve_model_route("hermes", requested_model=form, requested_effort="max")
+                self.assertEqual(calibration_for_route(route), HIGH_EFFORT_CALIBRATIONS["claude"])
+                self.assertEqual(
+                    composition_calibration_for_model(form), MAIN_AGENT_COMPOSITION_CALIBRATIONS["claude"]
+                )
+        # Bedrock spellings, with and without a regional prefix, read the
+        # `anthropic.` vendor segment and get the same claude family blocks.
+        for form in (
+            "anthropic.claude-sonnet-5-5",
+            "us.anthropic.claude-sonnet-5-5",
+            "anthropic.claude-opus-5-5",
+            "global.anthropic.claude-opus-5-5",
+        ):
+            with self.subTest(form=form):
+                self.assertEqual(model_family(form), "claude")
+                route = resolve_model_route("hermes", requested_model=form, requested_effort="max")
+                self.assertEqual(calibration_for_route(route), HIGH_EFFORT_CALIBRATIONS["claude"])
+                self.assertEqual(
+                    composition_calibration_for_model(form), MAIN_AGENT_COMPOSITION_CALIBRATIONS["claude"]
+                )
+        # Only a vendor segment is stripped: a lookalike stays unclassified.
+        for form in ("notanthropic.claude-x", "us-east.anthropic.claude-x", "anthropic."):
+            with self.subTest(form=form):
+                self.assertNotEqual(model_family(form), "claude")
 
     def test_sonnet_5_still_routes_off_as_before(self) -> None:
         for model in ("claude-sonnet-5", "sonnet"):

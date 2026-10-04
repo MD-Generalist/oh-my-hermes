@@ -627,3 +627,7 @@ Reading:
 - **The override stays, unproven.** It is not worse by the MODEL-ONBOARDING
   §8 rule. A follow-up should use a corpus where the model actually starts
   extra review rounds.
+- **Later (2026-10-04):** the override was removed in the prompt audit,
+  because no shipped slot reaches it and this run could not tell it from the
+  family block. Sonnet 5.5 now takes the `claude` family blocks; see
+  `MODEL_OPTI.md`.

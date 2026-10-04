@@ -600,6 +600,13 @@ def model_family(model_id: str) -> str:
     # family names what it is.
     if "/" in normalized:
         normalized = normalized.rsplit("/", 1)[1]
+    # Amazon Bedrock spells Anthropic models with a vendor prefix
+    # (`anthropic.claude-opus-5-5`), optionally behind a regional
+    # inference-profile prefix (`us.anthropic.claude-sonnet-5-5`). The vendor
+    # segment names where the model comes from, like a provider path above.
+    head, vendor, tail = normalized.partition("anthropic.")
+    if vendor and tail and (not head or (head.endswith(".") and head[:-1].isalpha())):
+        normalized = tail
     if normalized in _CLAUDE_TIER_ALIASES:
         return "claude"
     if normalized in _BARE_MODEL_ALIASES:
