@@ -7,7 +7,7 @@ from pathlib import Path
 import random
 from typing import Any
 
-from common import SCHEMA
+from common import CONDITIONS, SCHEMA
 
 
 def read_jsonl(path: Path) -> list[dict[str, Any]]:
@@ -99,6 +99,9 @@ def analyze(
     # is a parameter so an exact-model override (`optimized`) can be paired
     # against the family block it replaced (`family`) as well as against the
     # bare contract (`baseline`).
+    for side in (baseline_condition, optimized_condition):
+        if side not in CONDITIONS:
+            raise ValueError(f"unknown benchmark condition: {side}")
     baseline = _indexed(read_jsonl(baseline_path), baseline_condition)
     optimized = _indexed(read_jsonl(optimized_path), optimized_condition)
     if set(baseline) != set(optimized):
