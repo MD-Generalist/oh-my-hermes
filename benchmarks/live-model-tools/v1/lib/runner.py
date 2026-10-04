@@ -10,9 +10,15 @@ from tempfile import TemporaryDirectory
 from typing import Any
 import uuid
 
-from common import append_jsonl, artifact_is_safe, load_object, tree_digest
+from common import CONDITIONS, append_jsonl, artifact_is_safe, load_object, tree_digest
 from corpus import all_specs, materialize
-from omh_live import run_current_session_trial, run_trial
+from omh_live import (
+    head_omitted_blocks,
+    prompt_digest,
+    prompt_for_condition,
+    run_current_session_trial,
+    run_trial,
+)
 from validation import validate
 
 
@@ -26,6 +32,15 @@ def _snapshot(root: Path) -> dict[str, bytes]:
         if path.is_file() and "__pycache__" not in path.parts and ".venv" not in path.parts and ".pytest_cache" not in path.parts:
             snapshot[path.relative_to(root).as_posix()] = path.read_bytes()
     return snapshot
+
+
+def _live_task(instance_prompt: str) -> str:
+    """The task text every harness wraps in a condition prompt."""
+    return (
+        f"{instance_prompt}\n\n"
+        "Write the final machine answer as JSON to `.omh-benchmark-answer.json` in the "
+        "working directory. Do not include prose in that file."
+    )
 
 
 def doctor(base: Path, manifest_path: Path) -> dict[str, Any]:
@@ -71,8 +86,8 @@ def execute_one(
     hermes_executable: str = "hermes",
     current_session_provider: str | None = None,
 ) -> dict[str, Any]:
-    if condition not in {"baseline", "optimized", "family"}:
-        raise ValueError("condition must be baseline, optimized, or family")
+    if condition not in CONDITIONS:
+        raise ValueError(f"condition must be one of: {', '.join(CONDITIONS)}")
     with TemporaryDirectory(prefix="omh-bench-") as root_text:
         root = Path(root_text)
         workspace = root / "workspace"
@@ -86,6 +101,7 @@ def execute_one(
         route: dict[str, object] = {}
         failure_receipt: dict[str, object] | None = None
         trial_task_digest = instance.fixture_digest
+        trial_prompt_digest: str | None = None
         observation: dict[str, object] = {
             "status": "offline_fake",
             "tools": None,
@@ -97,7 +113,13 @@ def execute_one(
             result_path = root / "fake-result.json"
             request_path = root / "fake-request.json"
             prompt_path = root / "fake-prompt.txt"
-            prompt_path.write_text(instance.prompt, encoding="utf-8")
+            # The offline harness has no route, so the condition prompt is
+            # built with an empty one (no calibration); its digest is still the
+            # exact text this condition hands the harness.
+            fake_prompt = prompt_for_condition(_live_task(instance.prompt), {}, condition)
+            # Bytes, not text: a text write would emit CRLF on Windows.
+            prompt_path.write_bytes(fake_prompt.encode("utf-8"))
+            trial_prompt_digest = prompt_digest(fake_prompt)
             request_path.write_text(
                 json.dumps(
                     {
@@ -129,6 +151,8 @@ def execute_one(
             if completed.returncode:
                 raise RuntimeError(f"fake harness failed with exit {completed.returncode}")
             result = load_object(result_path)
+            if result.get("prompt_sha256") != trial_prompt_digest:
+                raise RuntimeError("fake harness did not receive the condition prompt")
             answer_path.write_text(json.dumps(result["answer"], sort_keys=True), encoding="utf-8")
             events = list(result["events"])
             for event in events:
@@ -137,11 +161,7 @@ def execute_one(
         elif harness in {"omh", "hermes_current_session"}:
             if model is None:
                 raise ValueError("live Hermes harness requires a model")
-            prompt = (
-                f"{instance.prompt}\n\n"
-                "Write the final machine answer as JSON to `.omh-benchmark-answer.json` in the "
-                "working directory. Do not include prose in that file."
-            )
+            prompt = _live_task(instance.prompt)
             if harness == "hermes_current_session":
                 trial = run_current_session_trial(
                     omh_executable=omh_executable,
@@ -177,6 +197,8 @@ def execute_one(
             raw_failure_receipt = trial.get("failure_receipt")
             failure_receipt = dict(raw_failure_receipt) if isinstance(raw_failure_receipt, dict) else None
             trial_task_digest = str(trial["task_digest"])
+            raw_prompt_digest = trial.get("prompt_digest")
+            trial_prompt_digest = raw_prompt_digest if isinstance(raw_prompt_digest, str) else None
             observation = dict(trial["observation"])
         else:
             raise ValueError("harness must be fake, omh, or hermes_current_session")
@@ -200,6 +222,8 @@ def execute_one(
             "execution_path": harness,
             "model": model,
             "task_digest": trial_task_digest,
+            "prompt_digest": trial_prompt_digest,
+            "head_omitted_blocks": head_omitted_blocks(condition),
             "route": route,
             "observation": observation,
             "failure_receipt": failure_receipt,

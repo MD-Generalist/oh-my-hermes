@@ -14,7 +14,16 @@ from omh.coding.routing_observation import (
     build_routing_observation,
     validate_routing_observation,
 )
-from omh.coding.unit_prompt_protocol import calibration_for_route
+from omh.coding.coding_contracts import STRUCTURAL_SEARCH_DISCIPLINE_GUIDANCE
+from omh.coding.unit_prompt_protocol import (
+    FAILURE_KIND_PROTOCOL,
+    GOAL_ECHO_PROTOCOL,
+    PARENT_CLARIFICATION_PROTOCOL,
+    UNIT_RESULT_RETURN_PROTOCOL,
+    VERIFICATION_STOP_PROTOCOL,
+    calibration_for_route,
+    shared_unit_preamble_lines,
+)
 
 
 _TASK_START = "OMH benchmark task:\n"
@@ -44,6 +53,7 @@ def _failed_current_session_trial(
     kind: str,
     exit_code: int | None = None,
     classification: str | None = None,
+    prompt_sent: bool = True,
 ) -> dict[str, object]:
     receipt: dict[str, object] = {"classification": classification or _failure_classification(detail), "kind": kind}
     if exit_code is not None:
@@ -53,6 +63,8 @@ def _failed_current_session_trial(
         "execution_path": "hermes_current_session",
         "condition": condition,
         "task_digest": task_digest(prompt),
+        # A route failure ends the trial before the condition prompt exists.
+        "prompt_digest": prompt_digest(prompt) if prompt_sent else None,
         "route": {
             "selected_model": route["selected_model"],
             "selected_reasoning_effort": route["selected_reasoning_effort"],
@@ -176,6 +188,85 @@ def prompt_pair(task: str, route: Mapping[str, Any]) -> tuple[str, str]:
     return common, optimized
 
 
+# The `Overall goal:` line of the unit head. Fixed rather than the task text so
+# the head stays byte-identical across instances, the way sibling units of one
+# fanout share it, and so the task appears once, inside its digest boundary.
+UNIT_HEAD_GOAL = "Complete the OMH benchmark task below in this workspace."
+
+# Blocks `unit_lean` drops from the product head. Data, so a later arm can vary
+# it; every name must be a key of `unit_head_blocks()`. The first trim
+# candidate from the 2026-10-04 prompt audit: the parent-clarification block,
+# which also carries the head's only fanout_unit_result/v1 JSON example.
+UNIT_LEAN_OMITTED_BLOCKS: tuple[str, ...] = ("PARENT_CLARIFICATION",)
+
+# The head's own return instructions name a fanout_unit_result/v1 block and an
+# input_required escalation to a parent; neither exists in a benchmark run.
+# Both unit arms state this precedence explicitly, after the head and its
+# calibration and before the task, so the graded answer file stays the
+# deliverable and `common` stays byte-identical across all five conditions.
+UNIT_DELIVERABLE_PRECEDENCE = (
+    "Benchmark deliverable: this unit runs inside the OMH benchmark, not a fanout. The "
+    "`.omh-benchmark-answer.json` file the completion contract below requires is the graded "
+    "deliverable and takes precedence over any other return format named above; there is no "
+    "sidecar path, dispatch identity, or parent to consult in this run. A fenced result block "
+    "in your final reply is optional and is not graded."
+)
+
+
+def unit_head_blocks(goal_text: str = UNIT_HEAD_GOAL) -> dict[str, str]:
+    """Name each block of the product's shared unit head, in head order.
+
+    Built from `shared_unit_preamble_lines()` itself, so the bytes track
+    `src/`; the names only label the lines. The return line is split into its
+    own sentence and the parent-clarification block it ends with, because the
+    audit's trim candidate is the second half. A head line this table cannot
+    name raises, so a new head block has to be named here before an arm can
+    omit it or a test can claim the lean head drops nothing else.
+    """
+    named = {
+        GOAL_ECHO_PROTOCOL: "GOAL_ECHO",
+        VERIFICATION_STOP_PROTOCOL: "VERIFICATION_STOP",
+        FAILURE_KIND_PROTOCOL: "FAILURE_KIND",
+        STRUCTURAL_SEARCH_DISCIPLINE_GUIDANCE: "STRUCTURAL_SEARCH_DISCIPLINE",
+    }
+    return_sentence = UNIT_RESULT_RETURN_PROTOCOL.removesuffix("\n" + PARENT_CLARIFICATION_PROTOCOL)
+    if return_sentence == UNIT_RESULT_RETURN_PROTOCOL:
+        raise ValueError("UNIT_RESULT_RETURN_PROTOCOL no longer ends with PARENT_CLARIFICATION_PROTOCOL")
+    blocks: dict[str, str] = {}
+    lines = shared_unit_preamble_lines(goal_text)
+    for index, line in enumerate(lines):
+        if index == 0 and line.startswith("Overall goal: "):
+            blocks["OVERALL_GOAL"] = line
+        elif line == UNIT_RESULT_RETURN_PROTOCOL:
+            blocks["UNIT_RESULT_RETURN"] = return_sentence
+            blocks["PARENT_CLARIFICATION"] = PARENT_CLARIFICATION_PROTOCOL
+        elif line in named:
+            blocks[named[line]] = line
+        else:
+            raise ValueError(f"unnamed shared unit head line {index}; name it in unit_head_blocks()")
+    if "\n".join(blocks.values()) != "\n".join(lines):
+        raise ValueError("named unit head blocks do not reproduce the product head")
+    return blocks
+
+
+def unit_head(omitted: tuple[str, ...] = ()) -> str:
+    """The product's shared unit head, joined as `build_unit_prompt` joins it."""
+    blocks = unit_head_blocks()
+    unknown = sorted(set(omitted) - set(blocks))
+    if unknown:
+        raise ValueError(f"unknown unit head blocks: {', '.join(unknown)}")
+    return "\n".join(text for name, text in blocks.items() if name not in omitted)
+
+
+def head_omitted_blocks(condition: str) -> list[str] | None:
+    """The head blocks a condition drops; `None` when it carries no head."""
+    if condition == "unit":
+        return []
+    if condition == "unit_lean":
+        return list(UNIT_LEAN_OMITTED_BLOCKS)
+    return None
+
+
 def prompt_for_condition(task: str, route: Mapping[str, Any], condition: str) -> str:
     """The prompt one benchmark condition sends; every condition shares one task.
 
@@ -184,6 +275,11 @@ def prompt_for_condition(task: str, route: Mapping[str, Any], condition: str) ->
     adds the block the model would inherit from its family with the override
     skipped. `family` exists so an exact-model override can be measured
     against what it replaced, not only against no calibration at all.
+
+    `unit` is what a dispatched fanout unit carries in front of its work: the
+    product's shared unit head, then the `optimized` calibration, then the
+    deliverable-precedence note, then the same contract. `unit_lean` is `unit`
+    with `UNIT_LEAN_OMITTED_BLOCKS` removed from the head and nothing else.
     """
     baseline, optimized = prompt_pair(task, route)
     if condition == "optimized":
@@ -191,7 +287,17 @@ def prompt_for_condition(task: str, route: Mapping[str, Any], condition: str) ->
     if condition == "family":
         calibration = calibration_for_route(route, family_only=True)
         return baseline if not calibration else f"{calibration}\n\n{baseline}"
+    omitted = head_omitted_blocks(condition)
+    if omitted is not None:
+        calibration = calibration_for_route(route)
+        parts = [unit_head(tuple(omitted)), calibration, UNIT_DELIVERABLE_PRECEDENCE, baseline]
+        return "\n\n".join(part for part in parts if part)
     return baseline
+
+
+def prompt_digest(prompt: str) -> str:
+    """SHA-256 of the exact prompt text a condition sent; the text is never kept."""
+    return hashlib.sha256(prompt.encode("utf-8")).hexdigest()
 
 
 def task_digest(prompt: str) -> str:
@@ -277,6 +383,7 @@ def run_trial(
         "schema_version": "omh_live_model_trial/v1",
         "condition": condition,
         "task_digest": task_digest(prompt),
+        "prompt_digest": prompt_digest(prompt),
         "route": {
             "selected_model": route["selected_model"],
             "selected_reasoning_effort": route["selected_reasoning_effort"],
@@ -326,6 +433,7 @@ def run_current_session_trial(
             route=fallback_route,
             condition=condition,
             prompt=prompt_pair(task, fallback_route)[0],
+            prompt_sent=False,
             detail="",
             kind="route_timeout" if isinstance(exc, subprocess.TimeoutExpired) else "route_launch",
             classification="timeout" if isinstance(exc, subprocess.TimeoutExpired) else "process_crash",
@@ -335,6 +443,7 @@ def run_current_session_trial(
             route=fallback_route,
             condition=condition,
             prompt=prompt_pair(task, fallback_route)[0],
+            prompt_sent=False,
             detail=route_completed.stderr,
             kind="route_exit",
             exit_code=route_completed.returncode,
@@ -348,6 +457,7 @@ def run_current_session_trial(
             route=fallback_route,
             condition=condition,
             prompt=prompt_pair(task, fallback_route)[0],
+            prompt_sent=False,
             detail="",
             kind="route_protocol",
             classification="adapter_protocol_error",
@@ -405,6 +515,7 @@ def run_current_session_trial(
         "execution_path": "hermes_current_session",
         "condition": condition,
         "task_digest": task_digest(prompt),
+        "prompt_digest": prompt_digest(prompt),
         "route": {
             "selected_model": route["selected_model"],
             "selected_reasoning_effort": route["selected_reasoning_effort"],

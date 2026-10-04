@@ -10,7 +10,7 @@ import unittest
 BASE = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BASE / "lib"))
 
-from common import artifact_is_safe  # noqa: E402
+from common import CONDITIONS, artifact_is_safe  # noqa: E402
 from common import append_jsonl, tree_digest, write_json  # noqa: E402
 from runner import doctor, execute_one  # noqa: E402
 from statistics import analyze  # noqa: E402
@@ -194,6 +194,78 @@ class OmhBenchmarkFrameworkTests(unittest.TestCase):
             self.assertEqual((receipt["condition"], receipt["scheduled"], receipt["paid_calls_launched"]), ("family", 10, 0))
             conditions = {json.loads(line)["condition"] for line in output.read_text().splitlines()}
             self.assertEqual(conditions, {"family"})
+
+    def test_every_condition_enumeration_matches_the_declared_arms(self) -> None:
+        self.assertEqual(CONDITIONS, ("baseline", "optimized", "family", "unit", "unit_lean"))
+        schema = json.loads((BASE / "schemas" / "run-record.schema.json").read_text())
+        self.assertEqual(schema["properties"]["condition"]["enum"], list(CONDITIONS))
+        self.assertIn("prompt_digest", schema["properties"])
+        self.assertIn("head_omitted_blocks", schema["properties"])
+        for script in ("bench.py", "analyze.py"):
+            argv = [sys.executable, str(BASE / script)]
+            argv += ["run", "--condition", "bogus"] if script == "bench.py" else [
+                "--baseline", "a", "--optimized", "b", "--output", "c", "--baseline-condition", "bogus",
+            ]
+            completed = subprocess.run(argv, capture_output=True, text=True, check=False)
+            self.assertEqual(completed.returncode, 2, script)
+            for condition in CONDITIONS:
+                self.assertIn(f"'{condition}'", completed.stderr, script)
+
+    def test_bench_cli_runs_the_unit_arms_offline_and_records_their_prompts(self) -> None:
+        manifest = json.loads((BASE / "manifest.json").read_text())
+        with TemporaryDirectory() as root:
+            root_path = Path(root)
+            records = {}
+            for condition in ("unit", "unit_lean"):
+                output = root_path / f"{condition}-runs.jsonl"
+                for command in ("smoke", "run"):
+                    completed = subprocess.run(
+                        [sys.executable, str(BASE / "bench.py"), command, "--harness", "fake",
+                         "--condition", condition, "--output", str(output)],
+                        capture_output=True,
+                        check=False,
+                        text=True,
+                    )
+                    self.assertEqual(completed.returncode, 0, completed.stderr)
+                receipt = json.loads(completed.stdout)
+                self.assertEqual(
+                    (receipt["condition"], receipt["scheduled"], receipt["passed"], receipt["paid_calls_launched"]),
+                    (condition, 10, 10, 0),
+                )
+                rows = [json.loads(line) for line in output.read_text().splitlines()]
+                self.assertEqual(len(rows), 11)
+                self.assertEqual({row["condition"] for row in rows}, {condition})
+                for row in rows:
+                    self.assertRegex(row["prompt_digest"], r"^[0-9a-f]{64}$")
+                    self.assertTrue(artifact_is_safe(row))
+                records[condition] = rows[1:]
+            self.assertEqual([row["head_omitted_blocks"] for row in records["unit"]], [[]] * 10)
+            self.assertEqual(
+                [row["head_omitted_blocks"] for row in records["unit_lean"]], [["PARENT_CLARIFICATION"]] * 10
+            )
+            for unit, lean in zip(records["unit"], records["unit_lean"], strict=True):
+                self.assertEqual(unit["task_digest"], lean["task_digest"])
+                self.assertNotEqual(unit["prompt_digest"], lean["prompt_digest"])
+            baseline = execute_one(
+                BASE, manifest, "development", "D-RENAME", "edit", 7919, "baseline", root_path / "baseline.jsonl",
+            )
+            self.assertIsNone(baseline["head_omitted_blocks"])
+            self.assertNotIn(baseline["prompt_digest"], {row["prompt_digest"] for row in records["unit"]})
+            unit_path, lean_path = root_path / "unit.jsonl", root_path / "lean.jsonl"
+            for path, rows in ((unit_path, records["unit"]), (lean_path, records["unit_lean"])):
+                path.write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
+            result = analyze(
+                unit_path, lean_path, 100, 7, manifest, baseline_condition="unit", optimized_condition="unit_lean",
+            )
+            self.assertEqual(result["conditions"], {"baseline": "unit", "optimized": "unit_lean"})
+            self.assertEqual(result["models"]["offline/fake-model"]["n"], 10)
+            report = root_path / "analysis.json"
+            write_json(report, result)
+            audited = audit(BASE / "manifest.json", report)
+            self.assertTrue(audited["ok"])
+            self.assertTrue(audited["checks"]["conditions_declared"])
+            write_json(report, {**result, "conditions": {"baseline": "unit", "optimized": "bogus"}})
+            self.assertFalse(audit(BASE / "manifest.json", report)["checks"]["conditions_declared"])
 
     def test_analysis_rejects_unscheduled_model_claim_matrix(self) -> None:
         manifest = json.loads((BASE / "manifest.json").read_text())

@@ -21,10 +21,19 @@
     "created_at": {"type": "string"},
     "instance_id": {"type": "string"},
     "split": {"enum": ["development", "evaluation"]},
-    "condition": {"enum": ["baseline", "optimized", "family"]},
+    "condition": {"enum": ["baseline", "optimized", "family", "unit", "unit_lean"]},
     "harness": {"enum": ["fake", "omh"]},
     "model": {"type": ["object", "null"]},
     "task_digest": {"$ref": "#/$defs/digest"},
+    "prompt_digest": {
+      "description": "sha256 of the exact prompt text the condition sent; null when no prompt was sent",
+      "anyOf": [{"$ref": "#/$defs/digest"}, {"type": "null"}]
+    },
+    "head_omitted_blocks": {
+      "description": "unit-head block names the condition dropped; [] for unit, null for a condition without the head",
+      "type": ["array", "null"],
+      "items": {"type": "string"}
+    },
     "route": {
       "type": "object",
       "properties": {

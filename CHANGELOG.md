@@ -29,6 +29,21 @@ All notable changes will be documented here.
     block, the composer override was the family block byte for byte, and no
     shipped slot reached either. Sonnet 5.5 now takes the `claude` family
     blocks.
+- **The live-model benchmark can measure the shared unit head.** Every
+  benchmark arm used to send only a calibration paragraph in front of the
+  bare benchmark contract, so the head that every dispatched fanout unit
+  carries had never been measured. Two new conditions in
+  `benchmarks/live-model-tools/v1` cover it.
+  - `unit` sends the product's own head (built by
+    `shared_unit_preamble_lines()`, not copied), then the `optimized`
+    calibration, then a note that the benchmark answer file is the graded
+    deliverable, then the task and contract.
+  - `unit_lean` drops a declared, named set of head blocks. It starts with
+    `PARENT_CLARIFICATION`, the block that also carries the JSON example.
+  - Every run record now has a `prompt_digest` of the exact prompt sent and
+    a `head_omitted_blocks` field. `bench.py`, `analyze.py`, the run-record
+    schema, the fake harness, and the audit all read a single condition list.
+  - Offline only so far. No live arm has run.
 
 - **GPT-6.1 Sol and Claude Sonnet 5.5 placements are measured.** Each was
   run on its subscription route against `benchmarks/live-model-tools/v1`

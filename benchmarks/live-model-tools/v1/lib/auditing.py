@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from common import artifact_is_safe, digest, load_object
+from common import CONDITIONS, artifact_is_safe, digest, load_object
 
 
 def audit(
@@ -31,6 +31,13 @@ def audit(
         "no_secrets_or_absolute_paths": artifact_is_safe(report),
         "claim_boundary_matches_manifest": (
             report.get("claim_boundary") == manifest.get("claim_boundary")
+        ),
+        # Both compared arms must be declared benchmark conditions; a report
+        # naming anything else was not produced by this benchmark's arms.
+        "conditions_declared": (
+            isinstance(report.get("conditions"), dict)
+            and set(report["conditions"]) == {"baseline", "optimized"}
+            and all(value in CONDITIONS for value in report["conditions"].values())
         ),
     }
     signoff = False

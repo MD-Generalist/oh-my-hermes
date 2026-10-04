@@ -2,6 +2,7 @@
 """Deterministic offline harness for controller and validator smoke tests."""
 from __future__ import annotations
 import ast
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -75,6 +76,9 @@ def main():
         route=json.loads(subprocess.check_output(args,cwd=workspace,text=True))
         events.append({"sequence":1,"name":"bash","arguments_digest":"0"*64,"started_ms":0,"ended_ms":1,"result":"success"})
         answer={"route":route}
-    write({"schema_version":"omh_fake_harness_result/v1","answer":answer,"events":events,"usage":{"input_tokens":None,"output_tokens":None,"reasoning_tokens":None,"cache_read_tokens":None,"total_tokens":None,"provider_cost_usd":None,"source":"unavailable"}})
+    # Echo the digest of the condition prompt the controller handed over, so a
+    # record's prompt_digest is proven to be what this harness received.
+    prompt_sha256 = hashlib.sha256(Path(os.environ["LMT_PROMPT"]).read_bytes()).hexdigest()
+    write({"schema_version":"omh_fake_harness_result/v1","prompt_sha256":prompt_sha256,"answer":answer,"events":events,"usage":{"input_tokens":None,"output_tokens":None,"reasoning_tokens":None,"cache_read_tokens":None,"total_tokens":None,"provider_cost_usd":None,"source":"unavailable"}})
 
 if __name__ == "__main__": main()

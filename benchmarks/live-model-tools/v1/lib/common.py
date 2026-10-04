@@ -10,6 +10,10 @@ import stat
 from typing import Any
 
 SCHEMA = "omh_live_model_tool_run/v1"
+# Every benchmark arm, in one place: bench.py, analyze.py, the runner, the
+# run-record schema, and the audit all read this tuple, so an arm added here
+# is either wired everywhere or fails a test that compares them.
+CONDITIONS = ("baseline", "optimized", "family", "unit", "unit_lean")
 HEX64 = re.compile(r"[0-9a-f]{64}\Z")
 SECRET = re.compile(
     r"(?:sk-[A-Za-z0-9_-]{12,}|ghp_[A-Za-z0-9]{20,}|AKIA[A-Z0-9]{16}|"
