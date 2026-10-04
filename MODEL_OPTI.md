@@ -23,12 +23,22 @@ from the runtime that actually ran the model.
    `src/coding/model_routing.py` strips a provider prefix
    (`opencode/kimi-k3` → `kimi-k3`) and matches by prefix. Unknown ids get
    family `unknown` — never an error, just generic discipline.
-3. **The prepared prompt is assembled.** Every dispatched unit prompt carries
-   the universal protocols (goal echo-back, numbered completion criteria,
-   bounded verification). If the routed effort is `high`/`xhigh`/`max`, one
-   family-specific calibration paragraph is appended for the subagent; the
-   composer writing the split follows the calibration for its *own* model
-   (`omh coding composition-guide --model <id>` prints it).
+3. **The prepared prompt is assembled.** One function,
+   `assemble_unit_prompt()` in `src/coding/unit_prompt_assembly.py`, builds
+   every unit prompt as named blocks in four zones: the byte-identical
+   `shared_head` (goal echo-back, bounded verification, failure kinds,
+   structured return, capped search), the `unit` section (numbered
+   completion criteria, tool batching, role protocol, calibration, domain
+   bundle, skills), the `tail` (sidecar contract), and the redispatch
+   `append` (repair brief or parent decision). Live dispatch, Hermes
+   recovery, and both benchmark lanes call it, so what a benchmark measures
+   is the product's text in the product's order. If the routed effort is
+   `high`/`xhigh`/`max`, one calibration block is added for the subagent
+   (`unit.calibration[<key>]`, the key naming the exact-model override or the
+   family that answered); the composer writing the split follows the
+   calibration for its *own* model
+   (`omh coding composition-guide --model <id>` prints it). Each dispatch row
+   records the block names, size, and sha256 it sent (`unit_prompt`).
 4. **The model runs it.** Tool calling, todo rendering, and parallel
    execution are Hermes runtime capabilities — OMH's ULW behaviors
    (`todo init`, phase checklists, parallel evals, interjection-resume) live
@@ -250,7 +260,7 @@ which a gate can actually check, and
 
 | Ceiling | Value | What it bounds |
 | --- | --- | --- |
-| `SHARED_PREAMBLE_MAX_BYTES` | 2770 | OMH-authored bytes of the executor-invariant head. `UNIT_PROMPT_MAX_BYTES` bounds the whole assembled prompt, which would let the shared head triple without tripping; the caller's goal line is excluded because its length is the operator's business. |
+| `SHARED_PREAMBLE_MAX_BYTES` | 2770 | OMH-authored bytes of the executor-invariant head. `UNIT_PROMPT_MAX_BYTES` bounds the whole dispatch prompt, which would let the shared head triple without tripping; the caller's goal line is excluded because its length is the operator's business. |
 | `SHARED_PREAMBLE_MAX_CONSTRAINTS` | 10 | Directive sentences in that head. |
 | `BLOCK_MAX_CONSTRAINTS` | 3 | Directive sentences in any single dispatched block, family calibrations included. |
 
@@ -1365,7 +1375,9 @@ where one exists, the family block otherwise. The calibrations exist to
 counter the over-verification inertia of high-effort routes; low-effort
 routes do not exhibit that inertia, and every byte rides a prepared prompt
 whose worst-case assembled size is policy-gated in tests
-(`UNIT_PROMPT_MAX_BYTES = 8000`) rather than truncated at runtime.
+(`UNIT_PROMPT_MAX_BYTES = 8000` for the dispatch prompt; each redispatch
+section has its own producer-derived `UNIT_PROMPT_APPEND_MAX_BYTES`) rather
+than truncated at runtime.
 
 ## Throughput overlays (per family, ULW-facing)
 
@@ -1375,7 +1387,9 @@ shot, keep dependency-bound work sequential. Three advanced modes are gated to
 measured family/surface pairs:
 
 - `gpt_sol_codex_handoff` applies to a `*-sol` model on the codex profile and
-  adds single-eval-cell internal parallelism.
+  adds single-eval-cell internal parallelism. The suffix is read off the
+  contract model id, the identity the calibration lookup uses, so a projected
+  id such as `gpt-6.1-sol-pro` gets the overlay its calibration already gets.
 - `gpt_hermes_ulw` applies to the gpt family on the hermes profile running
   ultrawork.
 - `claude_code_handoff` applies to the claude family on the Claude Code

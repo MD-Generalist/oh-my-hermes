@@ -601,4 +601,3 @@ def shared_unit_preamble_lines(goal_text: str) -> list[str]:
         UNIT_RESULT_RETURN_PROTOCOL,
         STRUCTURAL_SEARCH_DISCIPLINE_GUIDANCE,
     ]
-

@@ -4,6 +4,29 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **One function assembles every fanout unit prompt.**
+  `assemble_unit_prompt()` (`src/coding/unit_prompt_assembly.py`) returns
+  the prompt as named blocks in four zones (shared head, unit, tail,
+  redispatch append) instead of a string that dispatch then edited. Live
+  dispatch, the Hermes recovery lane, `build_unit_prompt`, and both
+  benchmark lanes call it; a repair brief, a parent decision, and a retry's
+  fresh sidecar path are arguments now. Every existing path is byte-identical
+  (840 pinned golden prompts, and product-ab's prompt digests), except the
+  change below.
+  - The sidecar contract no longer restates when to report
+    `process_declined`; the shared head's failure-kind sentence says it, and
+    every prompt with the contract carries the head. Sidecar prompts are
+    241 B shorter.
+  - `UNIT_PROMPT_MAX_BYTES` (8,000 B) now explicitly bounds the dispatch
+    prompt, gated over every calibration key with the sidecar contract and
+    skill discovery. A repair brief at its own caps (9 commands x 512
+    characters) adds about 10 KB, more than that ceiling, so each redispatch
+    section gets its own producer-derived `UNIT_PROMPT_APPEND_MAX_BYTES`.
+  - Dispatch rows record `unit_prompt`: block names, byte size, and sha256
+    of the prompt sent, never the text.
+  - `gpt-6.1-sol-pro` now gets the Sol Codex throughput overlay its
+    calibration already implied; the overlay reads the contract model id.
+
 - **Bedrock Claude ids get the claude family.** `model_family` now reads
   Amazon Bedrock's `anthropic.` vendor segment, with or without a regional
   prefix (`us.anthropic.claude-opus-5-5`), so those ids receive the claude
@@ -34,12 +57,13 @@ All notable changes will be documented here.
   bare benchmark contract, so the head that every dispatched fanout unit
   carries had never been measured. Two new conditions in
   `benchmarks/live-model-tools/v1` cover it.
-  - `unit` sends the product's own head (built by
-    `shared_unit_preamble_lines()`, not copied), then the `optimized`
+  - `unit` sends the product's own head (the assembler's `shared_head`
+    blocks, not copied), then the `optimized`
     calibration, then a note that the benchmark answer file is the graded
     deliverable, then the task and contract.
   - `unit_lean` drops a declared, named set of head blocks. It starts with
-    `PARENT_CLARIFICATION`, the block that also carries the JSON example.
+    `head.parent_clarification`, the block that also carries the JSON
+    example.
   - Every run record now has a `prompt_digest` of the exact prompt sent and
     a `head_omitted_blocks` field. `bench.py`, `analyze.py`, the run-record
     schema, the fake harness, and the audit all read a single condition list.

@@ -876,9 +876,18 @@ Rules, all applied at freeze time:
   criterion-bound review with a two-round re-review cap. High-effort
   routes (high/xhigh/max) append a per-family calibration block countering
   over-verification inertia; unknown families get the generic block so no
-  vendor carries richer guidance than another. Prompts are subprocess
-  argv, so the assembled worst case is policy-gated under
-  `UNIT_PROMPT_MAX_BYTES` in tests rather than trimmed at runtime.
+  vendor carries richer guidance than another. One function,
+  `assemble_unit_prompt` (`src/coding/unit_prompt_assembly.py`), builds the
+  prompt as named blocks for every path: live dispatch (a repair brief, a
+  parent decision, or a retry's fresh sidecar path is an argument, never an
+  edit of the text), Hermes recovery (no sidecar contract), and the
+  benchmark lanes. Prompts are subprocess argv, so the worst case is
+  policy-gated in tests rather than trimmed at runtime:
+  `UNIT_PROMPT_MAX_BYTES` for the dispatch prompt and
+  `UNIT_PROMPT_APPEND_MAX_BYTES` for each redispatch section, which is
+  bounded by the repair and clarification caps. Each unit row records
+  `unit_prompt`: the block names, byte size, and sha256 of the prompt the
+  last attempt sent, never the text.
 - **Telemetry.** Each dispatched unit records `started_at`, `finished_at`,
   and `duration_seconds`, and the full dispatch summary persists to
   `~/.omh/coding/fanout/<id>/dispatch_summary.json` (latest wins,
