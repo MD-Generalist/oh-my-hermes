@@ -308,16 +308,16 @@ def _unit_result_lines(contract: Mapping[str, Any]) -> list[str]:
         "Before exiting, write one fanout_unit_result/v1 JSON sidecar to exactly "
         f"{contract.get('path', '')}.",
         "Top-level fields: schema_version, unit_id, run_id, fanout_id, base_sha, head_sha, "
-        "process_status, decline_reason (required only with process_status process_declined), "
-        "changed_paths, checks, findings, schema_error (optional).",
+        "process_status, decline_reason, changed_paths, checks, findings, schema_error (optional).",
         "Use these dispatch-bound values: "
         f"schema_version=fanout_unit_result/v1, unit_id={contract.get('unit_id', '')}, "
         f"run_id={contract.get('run_id', '')}, fanout_id={contract.get('fanout_id', '')}, "
         f"base_sha={contract.get('base_sha', '')}; head_sha is the git HEAD you leave behind.",
         f"process_status must be exactly {process_values} — no other value validates.",
-        "process_declined is a conclusive negative answer (the target does not exist, the request "
-        "is refused by policy, or the acceptance criteria are infeasible as specified), never a "
-        "retry candidate — do not report process_failed for it. When you report process_declined, "
+        # When to decline, and that a decline is not process_failed, is
+        # head.failure_kind's sentence; every prompt with this contract
+        # carries the head, so only the literals and the pairing live here.
+        "process_declined is never a retry candidate. When you report process_declined, "
         f"decline_reason is required and must be exactly {decline_values} — omit decline_reason for "
         "every other process_status.",
         "Each checks row fields: command, status, evidence_ref, reported_by, observed_by, "
