@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from .model_contracts import contract_model_id
 from .model_routing import model_family
 
 
@@ -59,10 +60,16 @@ def build_throughput_overlay(
 
 
 def _is_gpt_sol_model(model_id: str) -> bool:
+    """Whether the model is a GPT Sol, read through its contract model id.
+
+    The contract projection is the identity the calibration lookup uses, so
+    a projected id (`gpt-6.1-sol-pro` -> `gpt-6.1-sol`) gets the same answer
+    here as there.
+    """
     normalized = str(model_id or "").strip().casefold().rsplit("/", 1)[-1]
     if not normalized:
         return False
-    normalized = normalized.split(":", 1)[0].split(None, 1)[0]
+    normalized = contract_model_id(normalized.split(":", 1)[0].split(None, 1)[0])
     return model_family(normalized) == "gpt" and normalized.endswith("-sol")
 
 

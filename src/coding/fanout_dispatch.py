@@ -930,6 +930,15 @@ def build_unit_prompt(
     ).text
 
 
+def _unit_prompt_record(assembled: AssembledPrompt) -> dict[str, Any]:
+    """Which blocks a unit was sent, and how large, without the text itself.
+
+    The last attempt's prompt: a retry re-assembles with its own sidecar
+    path, so its digest is the one the executor actually received.
+    """
+    return {"blocks": list(assembled.names()), "size_bytes": assembled.size_bytes, "sha256": assembled.digest()}
+
+
 def _recorded_model_route(unit: Mapping[str, Any]) -> Mapping[str, Any] | None:
     handoff = unit.get("handoff", {}) if isinstance(unit.get("handoff"), Mapping) else {}
     return handoff.get("model_route") if isinstance(handoff.get("model_route"), Mapping) else None
@@ -4226,6 +4235,7 @@ def _dispatch_unit(
             "model": routed_model,
             "status": "dry_run_planned",
             "planned_argv": [part if part != prompt else "<unit prompt>" for part in argv],
+            "unit_prompt": _unit_prompt_record(assembled),
             "worktree_path": str(worktree),
             "child_environment_policy": child_environment.receipt,
             "verification_environment_policy": verification_environment.receipt,
@@ -5178,6 +5188,7 @@ def _dispatch_unit(
         result["owner_host"] = owner_host
     result['attempt_id'] = attempt_id
     result['invocation_id'] = invocation_id
+    result["unit_prompt"] = _unit_prompt_record(assembled)
     result.update(session_fields)
     if not session_fields:
         result['executor_session_status'] = 'not_available'

@@ -224,6 +224,39 @@ class ExecutorPromptingTests(unittest.TestCase):
                 for rule in overlay["rules"]:
                     self.assertNotIn("without ending the turn", rule)
 
+    def test_a_projected_sol_id_gets_the_overlay_its_calibration_gets(self) -> None:
+        # `gpt-6.1-sol-pro` projects to the `gpt-6.1-sol` contract, so the
+        # high-effort calibration already gave it the 6.1 Sol override while
+        # the overlay's own suffix check gave it plain `parallel_handoff`: one
+        # model, two answers. Both now read the contract model id.
+        from omh.coding.model_contracts import contract_model_id
+        from omh.coding.unit_prompt_protocol import calibration_entry_for_route
+
+        for model in ("gpt-6.1-sol-pro", "openai/gpt-6.1-sol-pro"):
+            with self.subTest(model=model):
+                self.assertEqual(contract_model_id(model), "gpt-6.1-sol")
+                entry = calibration_entry_for_route(
+                    {"selected_model": model, "selected_reasoning_effort": "high", "model_family": "gpt"}
+                )
+                self.assertEqual(entry[0] if entry else None, "gpt-6.1-sol")
+                payload = build_coding_delegation_payload(
+                    "Implement src/example.py",
+                    executor_target="codex",
+                    main_agent_model=model,
+                )
+                overlay = payload["executor_handoff"]["executor_prompting_contract"]["throughput_overlay"]
+                self.assertEqual(overlay["mode"], "gpt_sol_codex_handoff")
+        # A GPT id that projects to no Sol contract keeps the plain overlay.
+        for model in ("gpt-6-astra", "gpt-6-solar-preview"):
+            with self.subTest(model=model):
+                payload = build_coding_delegation_payload(
+                    "Implement src/example.py",
+                    executor_target="codex",
+                    main_agent_model=model,
+                )
+                overlay = payload["executor_handoff"]["executor_prompting_contract"]["throughput_overlay"]
+                self.assertEqual(overlay["mode"], "parallel_handoff")
+
     def test_gpt_sol_codex_handoff_adds_eval_batching_guidance(self) -> None:
         payload = build_coding_delegation_payload(
             "Implement src/example.py",

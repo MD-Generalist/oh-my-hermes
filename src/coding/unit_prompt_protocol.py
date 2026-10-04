@@ -61,10 +61,30 @@ from typing import Any, Final, Mapping
 from .coding_contracts import STRUCTURAL_SEARCH_DISCIPLINE_GUIDANCE
 from .model_contracts import contract_model_id
 
-# Policy ceiling for a fully-assembled unit prompt (bytes of UTF-8). The
-# worst-case combination across roles, owners, and calibration blocks is
-# asserted under this in tests; runtime never truncates.
+# Policy ceiling for the dispatch prompt (bytes of UTF-8): every block of
+# `unit_prompt_assembly.assemble_unit_prompt` except the redispatch appends,
+# i.e. the shared head, the unit section, and the sidecar contract. The worst
+# case over every calibration key (family blocks and exact-model overrides),
+# the review role, the longest domain bundle, a full skill sequence, and the
+# longest sidecar binding is asserted under this in
+# `tests/test_unit_prompt_assembly.py`, whose failure message prints the
+# measured size; runtime never truncates.
 UNIT_PROMPT_MAX_BYTES: Final[int] = 8000
+
+# Ceiling for ONE redispatch section appended after the dispatch prompt (a
+# repair brief or a parent decision). Not part of `UNIT_PROMPT_MAX_BYTES`:
+# a repair brief echoes up to `_MAX_REPAIR_CHECKS` failing commands of up to
+# `_MAX_REPAIR_COMMAND_CHARS` characters (`fanout_repair`, the journal's own
+# bounds), and truncating one would hand the executor a command it cannot
+# run. At those caps the brief alone is larger than the dispatch ceiling, so
+# one ceiling over the whole prompt would have to more than double, letting
+# OMH-authored blocks grow by that much unnoticed. The sections are bounded
+# by their producers' caps instead: this value is the repair brief at those
+# caps with `"` commands (the printable ASCII character JSON doubles) plus
+# about 9% headroom, derived 2026-10-04. Re-derive it from the producer when
+# the test says so. A command with non-ASCII text expands further (JSON
+# `\uXXXX` escapes) and is not covered.
+UNIT_PROMPT_APPEND_MAX_BYTES: Final[int] = 11000
 
 # Reasoning efforts that mark a route as high-effort for calibration purposes.
 HIGH_EFFORT_TIER: Final[frozenset[str]] = frozenset({"high", "xhigh", "max"})
