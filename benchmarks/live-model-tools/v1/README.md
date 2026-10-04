@@ -96,6 +96,42 @@ python benchmarks/live-model-tools/v1/bench.py run \
   --harness omh --condition optimized --allow-paid-live --max-paid-calls 240
 ```
 
+Two more conditions measure the shared unit head, the block every real
+dispatched fanout unit prompt starts with:
+
+- `unit` sends the product's own head, built by calling
+  `shared_unit_preamble_lines()` with a fixed goal line (so it tracks `src/`
+  and stays byte-identical across instances, the way sibling units share it).
+  The `optimized` calibration follows the head, then a deliverable-precedence
+  note, then the same task and completion contract as every other condition.
+  The head tells a unit to end with a `fanout_unit_result/v1` block and to
+  return `input_required` to a parent. Neither exists in a benchmark run, so
+  the note states that `.omh-benchmark-answer.json` is the graded deliverable
+  and takes precedence over any other return format named above it. Both
+  unit arms carry the note.
+- `unit_lean` sends `unit` with the head blocks named in
+  `UNIT_LEAN_OMITTED_BLOCKS` (`lib/omh_live.py`) removed, and nothing else.
+  The first set is `PARENT_CLARIFICATION`, which also holds the head's only
+  JSON example. `unit_head_blocks()` names every head block. A later arm can
+  vary the set by name.
+
+Every run record carries `prompt_digest`, the SHA-256 of the exact prompt text
+its condition sent (the text itself is never kept). It also carries
+`head_omitted_blocks`: `[]` for `unit`, the omitted names for `unit_lean`, and
+`null` for conditions without the head. The offline `fake` harness receives
+the condition prompt built with an empty route (no calibration) and echoes its
+digest, so the offline matrix covers both arms. Pair the arms with
+`--baseline-condition unit --optimized-condition unit_lean`:
+
+```bash
+python benchmarks/live-model-tools/v1/bench.py run --harness fake --condition unit
+python benchmarks/live-model-tools/v1/bench.py run --harness fake --condition unit_lean
+python benchmarks/live-model-tools/v1/bench.py run \
+  --harness omh --condition unit --allow-paid-live --max-paid-calls 240
+python benchmarks/live-model-tools/v1/bench.py run \
+  --harness omh --condition unit_lean --allow-paid-live --max-paid-calls 240
+```
+
 The manifest currently covers Qwen3-Coder, current DeepSeek, and GLM agent
 routes in addition to the existing comparison families. Prompt controls are
 version-aware:

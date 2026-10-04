@@ -9,7 +9,7 @@ import sys
 BASE = Path(__file__).resolve().parent
 sys.path.insert(0, str(BASE / "lib"))
 
-from common import load_object  # noqa: E402
+from common import CONDITIONS, load_object  # noqa: E402
 from corpus import generate_public  # noqa: E402
 from runner import doctor, execute_one, run_matrix  # noqa: E402
 
@@ -33,7 +33,7 @@ def main(argv: list[str] | None = None) -> int:
         command.add_argument("--harness", choices=("fake", "omh", "hermes_current_session"), default="fake")
         command.add_argument("--manifest", type=Path, default=BASE / "manifest.json")
         command.add_argument("--model", action="append")
-        command.add_argument("--condition", choices=("baseline", "optimized", "family"), default="baseline")
+        command.add_argument("--condition", choices=CONDITIONS, default="baseline")
         command.add_argument("--split", choices=("development", "evaluation"), default="development")
         command.add_argument("--output", type=Path)
         command.add_argument("--omh-executable", default="omh")

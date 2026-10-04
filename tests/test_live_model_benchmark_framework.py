@@ -188,6 +188,18 @@ class OmhBenchmarkFrameworkDelegationTests(_UpstreamDelegationBase):
             "test_bench_cli_schedules_the_family_condition_offline",
         )
 
+    def test_every_condition_enumeration_matches_the_declared_arms(self) -> None:
+        self._delegate(
+            "OmhBenchmarkFrameworkTests",
+            "test_every_condition_enumeration_matches_the_declared_arms",
+        )
+
+    def test_bench_cli_runs_the_unit_arms_offline_and_records_their_prompts(self) -> None:
+        self._delegate(
+            "OmhBenchmarkFrameworkTests",
+            "test_bench_cli_runs_the_unit_arms_offline_and_records_their_prompts",
+        )
+
     def test_analysis_rejects_unscheduled_model_claim_matrix(self) -> None:
         self._delegate(
             "OmhBenchmarkFrameworkTests",
