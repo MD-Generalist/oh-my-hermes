@@ -330,10 +330,10 @@ class CalibrationSelectionTests(unittest.TestCase):
         # DeepSeek's own harness ships the exact-string editor contract the
         # family is post-trained on (deepseek-harness, 2026-08-13). Its
         # priced-prefix fact generalized into the universal prompt-cache
-        # protocol; the deepseek composer entry keeps the billing residue.
+        # protocol, which the composition guide prints beside every composer
+        # block, so the family entry no longer repeats it.
         self.assertIn("exact literal strings", HIGH_EFFORT_CALIBRATIONS["deepseek"])
         self.assertIn("byte-identical", PROMPT_CACHE_COMPOSITION_PROTOCOL)
-        self.assertIn("prices cached prefixes", MAIN_AGENT_COMPOSITION_CALIBRATIONS["deepseek"])
         self.assertIn("interleaved", HIGH_EFFORT_CALIBRATIONS["glm"])
 
     def test_claude_subagent_block_drops_the_removed_push_sentence(self) -> None:
@@ -415,6 +415,24 @@ class CompositionCalibrationTests(unittest.TestCase):
             composition_calibration_for_model(""),
             MAIN_AGENT_COMPOSITION_CALIBRATIONS["generic"],
         )
+
+    def test_cache_rule_rides_the_guide_beside_every_composer_block(self) -> None:
+        # A composer block reaches a model only through `composition-guide`,
+        # and both output forms carry PROMPT_CACHE_COMPOSITION_PROTOCOL next
+        # to it, so no block restates the shared-preamble cache rule.
+        models = ("glm-5.3", "deepseek-v4-pro", "deepseek-flash", "kimi-k3", "claude-fable-5-1")
+        for model in models:
+            with self.subTest(model=model):
+                status, stdout, _stderr = run_cli(
+                    ["coding", "composition-guide", "--model", model], output_json=False
+                )
+                self.assertEqual(status, 0)
+                self.assertIn(composition_calibration_for_model(model), stdout)
+                self.assertIn(PROMPT_CACHE_COMPOSITION_PROTOCOL, stdout)
+                status, stdout, _stderr = run_cli(["coding", "composition-guide", "--model", model, "--json"])
+                self.assertEqual(status, 0)
+                payload = json.loads(stdout)
+                self.assertEqual(payload["delegation_protocol"]["prompt_cache"], PROMPT_CACHE_COMPOSITION_PROTOCOL)
 
     def test_cli_guide_plain_default_and_json(self) -> None:
         status, stdout, _stderr = run_cli(

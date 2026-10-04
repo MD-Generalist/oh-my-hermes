@@ -97,7 +97,12 @@ class StructuralSearchGuidanceNeutralityTests(unittest.TestCase):
         for shape, text in _lane_a_shapes().items():
             with self.subTest(shape=shape):
                 self.assertIn(f"- {STRUCTURAL_SEARCH_GUIDANCE}\n", text)
-        self.assertIn(STRUCTURAL_SEARCH_GUIDANCE, _lane_b_prompt())
+        # Lane B states the preference once, in the shared head's capped-search
+        # block ("structural search when available, grep otherwise"); the
+        # tool-preference sentence is not appended a second time.
+        prompt = _lane_b_prompt()
+        self.assertIn("structural search when available, grep otherwise", prompt)
+        self.assertNotIn(STRUCTURAL_SEARCH_GUIDANCE, prompt)
 
     def test_guidance_stays_before_the_closing_claim_boundary(self) -> None:
         for shape, text in _lane_a_shapes().items():

@@ -19,6 +19,31 @@ All notable changes will be documented here.
     a `head_omitted_blocks` field. `bench.py`, `analyze.py`, the run-record
     schema, the fake harness, and the audit all read a single condition list.
   - Offline only so far. No live arm has run.
+- **Bedrock Claude ids get the claude family.** `model_family` now reads
+  Amazon Bedrock's `anthropic.` vendor segment, with or without a regional
+  prefix (`us.anthropic.claude-opus-5-5`), so those ids receive the claude
+  calibration instead of the generic one. Before this, every Bedrock Claude
+  id classified as `unknown`.
+
+- **Prompt text that repeated itself or a code gate is removed.** An audit
+  of every model-facing block (2026-10-04) deleted only text whose every
+  receiver already gets the same rule another way.
+  - Fanout unit prompts no longer end with the structural-search preference
+    sentence; their shared head already says "structural search when
+    available, grep otherwise". The coding-delegate capability blocks keep
+    it.
+  - The `glm`, `deepseek`, and `deepseek-v4.1-flash` composer blocks no
+    longer repeat the prompt-cache rule. `omh coding composition-guide`
+    prints `PROMPT_CACHE_COMPOSITION_PROTOCOL` beside every composer block,
+    and `build_unit_prompt` places the shared head first.
+  - The `grok` composer block no longer asks for overlap and cycle checks
+    before recording a contract; `fanout prepare` and `validate` refuse to
+    record one that fails them.
+  - The Claude Sonnet 5.5 subagent and composer overrides are removed.
+    The 2026-10-02 run could not tell the subagent override from the family
+    block, the composer override was the family block byte for byte, and no
+    shipped slot reached either. Sonnet 5.5 now takes the `claude` family
+    blocks.
 
 - **GPT-6.1 Sol and Claude Sonnet 5.5 placements are measured.** Each was
   run on its subscription route against `benchmarks/live-model-tools/v1`

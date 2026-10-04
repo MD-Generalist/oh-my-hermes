@@ -282,16 +282,13 @@ MAIN_AGENT_COMPOSITION_CALIBRATIONS: Final[dict[str, str]] = {
         "contract-building tools; mechanical field assembly needs no extra planning. This family "
         "rewards lean, mechanically explicit unit prompts — exact schemas and invocation rules over "
         "narrative instruction — and its tool-call formatting decays in very long contexts, so keep "
-        "each unit's scope bounded rather than letting one unit sprawl. Z.ai prices cached input "
-        "separately, so the shared prompt-cache discipline is billing-visible on this family. Every "
-        "unit carries its owner, boundary, and known route fields. Once boundaries are clean and "
-        "dependencies acyclic, freeze the smallest split that covers the goal."
+        "each unit's scope bounded rather than letting one unit sprawl. Every unit carries its owner, "
+        "boundary, and known route fields. Once boundaries are clean and dependencies acyclic, freeze "
+        "the smallest split that covers the goal."
     ),
     "grok": (
-        "Composition calibration: speed never skips freeze-time validation — run the overlap and "
-        "cycle checks before recording the contract, not after dispatch fails. Pick the partition "
-        "once by the stated boundaries and dispatch; re-querying for a better split is re-verifying "
-        "a settled decision."
+        "Composition calibration: pick the partition once by the stated boundaries and dispatch; "
+        "re-querying for a better split is re-verifying a settled decision."
     ),
     "qwen": (
         "Composition calibration: current Qwen3-Coder is non-thinking; freeze one ordered split with "
@@ -302,9 +299,7 @@ MAIN_AGENT_COMPOSITION_CALIBRATIONS: Final[dict[str, str]] = {
         "Composition calibration: keep the DeepSeek model version and thinking mode explicit in the "
         "prepared route. Preserve runtime reasoning context only when the selected model and executor "
         "support it; otherwise compose exact owners, scopes, dependencies, and verification commands "
-        "without synthetic thinking instructions. DeepSeek serving prices cached prefixes, so the "
-        "shared prompt-cache discipline is billing-visible on this family, not merely latency. "
-        "Validate once and stop."
+        "without synthetic thinking instructions. Validate once and stop."
     ),
     "mistral": (
         "Composition calibration: write unit prompts literally and completely — a Mistral-family "
@@ -371,30 +366,6 @@ MODEL_HIGH_EFFORT_CALIBRATIONS: Final[dict[str, str]] = {
         "assumption and proceed. Size tests to the change: a reversible, low-impact edit that mirrors "
         "its implementation needs no new test, and a green check is re-run only when its inputs changed."
     ),
-    # Claude Sonnet 5.5: the `claude` family block with one clause added to
-    # its verification sentence. Anthropic's Sonnet 5.5 prompting guide
-    # (read 2026-10-01) says that at `xhigh` and `max` the model "can start
-    # its own rounds of review and verification, sometimes with subagents",
-    # and that telling it to stop when checks pass "stopped the model from
-    # launching reviewer subagents and cut session cost by about a third,
-    # with no change in quality" (vendor-measured at `max`; unmeasured in
-    # OMH). The clause stops work; the guide's keep-working fix for early
-    # check-ins at low effort is not imported. Opus 5.5 and Fable 5.1 keep
-    # the family block byte-stable.
-    "claude-sonnet-5-5": (
-        "High-effort calibration: follow the numbered criteria as the complete checklist — do not "
-        "grow the checklist mid-run, and once you have enough to act, act instead of gathering more "
-        "context. Deliberate deeply only where correctness is genuinely at risk; mechanical steps run"
-        " directly and the single verification pass proves them, and once the criteria's checks pass "
-        "the work is done — start no further review rounds and no reviewer sub-agents unless a "
-        "criterion asks for one. Edit surgically rather than rewriting a file; fix only what the "
-        "criteria name and report adjacent findings instead of changing them; keep scratch checks out"
-        " of the repository, and commit tests only where a criterion asks for them or the repo "
-        "already keeps tests for this kind of change, sized like their neighbors. Add no helpers, "
-        "fallbacks, validation, flags, or shims beyond what the criteria name; when you can just "
-        "change the code, change it. Every progress claim points at a tool result from this run — a "
-        "failed check is reported with its output, a skipped step as skipped."
-    ),
     # DeepSeek V4.1 Flash, per the vendor's API guides and model card
     # (2026-09-10): thinking on by default, reasoning_content returned on
     # every tool-calling turn, post-trained on synthesized long-horizon agent
@@ -448,24 +419,10 @@ MODEL_COMPOSITION_CALIBRATIONS: Final[dict[str, str]] = {
         "Composition calibration: the composer runs on DeepSeek V4.1 Flash with thinking on by "
         "default and its reasoning returned on every tool turn, so the visible composition is the "
         "ordered split — exact owners, scopes, dependencies, and verification commands — not a replay "
-        "of planning already in context, and it carries no synthetic thinking instructions. Cache-hit "
-        "input costs a fiftieth of a miss on this model, so the shared preamble stays byte-identical "
-        "across sibling units and every per-unit difference goes after it. A unit routed to this model "
-        "takes low, high, or max — its documented ladder; the vendor's own table turns medium and xhigh "
-        "into high, so an undocumented rung is a rung you did not choose. Validate once and stop."
-    ),
-    # Claude Sonnet 5.5: the `claude` family composition block verbatim; the
-    # two exact-model tables share one key set, and the composer already
-    # forbids a unit whose only job is re-checking the split.
-    "claude-sonnet-5-5": (
-        "Composition calibration: split only what the goal requires — no speculative units, and no "
-        "unit whose only job is re-checking the split itself; a fresh-context review of a unit's "
-        "deliverable against its criteria is a legitimate unit. Delegate a unit when it is "
-        "independent of the work you keep and its completion can be judged from the evidence it "
-        "returns; keep in line anything that finishes in a handful of tool calls. The criteria you "
-        "write are a closed checklist: state them once, completely, and freeze. Your closing report "
-        "is the reader's first look at the run — lead with the outcome in plain sentences, drop the "
-        "working shorthand, and give the one or two things you need from them."
+        "of planning already in context, and it carries no synthetic thinking instructions. A unit "
+        "routed to this model takes low, high, or max — its documented ladder; the vendor's own table "
+        "turns medium and xhigh into high, so an undocumented rung is a rung you did not choose. "
+        "Validate once and stop."
     ),
 }
 
