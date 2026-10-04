@@ -208,8 +208,12 @@ class OmhBenchmarkFrameworkTests(unittest.TestCase):
             ]
             completed = subprocess.run(argv, capture_output=True, text=True, check=False)
             self.assertEqual(completed.returncode, 2, script)
-            for condition in CONDITIONS:
-                self.assertIn(f"'{condition}'", completed.stderr, script)
+            # argparse quotes the choices before Python 3.12.8 and not after,
+            # so read the list after "choose from" and compare names only.
+            tail = completed.stderr.split("choose from", 1)[1]
+            listed = tail.split(")", 1)[0]
+            offered = {name.strip().strip("'") for name in listed.split(",")}
+            self.assertEqual(offered, set(CONDITIONS), script)
 
     def test_bench_cli_runs_the_unit_arms_offline_and_records_their_prompts(self) -> None:
         manifest = json.loads((BASE / "manifest.json").read_text())
