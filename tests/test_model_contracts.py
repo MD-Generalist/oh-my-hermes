@@ -1543,14 +1543,25 @@ class ClaudeSonnet55ContractTests(unittest.TestCase):
                 self.assertEqual(
                     composition_calibration_for_model(form), MAIN_AGENT_COMPOSITION_CALIBRATIONS["claude"]
                 )
-        # The Bedrock spelling has no family (`model_family` does not read the
-        # `anthropic.` prefix), so it now resolves exactly as Opus 5.5's
-        # Bedrock spelling already did.
-        sonnet, opus = "anthropic.claude-sonnet-5-5", "anthropic.claude-opus-5-5"
-        sonnet_route = resolve_model_route("hermes", requested_model=sonnet, requested_effort="max")
-        opus_route = resolve_model_route("hermes", requested_model=opus, requested_effort="max")
-        self.assertEqual(calibration_for_route(sonnet_route), calibration_for_route(opus_route))
-        self.assertEqual(composition_calibration_for_model(sonnet), composition_calibration_for_model(opus))
+        # Bedrock spellings, with and without a regional prefix, read the
+        # `anthropic.` vendor segment and get the same claude family blocks.
+        for form in (
+            "anthropic.claude-sonnet-5-5",
+            "us.anthropic.claude-sonnet-5-5",
+            "anthropic.claude-opus-5-5",
+            "global.anthropic.claude-opus-5-5",
+        ):
+            with self.subTest(form=form):
+                self.assertEqual(model_family(form), "claude")
+                route = resolve_model_route("hermes", requested_model=form, requested_effort="max")
+                self.assertEqual(calibration_for_route(route), HIGH_EFFORT_CALIBRATIONS["claude"])
+                self.assertEqual(
+                    composition_calibration_for_model(form), MAIN_AGENT_COMPOSITION_CALIBRATIONS["claude"]
+                )
+        # Only a vendor segment is stripped: a lookalike stays unclassified.
+        for form in ("notanthropic.claude-x", "us-east.anthropic.claude-x", "anthropic."):
+            with self.subTest(form=form):
+                self.assertNotEqual(model_family(form), "claude")
 
     def test_sonnet_5_still_routes_off_as_before(self) -> None:
         for model in ("claude-sonnet-5", "sonnet"):

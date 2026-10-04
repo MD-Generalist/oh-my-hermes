@@ -869,9 +869,10 @@ pairing so a benchmark claim can never mix in other prompt changes.
   the work is done; start no further review rounds and no reviewer
   sub-agents unless a criterion asks for one), and the composer override was
   the family block byte for byte. Both were removed on the measurement
-  below. The Bedrock spelling `anthropic.claude-sonnet-5-5` has no family
-  (`model_family` does not read the `anthropic.` prefix), so it gets the
-  `generic` blocks, as `anthropic.claude-opus-5-5` already did.
+  below. Bedrock spellings (`anthropic.claude-sonnet-5-5`, and regional
+  forms such as `us.anthropic.…`) classify as `claude` too, since
+  `model_family` reads the `anthropic.` vendor segment (2026-10-04; before
+  that they fell to `generic`, Opus 5.5's Bedrock id included).
 - **Evidence:** vendor-measured, and not reproduced in OMH. The guide says
   the stop instruction "stopped the model from launching reviewer subagents
   and cut session cost by about a third, with no change in quality" on

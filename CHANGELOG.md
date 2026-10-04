@@ -4,6 +4,12 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **Bedrock Claude ids get the claude family.** `model_family` now reads
+  Amazon Bedrock's `anthropic.` vendor segment, with or without a regional
+  prefix (`us.anthropic.claude-opus-5-5`), so those ids receive the claude
+  calibration instead of the generic one. Before this, every Bedrock Claude
+  id classified as `unknown`.
+
 - **Prompt text that repeated itself or a code gate is removed.** An audit
   of every model-facing block (2026-10-04) deleted only text whose every
   receiver already gets the same rule another way.
