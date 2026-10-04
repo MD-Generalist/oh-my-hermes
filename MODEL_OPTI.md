@@ -840,7 +840,7 @@ pairing so a benchmark claim can never mix in other prompt changes.
   block as a whole is not measured against no calibration, and the Fable 5 vs
   5.1 benchmark pair is still the named follow-up.
 
-### `claude-sonnet-5-5` (Claude Sonnet 5.5, exact-model override on the `claude` family)
+### `claude-sonnet-5-5` (Claude Sonnet 5.5, exact contract; `claude` family calibration)
 
 - **Documented contract:** `claude-sonnet-5-5` (released 2026-09-28,
   retirement not sooner than 2027-09-28) is the exact contract; the Bedrock
@@ -856,20 +856,22 @@ pairing so a benchmark claim can never mix in other prompt changes.
   sits in a shipped chain. The Maestro Claude Code rows `unspecified-low`
   and `artistry` name the `sonnet` alias, which Claude Code resolves to
   Sonnet 5.5 on the Anthropic API from v2.1.284 and to Sonnet 4.5 on
-  Bedrock, Google Cloud, and Foundry; that alias carries no contract, so the
-  override fires only when a request names `claude-sonnet-5-5` (or a form
-  that projects onto it) at `high` or above.
+  Bedrock, Google Cloud, and Foundry; that alias carries no contract.
 - **Model trait (official, Sonnet 5.5 prompting guide, read 2026-10-01):**
   "At these levels [`xhigh`, `max`] the model is especially thorough. After
   it finishes a task, it can start its own rounds of review and
   verification, sometimes with subagents." It also adds tests and docs
   nobody asked for (the family block already counters that), and at `low`
   and `medium` it can stop to check in early.
-- **What OMH injects (subagent):** the `claude` family block with one clause
-  added to its verification sentence: once the criteria's checks pass the
-  work is done; start no further review rounds and no reviewer sub-agents
-  unless a criterion asks for one. Same three-constraint budget as the
-  family block. **Composer:** the family block verbatim.
+- **What OMH injects:** the `claude` family blocks, subagent and composer,
+  since 2026-10-04. Until then an exact-model override added one clause to
+  the family block's verification sentence (once the criteria's checks pass
+  the work is done; start no further review rounds and no reviewer
+  sub-agents unless a criterion asks for one), and the composer override was
+  the family block byte for byte. Both were removed on the measurement
+  below. The Bedrock spelling `anthropic.claude-sonnet-5-5` has no family
+  (`model_family` does not read the `anthropic.` prefix), so it gets the
+  `generic` blocks, as `anthropic.claude-opus-5-5` already did.
 - **Evidence:** vendor-measured, and not reproduced in OMH. The guide says
   the stop instruction "stopped the model from launching reviewer subagents
   and cut session cost by about a third, with no change in quality" on
@@ -884,14 +886,22 @@ pairing so a benchmark claim can never mix in other prompt changes.
   - **Why it may not reproduce:** the corpus asks for no review, and the
     Hermes child path ran no reviewer sub-agents, so the clause may have
     nothing to suppress here.
-  - **Decision:** the block stays, unproven, because it is not worse.
+  - **Decision (2026-10-02):** the block stays, unproven, because it is
+    not worse.
+  - **Decision (2026-10-04, prompt audit):** removed. The override was
+    indistinguishable from the family block within same-text drift, and no
+    shipped slot reached it: no pinned Sonnet id sits in a chain, and the
+    Maestro `sonnet` alias carries no contract. An override that no slot
+    reaches and no run distinguishes spends a maintained block on nothing.
+    A corpus that provokes extra review rounds is the evidence that would
+    bring it back.
 - **Explicitly not imported:** the guide's fix for early check-ins at low
   effort ("Keep working until everything the user asked for is done"). It
   pushes the model to keep working, which `docs/MODEL-ONBOARDING.md` §2
   forbids; the guide's first remedy, a higher effort, is a placement lever.
-- **Version rule:** keyed to `claude-sonnet-5-5` and the forms that project
-  onto it. Sonnet 5, Opus 5.5, and Fable 5.1 keep the family block
-  byte-stable.
+- **Version rule:** the contract is keyed to `claude-sonnet-5-5` and the
+  forms that project onto it; calibration follows the family like Sonnet 5,
+  Opus 5.5, and Fable 5.1.
 
 ### `gemini` (Gemini 3.1 Pro)
 
@@ -929,9 +939,16 @@ pairing so a benchmark claim can never mix in other prompt changes.
   criteria are the brake — a fast first answer never skips the single
   mandatory verification pass; pick from search results once, by the stated
   criteria, and act.
-- **What OMH injects (composer):** run the overlap and dependency-cycle
-  checks *before* recording the contract, not after dispatch fails;
-  re-querying for a better split is re-verifying a settled decision.
+- **What OMH injects (composer):** pick the partition once by the stated
+  boundaries and dispatch; re-querying for a better split is re-verifying a
+  settled decision. The block used to open by asking for the overlap and
+  dependency-cycle checks before recording the contract; that sentence was
+  removed on 2026-10-04 under the authoring rule above, because recording
+  is the check: `omh coding fanout prepare` and `validate` run
+  `detect_boundary_overlaps` and `merge_order` (`src/coding/fanout.py`) and
+  refuse to freeze an overlap without a `depends_on` edge or a cycle
+  (`tests/test_fanout_contract.py`), and dispatch reads only a recorded
+  contract.
 - **Source:** written fresh for OMH — the calibration commit records that
   grok had no upstream precedent; the content encodes the family's publicly
   stated speed-first design plus observed search-churn behavior.
@@ -977,9 +994,11 @@ pairing so a benchmark claim can never mix in other prompt changes.
 - **What OMH injects (composer):** interleave reasoning to interpret evidence
   between contract-building tools; mechanical field assembly needs no extra
   planning; keep unit prompts lean and mechanically explicit and unit scopes
-  bounded (long-context tool-call decay); Z.ai prices cached input
-  separately, so the shared prompt-cache discipline is billing-visible;
-  freeze the smallest split once boundaries are clean.
+  bounded (long-context tool-call decay); freeze the smallest split once
+  boundaries are clean. A sentence saying Z.ai prices cached input
+  separately was removed on 2026-10-04: it restated the universal
+  prompt-cache discipline, which `omh coding composition-guide` prints beside
+  every composer block.
 - **Source:** observed failure modes plus the family's documented
   interleaved/preserved-thinking contract (docs.z.ai thinking-mode and
   GLM-5.3 release docs, 2026-08) and community harness reports (Cline's
@@ -1025,10 +1044,10 @@ pairing so a benchmark claim can never mix in other prompt changes.
   the smallest correct change, verify once, stop.
 - **What OMH injects (composer):** keep the DeepSeek version and thinking
   mode explicit in the prepared route; no synthetic thinking instructions on
-  non-reasoning routes; and the family residue of the now-universal
-  prompt-cache discipline — DeepSeek serving prices cached prefixes, so the
-  shared-preamble rule is billing-visible on this family, not merely
-  latency.
+  non-reasoning routes; validate once and stop. The family residue of the
+  prompt-cache discipline (DeepSeek prices cached prefixes, so the rule is
+  billing-visible) was removed on 2026-10-04: the universal rule rides the
+  same `omh coding composition-guide` output as this block.
 - **Source:** provider-published model characteristics (DeepSeek's
   reasoning/non-reasoning variant split; shipped with the benchmark
   harness), plus the DeepSeek Harness review adopted in #1071 (exact-string
@@ -1119,18 +1138,20 @@ pairing so a benchmark claim can never mix in other prompt changes.
   request for output rather than a request to continue.
 - **What OMH injects (composer):** the visible composition is the ordered
   split, not a replay of planning already in context, and carries no
-  synthetic thinking instructions; the shared preamble stays byte-identical
-  across sibling units because a cache miss costs fifty times a hit on this
-  model; a unit routed to this model takes `low`, `high`, or `max` — its
+  synthetic thinking instructions; a unit routed to this model takes `low`,
+  `high`, or `max` — its
   documented ladder; the vendor's own table turns `medium` and `xhigh` into
   `high`, so an undocumented rung is a rung the composer did not choose;
   validate once and stop.
 - **Why each sentence:** reasoning passback → do not restate reasoning
   (the context already carries it, restating doubles the tokens); the
   long-horizon post-training → blocker report instead of widening the
-  search; exact-string edit training → keep the family edit rule; priced
-  cache hits → byte-identical preamble; three-rung ladder with a published
-  mapping → name a documented rung on every unit.
+  search; exact-string edit training → keep the family edit rule;
+  three-rung ladder with a published mapping → name a documented rung on
+  every unit. A composer sentence tying the fifty-to-one cache price to a
+  byte-identical preamble was removed on 2026-10-04: it restated the
+  universal prompt-cache discipline printed beside it, and
+  `build_unit_prompt` already places the shared head first.
 - **Routing:** takes the slots DeepSeek V3.2 held — the reasoning-capable
   budget fall-through behind GPT-6.1 Sol on `deep` at `high` (behind GPT-5.6
   Terra until 2026-09-23, GPT-6 Sol until 2026-10-01), and the
