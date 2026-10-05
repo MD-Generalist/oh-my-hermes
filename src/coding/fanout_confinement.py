@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from importlib import import_module
+import os
 from pathlib import Path
 import re
 import shutil
@@ -173,14 +174,26 @@ class FanoutFilesystemConfinement:
         fence was prepared, which runs code the unit wrote. Run inside the unit's
         fence, whatever such a call starts can write only where the unit already
         could. `path` is the PATH the command will be spawned with; the
-        dispatcher's own when omitted. None when no receipt proved the fence or
-        the executable cannot be located; a caller must not run the command
-        unfenced instead.
+        dispatcher's own when omitted. The command is spawned in the unit
+        worktree, so a relative executable (`./repro.sh`) and a relative PATH
+        entry are resolved there, never against the dispatcher's own working
+        directory. None when no receipt proved the fence or the executable
+        cannot be located; a caller must not run the command unfenced instead.
         """
         if self.receipt.get("enforced") is not True or not argv or self.child is None:
             return None
         name = str(argv[0])
-        located = name if Path(name).is_absolute() else shutil.which(name, path=path)
+        work = self.child.work
+        if Path(name).is_absolute():
+            located: str | None = name
+        elif os.sep in name or (os.altsep is not None and os.altsep in name):
+            located = str(work / name) if (work / name).is_file() else None
+        else:
+            search = os.environ.get("PATH", os.defpath) if path is None else path
+            anchored = os.pathsep.join(
+                entry if os.path.isabs(entry) else str(work / entry) for entry in search.split(os.pathsep) if entry
+            )
+            located = shutil.which(name, path=anchored)
         if located is None:
             return None
         return self._fenced(str(Path(located).resolve()), argv)

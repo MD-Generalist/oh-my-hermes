@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import contextlib
 from pathlib import Path
 import shutil
 import subprocess
@@ -261,7 +262,7 @@ class VerificationCommandFenceTests(unittest.TestCase):
                 child_env={"PATH": "/opt/unit-tools/bin"}, confinement=self._fence(locates=False),  # type: ignore[arg-type]
             )
         self.assertEqual(status, "failed")
-        self.assertIn("not found on PATH", message)
+        self.assertIn("not run outside the unit's write fence", message)
         self.assertEqual(runner.calls, [])
 
 
@@ -289,6 +290,27 @@ class DispatcherCommandTests(unittest.TestCase):
         self.assertEqual(command[0], "/usr/bin/sandbox-exec")
         self.assertEqual(command[3:], (str(Path(located).resolve()), "status", "--porcelain=v1"))
         self.assertIn(f'(allow file-write* (subpath "{worktree}"))', command[2])
+
+    def test_a_relative_executable_is_the_one_in_the_unit_worktree(self) -> None:
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            worktree = root / "worktree"
+            elsewhere = root / "dispatcher-cwd"
+            for directory in (worktree, elsewhere, worktree / "tools", elsewhere / "tools"):
+                directory.mkdir()
+                script = directory / ("runner" if directory.name == "tools" else "repro.sh")
+                script.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+                script.chmod(0o755)
+            confinement = self._confinement(worktree, enforced=True)
+            with contextlib.chdir(elsewhere):
+                by_path = confinement.dispatcher_command(("./repro.sh", "--once"))
+                by_search = confinement.dispatcher_command(("runner",), path="tools")
+                (worktree / "repro.sh").unlink()
+                missing = confinement.dispatcher_command(("./repro.sh",))
+        assert by_path is not None and by_search is not None
+        self.assertEqual(by_path[3:], (str(worktree / "repro.sh"), "--once"))
+        self.assertEqual(by_search[3:], (str(worktree / "tools" / "runner"),))
+        self.assertIsNone(missing)
 
     def test_no_command_without_an_enforced_receipt_or_a_locatable_executable(self) -> None:
         with TemporaryDirectory() as temporary:
@@ -398,6 +420,14 @@ class MacosDispatcherGitFenceTests(unittest.TestCase):
             self.assertTrue((worktree / "inside").exists())
             self.assertEqual(escaped[0], "failed", escaped)
             self.assertFalse(outside.exists())
+            # A script the unit wrote, named the way a reproduction command names it.
+            (worktree / "repro.sh").write_text("#!/bin/sh\nprintf ran > repro-ran\n", encoding="utf-8")
+            (worktree / "repro.sh").chmod(0o755)
+            relative = _run_verification_command(
+                "./repro.sh", worktree, signal_safe_unit_runner, confinement=confinement,
+            )
+            self.assertEqual(relative[0], "passed", relative)
+            self.assertEqual((worktree / "repro-ran").read_text(encoding="utf-8"), "ran")
 
     def test_recovery_capture_measures_a_failed_units_work_from_inside_the_fence(self) -> None:
         with TemporaryDirectory() as temporary:
