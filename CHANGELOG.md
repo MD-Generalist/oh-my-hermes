@@ -4,6 +4,19 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **Git the dispatcher runs in a unit's worktree now runs inside that
+  unit's fence.** Git takes its configuration from the worktree it runs in,
+  and a fanout unit owns its worktree, so the dispatcher's own git calls
+  there were not confined by the fence the unit ran under (#1990). During a
+  unit's dispatch, the clean-HEAD observation, the changed-path listing, the
+  recovery capture and the session workspace probe are wrapped in the unit's
+  fence; a call that cannot be wrapped is not run. With no enforced fence
+  nothing changes, since the unit ran unfenced as well.
+  - A recovery capture in a fence without git paths now reports that
+    created files could not be measured, because `git add -N` is refused
+    there.
+  - `fanout status`, clarification resume and worktree reuse hold no fence
+    and still probe on the host; #1990 stays open for them.
 - **A confined fanout unit can commit in a Git LFS repository.** `git add`
   runs the git-lfs clean filter, which stages through `.git/lfs/tmp` into
   `.git/lfs/objects`; with that directory outside the write fence the filter

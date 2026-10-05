@@ -1010,9 +1010,20 @@ Rules, all applied at freeze time:
   leave a symlink for a later preparation to resolve. What stays open is that
   later preparation: a redispatch resolves again, so a literal replaced by a
   symlink, or a root that no longer exists recreated as one, is granted as
-  its target on the next run. Host-side git that the dispatcher runs in a
-  unit's worktree also reads configuration the unit controls. The Linux form
-  of the swap is unmeasured: CI runners carry no bwrap.
+  its target on the next run. The Linux form of the swap is unmeasured: CI
+  runners carry no bwrap.
+
+  Git reads its configuration from the worktree it runs in, and a unit owns
+  its worktree. So the git calls the dispatcher itself makes there during a
+  unit's dispatch (the clean-HEAD observation, the changed-path listing for
+  task-linked checks, the recovery capture, the session workspace probe) run
+  inside that unit's fence: whatever such a call starts can write only where
+  the unit already could. A call that cannot be placed in the fence is not
+  run, and is reported as a failed read. One consequence: when the fence
+  carries no git paths, the recovery capture's `git add -N` is refused, and
+  the record says the files the unit created could not be measured. Outside
+  a dispatch there is no fence in hand, so `fanout status`, clarification
+  resume and worktree reuse still probe a unit worktree on the host.
 
   That cover is one socket, not the class. A read-only mount stops writes, not
   `connect()`, so any socket still reachable by a well-known path remains a way

@@ -1526,7 +1526,7 @@ def _run_planned_verification(
     plan = compile_verification_plan(unit, fanout_id=fanout_id, unit_id=unit_id)
     if plan is None:
         return {}
-    revision = _verification_worktree_revision(runner, worktree)
+    revision = _verification_worktree_revision(_fenced_dispatcher_runner(runner, confinement, worktree), worktree)
     if required_revision is not None and revision != required_revision:
         revision = None
     execution_environment = resolve_child_environment(
@@ -4465,6 +4465,9 @@ def _dispatch_unit(
         filesystem_confinement["git_roots_skip"] = git_roots_skip_reason(worktree.resolve())
     if confinement is not None:
         child_env = confinement.command_environment()
+    # From here on, git the dispatcher runs in this worktree runs inside the
+    # unit's own fence (#1990).
+    unit_git_runner = _fenced_dispatcher_runner(runner, confinement, worktree)
     # After the worktree exists and before anything else touches it: a linked
     # artifact must be in place before the unit's process spawns to be worth
     # anything, and re-checking from inside the worktree (see
@@ -4473,7 +4476,7 @@ def _dispatch_unit(
     shared_artifacts = plan_and_link_shared_artifacts(
         repo_root=repo_root,
         worktree_path=worktree,
-        runner=runner,
+        runner=unit_git_runner,
     )
     if fanout_id:
         # Before the spawn, like the in-flight marker below. A record from an
@@ -4667,7 +4670,8 @@ def _dispatch_unit(
                         spawn_kwargs['confinement_command'] = confinement.command(argv)
                 if not getattr(runner, 'accepts_launch', False):
                     dispatch_observed()
-            launch_workspace = observe_session_workspace(str(worktree)) if session_capability is not None else None
+            launch_workspace = (observe_session_workspace(str(worktree), confinement=confinement)
+                                if session_capability is not None else None)
             decoder = SessionDecoder(session_capability) if session_capability is not None else None
             admission_observer = CodexAdmissionObserver()
             admission_binding = AdmissionBinding(owner, fanout_id, unit_id, run_ref, attempt,
@@ -4806,7 +4810,7 @@ def _dispatch_unit(
                 if any(issue in capture.issues for issue in ('event_limit', 'frame_limit', 'depth_limit')):
                     decoder.invalidate_capture()
                 complete_capture = all(stream['original_bytes'] is not None for stream in capture.streams())
-                end_workspace = observe_session_workspace(str(worktree))
+                end_workspace = observe_session_workspace(str(worktree), confinement=confinement)
                 receipt = decoder.receipt(session_binding,
                     end_head=end_workspace.head if end_workspace is not None and complete_capture else None)
                 session_fields = {'executor_session': receipt.to_dict()}
@@ -4840,7 +4844,7 @@ def _dispatch_unit(
                 sidecar_path=sidecar_path,
                 worktree=worktree,
                 base_sha=base_sha,
-                runner=runner,
+                runner=unit_git_runner,
                 max_retries=max_retries,
                 rng=rng,
             )
@@ -4920,7 +4924,7 @@ def _dispatch_unit(
         summary = f"limit-shaped failure ({limit_label}); {summary}"
     unit_result = _intake_unit_result(
         paths,
-        runner=runner,
+        runner=unit_git_runner,
         sidecar_path=sidecar_path,
         run_ref=run_ref,
         unit_id=unit_id,
@@ -5004,7 +5008,7 @@ def _dispatch_unit(
         test_runner = str(unit.get("task_linked_test_runner") or "")
         if test_runner:
             task_linked = _task_linked_postcondition(
-                runner, worktree, base_sha=base_sha, head_sha=producer_revision, test_runner=test_runner
+                unit_git_runner, worktree, base_sha=base_sha, head_sha=producer_revision, test_runner=test_runner
             )
             if task_linked["command"]:
                 verification_unit = {
@@ -5074,7 +5078,7 @@ def _dispatch_unit(
         )
     diagnostics: dict[str, object] = {}
     if diagnostic_engine is not None and diagnostic_engine.settings.enabled:
-        producer_head = _observed_clean_producer_head(runner, worktree)
+        producer_head = _observed_clean_producer_head(unit_git_runner, worktree)
         diagnostics = run_post_green_diagnostics(
             diagnostic_engine,
             owner=owner,
@@ -5256,14 +5260,14 @@ def _dispatch_unit(
             unit_id=unit_id,
             worktree=worktree,
             base_sha=base_sha,
-            runner=runner,
+            runner=unit_git_runner,
         )
         if recovery is not None:
             result["recovery"] = recovery
         # The existing recovery capture may add intent-to-add entries; measure the
         # final state independently after it, without trusting its old diff digest.
         if session_fields:
-            snapshot = observe_session_workspace(str(worktree))
+            snapshot = observe_session_workspace(str(worktree), confinement=confinement)
             _ = result.pop('session_recovery_snapshot', None)
             if snapshot is not None and snapshot.recovery_snapshot is not None:
                 result['session_recovery_snapshot'] = snapshot.recovery_snapshot
@@ -5794,6 +5798,35 @@ def _same_directory(reported: str, worktree: Path) -> bool:
         return Path(reported).resolve(strict=False) == worktree.resolve(strict=False)
     except OSError:
         return False
+
+
+def _fenced_dispatcher_runner(
+    runner: Callable[..., Any], confinement: FanoutFilesystemConfinement | None, worktree: Path
+) -> Callable[..., Any]:
+    """Runner for what the dispatcher itself runs in a unit worktree the unit has written.
+
+    Git takes its configuration from the worktree it runs in, and the unit owns
+    that worktree, so a dispatcher git call there is not the dispatcher's own
+    code alone (#1990). With an enforced fence, every call whose cwd is the unit
+    worktree is wrapped in that same fence, and a call that cannot be wrapped
+    raises rather than running outside it: the git helpers report that as a
+    failed read. A call with any other cwd passes through, as does every call
+    when no fence was enforced, because the unit then ran unfenced as well.
+    """
+    if confinement is None or confinement.receipt.get("enforced") is not True:
+        return runner
+    fenced_cwd = worktree.resolve()
+
+    def run(argv: Sequence[str], **kwargs: Any) -> Any:
+        cwd = kwargs.get("cwd")
+        if cwd is None or Path(cwd).resolve() != fenced_cwd:
+            return runner(argv, **kwargs)
+        command = confinement.dispatcher_command(argv)
+        if command is None:
+            raise OSError("the command could not be placed inside the unit's write fence")
+        return runner(argv, confinement_command=command, **kwargs)
+
+    return run
 
 
 def _git_text(runner: Callable[..., Any], worktree: Path, argv: list[str]) -> str | None:
