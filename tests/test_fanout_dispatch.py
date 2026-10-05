@@ -308,6 +308,14 @@ class FanoutUnitResultIntakeTests(unittest.TestCase):
             self.assertIn("observation_source", prompt)
             events = [event["event"] for event in show_run(paths, core["run_ref"])["journal_events"]]
             self.assertIn("unit_result_validated", events)
+            # The row names the blocks it sent and the digest of the exact
+            # argv prompt, never the text.
+            sent = next(part for part in runner.spawned[0] if part.startswith("Overall goal: "))
+            record = core["unit_prompt"]
+            self.assertEqual(record["sha256"], hashlib.sha256(sent.encode("utf-8")).hexdigest())
+            self.assertEqual(record["size_bytes"], len(sent.encode("utf-8")))
+            self.assertIn("tail.unit_result_contract", record["blocks"])
+            self.assertEqual(record["blocks"][0], "head.goal")
 
     def test_a_declined_unit_reaches_the_journal_distinctly_and_resume_holds_it(self) -> None:
         # #H end-to-end: a unit that validly reports `process_declined` must

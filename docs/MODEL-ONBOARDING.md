@@ -352,8 +352,9 @@ restate universal protocol rules inside a family entry. Then:
 - Update the family's section in `MODEL_OPTI.md` (trait, injected text,
   version rule, source). `tests/test_unit_prompt_protocol.py` fails when a
   calibrated family has no section.
-- Stay under `UNIT_PROMPT_MAX_BYTES`; the worst-case prompt test measures
-  the longest family block.
+- Stay under `UNIT_PROMPT_MAX_BYTES`; the worst-case prompt test in
+  `tests/test_unit_prompt_assembly.py` assembles every calibration key,
+  family blocks and exact-model overrides alike.
 
 ## 4. Place routing
 

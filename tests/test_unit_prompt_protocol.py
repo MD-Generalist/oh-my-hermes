@@ -29,10 +29,14 @@ from omh.coding.unit_prompt_protocol import (  # noqa: E402
     completion_criteria_for_unit,
     composition_calibration_for_model,
     shared_unit_preamble_lines,
-    unit_protocol_lines,
 )
+from omh.coding.unit_prompt_assembly import assemble_unit_prompt  # noqa: E402
 
 _GOAL = "build the virtual dashboard feature across subagents"
+
+
+def _assembled(unit: dict):
+    return assemble_unit_prompt(unit, _GOAL, route=unit["handoff"]["model_route"])
 
 
 def _contract_unit(units: list[dict], unit_id: str) -> dict:
@@ -83,7 +87,8 @@ class ProtocolContentTests(unittest.TestCase):
                 [{"unit_id": "u", "title": "U", "owner": "codex", "file_scope": ["src/"], "role": role}],
                 "u",
             )
-            self.assertIn(TOOL_BATCHING_PROTOCOL, unit_protocol_lines(unit), role)
+            unit_zone = [block.text for block in _assembled(unit).blocks if block.zone == "unit"]
+            self.assertIn(TOOL_BATCHING_PROTOCOL, unit_zone, role)
         self.assertIn("independent reads and searches together", TOOL_BATCHING_PROTOCOL)
         self.assertIn("sequential", TOOL_BATCHING_PROTOCOL)
         self.assertIn("separator commands", TOOL_BATCHING_PROTOCOL)
@@ -512,7 +517,7 @@ class PromptBudgetPolicyTests(unittest.TestCase):
             ],
             "brain",
         )
-        self.assertEqual(unit_protocol_lines(unit), unit_protocol_lines(unit))
+        self.assertEqual(_assembled(unit), _assembled(unit))
         self.assertEqual(build_unit_prompt(unit, _GOAL), build_unit_prompt(unit, _GOAL))
 
     def test_high_effort_tier_vocabulary(self) -> None:

@@ -4,6 +4,28 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **One function assembles every fanout unit prompt.**
+  `assemble_unit_prompt()` (`src/coding/unit_prompt_assembly.py`) returns
+  the prompt as named blocks in four zones (shared head, unit, tail,
+  redispatch append) instead of a string that dispatch then edited. Live
+  dispatch, the Hermes recovery lane, `build_unit_prompt`, and both
+  benchmark lanes call it; a repair brief, a parent decision, and a retry's
+  fresh sidecar path are arguments now. Every existing path is byte-identical
+  (840 pinned golden prompts, and product-ab's prompt digests), except the
+  change below.
+  - The sidecar contract no longer restates when to report
+    `process_declined`; the shared head's failure-kind sentence says it, and
+    every prompt with the contract carries the head. Sidecar prompts are
+    241 B shorter.
+  - `UNIT_PROMPT_MAX_BYTES` (8,000 B) now explicitly bounds the dispatch
+    prompt, gated over every calibration key with the sidecar contract and
+    skill discovery. A repair brief at its own caps (9 commands x 512
+    characters) adds about 10 KB, more than that ceiling, so each redispatch
+    section gets its own producer-derived `UNIT_PROMPT_APPEND_MAX_BYTES`.
+  - Dispatch rows record `unit_prompt`: block names, byte size, and sha256
+    of the prompt sent, never the text.
+  - `gpt-6.1-sol-pro` now gets the Sol Codex throughput overlay its
+    calibration already implied; the overlay reads the contract model id.
 - **The 2026-10-04 prompt audit's measurements are recorded.** All arms ran
   on `claude-fable-5-1` at `xhigh` (Claude Code subscription, 30 instances
   per arm, with same-text repeats).

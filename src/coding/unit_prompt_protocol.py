@@ -34,9 +34,10 @@ The blocks split across two placement zones for prompt-cache hygiene: the
 goal echo-back, verification-stop, failure-kind, structured-return, and
 capped-search blocks are unit-invariant,
 so `shared_unit_preamble_lines()` places them (with the overall goal) at the
-byte-identical head every sibling prompt of one fanout shares, and
-`unit_protocol_lines()` carries only the unit-varying remainder — numbered
-criteria, role protocol, calibration, and the domain bundle. Every major
+byte-identical head every sibling prompt of one fanout shares, and the unit
+zone of `unit_prompt_assembly.assemble_unit_prompt` carries only the
+unit-varying remainder — numbered criteria, role protocol, calibration, and
+the domain bundle. Every major
 serving stack caches prompt prefixes by exact bytes, so sibling prompts that
 share their head let the first dispatch write the cache the rest read; the
 rule itself ships as `PROMPT_CACHE_COMPOSITION_PROTOCOL`.
@@ -49,8 +50,8 @@ generic block — no family carries richer guidance than another without a
 stated reason, and no vendor is privileged.
 
 Everything here is pure data and pure functions: the blocks land in prepared
-prompts (subprocess argv), so the total prompt size is policy-gated by
-`UNIT_PROMPT_MAX_BYTES` in tests rather than trimmed at runtime.
+prompts (subprocess argv), and `unit_prompt_assembly` is the one module that
+joins them into the text a unit receives.
 """
 
 from __future__ import annotations
@@ -60,10 +61,30 @@ from typing import Any, Final, Mapping
 from .coding_contracts import STRUCTURAL_SEARCH_DISCIPLINE_GUIDANCE
 from .model_contracts import contract_model_id
 
-# Policy ceiling for a fully-assembled unit prompt (bytes of UTF-8). The
-# worst-case combination across roles, owners, and calibration blocks is
-# asserted under this in tests; runtime never truncates.
+# Policy ceiling for the dispatch prompt (bytes of UTF-8): every block of
+# `unit_prompt_assembly.assemble_unit_prompt` except the redispatch appends,
+# i.e. the shared head, the unit section, and the sidecar contract. The worst
+# case over every calibration key (family blocks and exact-model overrides),
+# the review role, the longest domain bundle, a full skill sequence, and the
+# longest sidecar binding is asserted under this in
+# `tests/test_unit_prompt_assembly.py`, whose failure message prints the
+# measured size; runtime never truncates.
 UNIT_PROMPT_MAX_BYTES: Final[int] = 8000
+
+# Ceiling for ONE redispatch section appended after the dispatch prompt (a
+# repair brief or a parent decision). Not part of `UNIT_PROMPT_MAX_BYTES`:
+# a repair brief echoes up to `_MAX_REPAIR_CHECKS` failing commands of up to
+# `_MAX_REPAIR_COMMAND_CHARS` characters (`fanout_repair`, the journal's own
+# bounds), and truncating one would hand the executor a command it cannot
+# run. At those caps the brief alone is larger than the dispatch ceiling, so
+# one ceiling over the whole prompt would have to more than double, letting
+# OMH-authored blocks grow by that much unnoticed. The sections are bounded
+# by their producers' caps instead: this value is the repair brief at those
+# caps with `"` commands (the printable ASCII character JSON doubles) plus
+# about 9% headroom, derived 2026-10-04. Re-derive it from the producer when
+# the test says so. A command with non-ASCII text expands further (JSON
+# `\uXXXX` escapes) and is not covered.
+UNIT_PROMPT_APPEND_MAX_BYTES: Final[int] = 11000
 
 # Reasoning efforts that mark a route as high-effort for calibration purposes.
 HIGH_EFFORT_TIER: Final[frozenset[str]] = frozenset({"high", "xhigh", "max"})
@@ -495,6 +516,14 @@ def domain_skill_guidance_line(unit: Mapping[str, Any]) -> str:
     )
 
 
+# The last criterion of every unit: fanout transport (the dispatcher collects
+# and merges the unit branch), named so the assembled prompt can carry it as
+# its own block and a lane without a collector can omit it by name.
+UNIT_BRANCH_COMMIT_CRITERION: Final[str] = (
+    "The work is committed on the unit branch; nothing else is merged or pushed."
+)
+
+
 def completion_criteria_for_unit(unit: Mapping[str, Any]) -> list[str]:
     """Return the pre-declared, numbered 'done means' criteria for one unit.
 
@@ -509,7 +538,7 @@ def completion_criteria_for_unit(unit: Mapping[str, Any]) -> list[str]:
         text = str(check).strip()
         if text:
             criteria.append(text[0].upper() + text[1:] if text[0].islower() else text)
-    criteria.append("The work is committed on the unit branch; nothing else is merged or pushed.")
+    criteria.append(UNIT_BRANCH_COMMIT_CRITERION)
     return criteria
 
 
@@ -527,18 +556,34 @@ def calibration_for_route(model_route: Mapping[str, Any] | None, *, family_only:
     override is kept only if it measures at least as well as the inherited
     block on the same corpus. Production callers never pass it.
     """
+    entry = calibration_entry_for_route(model_route, family_only=family_only)
+    return entry[1] if entry is not None else ""
+
+
+def calibration_entry_for_route(
+    model_route: Mapping[str, Any] | None, *, family_only: bool = False
+) -> tuple[str, str] | None:
+    """Return `(key, block)` for `calibration_for_route`, or None when none fires.
+
+    The key names the table entry that answered: the contract model id for an
+    exact-model override, otherwise the family (`generic` for an unknown one).
+    Two keys can carry byte-equal text, so the key is what identifies which
+    calibration a unit received.
+    """
     if not isinstance(model_route, Mapping):
-        return ""
+        return None
     effort = str(model_route.get("selected_reasoning_effort", "") or "").casefold()
     if effort not in HIGH_EFFORT_TIER:
-        return ""
-    override = None if family_only else MODEL_HIGH_EFFORT_CALIBRATIONS.get(
-        contract_model_id(str(model_route.get("selected_model", "") or ""))
-    )
-    if override:
-        return override
+        return None
+    if not family_only:
+        model_id = contract_model_id(str(model_route.get("selected_model", "") or ""))
+        override = MODEL_HIGH_EFFORT_CALIBRATIONS.get(model_id)
+        if override:
+            return model_id, override
     family = str(model_route.get("model_family", "") or "").casefold()
-    return HIGH_EFFORT_CALIBRATIONS.get(family, HIGH_EFFORT_CALIBRATIONS["generic"])
+    if family not in HIGH_EFFORT_CALIBRATIONS:
+        family = "generic"
+    return family, HIGH_EFFORT_CALIBRATIONS[family]
 
 
 def shared_unit_preamble_lines(goal_text: str) -> list[str]:
@@ -556,32 +601,3 @@ def shared_unit_preamble_lines(goal_text: str) -> list[str]:
         UNIT_RESULT_RETURN_PROTOCOL,
         STRUCTURAL_SEARCH_DISCIPLINE_GUIDANCE,
     ]
-
-
-def unit_protocol_lines(unit: Mapping[str, Any]) -> list[str]:
-    """Return the ordered unit-varying protocol lines appended to a unit prompt.
-
-    The unit-invariant blocks (goal echo, verification stop, failure kind)
-    live in `shared_unit_preamble_lines()` so sibling prompts keep a
-    byte-identical head; content that varies per unit belongs here, and so
-    does an invariant line the frozen head cannot afford, such as
-    `TOOL_BATCHING_PROTOCOL` (see the note at that constant).
-    """
-    criteria = completion_criteria_for_unit(unit)
-    lines = ["Done means, and only means:"]
-    lines.extend(f"{index}. {criterion}" for index, criterion in enumerate(criteria, start=1))
-    handoff = unit.get("handoff", {}) if isinstance(unit.get("handoff"), Mapping) else {}
-    model_route = handoff.get("model_route") if isinstance(handoff.get("model_route"), Mapping) else None
-    # Contract units carry the declared role inside the recorded route, not as
-    # a top-level key; accept both so pre-contract unit dicts behave the same.
-    role = str(unit.get("role", "") or "") or (str(model_route.get("role", "") or "") if model_route else "")
-    lines.append(TOOL_BATCHING_PROTOCOL)
-    if role == "review":
-        lines.append(REVIEW_ROLE_PROTOCOL)
-    calibration = calibration_for_route(model_route)
-    if calibration:
-        lines.append(calibration)
-    bundle = domain_skill_guidance_line(unit)
-    if bundle:
-        lines.append(bundle)
-    return lines

@@ -442,11 +442,13 @@ the corpus is filtered for leakage rather than assumed to average it out.
   stdin, never on argv, and only the deterministic routing fields are kept.
 * `omh coding model-route --executor hermes --model … --effort … --json`
   resolves the route.
-* The prompt is composed from the *shipped* protocol constants in
-  `omh.coding.unit_prompt_protocol` — goal echo, verification stop, failure
-  kind, structural search discipline, tool batching, the numbered completion
-  criteria, and `calibration_for_route` — so a calibration this repository
-  revises is the calibration the next run measures.
+* The prompt is the *shipped* assembler's output,
+  `omh.coding.unit_prompt_assembly.assemble_unit_prompt`, with the fanout
+  transport and framing blocks named in `arms.OMITTED_BLOCKS` left out — goal
+  echo, verification stop, failure kind, structural search discipline, the
+  numbered completion criteria, tool batching, and the route's calibration
+  reach the model in the product's order — so a block this repository revises
+  or adds is the block the next run measures.
 * `calibration_for_route` returns nothing outside the high effort tier, so the
   manifest pins the control effort at `high`. At `medium` the arm carried no
   calibration on any task while the mixture arm, routed at `high`, did get a

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from contextlib import contextmanager
+import hashlib
 import json
 from pathlib import Path
 import platform
@@ -1151,6 +1152,37 @@ class ArmTests(unittest.TestCase):
         self.assertIn(arms.COMPLETION_CONTRACT, bare)
         self.assertIn(arms.COMPLETION_CONTRACT, delegated)
         self.assertIn(lane.COMPLETION_FILE, bare)
+
+    def test_the_assembled_prompt_keeps_the_recorded_bytes(self) -> None:
+        """Routing the lane through `assemble_unit_prompt` moved no byte.
+
+        Digests captured from the hand-composed prompt the lane sent before it
+        called the product's assembler, so earlier records and later ones
+        measured the same `PROMPT_PROFILE`. An intentional prompt-text change
+        moves them; re-derive and say so in the commit.
+        """
+
+        recorded = {
+            ("gpt-6-astra", "high", "gpt"): "9cd6b7960f4320ac61c44e5ec3784f5c67a0ee39f301ef7d7c778ac0ffb2b8f1",
+            ("gpt-6.1-sol", "medium", "gpt"): "5ddf4d61966d43b35f446969d34e5ce7342cbb0e5a2d0c526a89de5e5a5339f1",
+            ("deepseek-v4.1-flash", "high", "deepseek"): "742a3d95bb9a95ec8d92858ede09b46df853073e1aa51178a0f61e6e5dcb5d21",
+            ("claude-fable-5-1", "xhigh", "claude"): "ce81f8cabfb0fda36457cc9eec9877ab282fa6538082f6ff654a00cdbd856603",
+        }
+        for (model, effort, family), digest in recorded.items():
+            route = {
+                "selected_model": model,
+                "selected_reasoning_effort": effort,
+                "model_family": family,
+                "role": "implementation",
+            }
+            unit = arms.benchmark_unit(
+                file_scope=arms.unit_file_scope(),
+                checks=["python -m unittest tests/test_x.py", "python -m compileall -q src"],
+                route=route,
+            )
+            prompt = arms.delegation_prompt("Fix the exporter flag.\nSecond line.", unit)
+            with self.subTest(model=model):
+                self.assertEqual(hashlib.sha256(prompt.encode("utf-8")).hexdigest(), digest)
 
     def test_the_delegation_prompt_adds_only_what_omh_owns(self) -> None:
         protocol = arms.prompt_protocol()
