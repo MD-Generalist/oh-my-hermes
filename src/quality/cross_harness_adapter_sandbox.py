@@ -281,7 +281,15 @@ def sandbox_command(
     # plus --setenv, matching sandbox-exec, which never clears it. Fanout filters
     # that environment itself and adds per-command overrides at spawn time.
     inherit_environment: bool = False,
+    # The caller resolved `child.root`, `write_roots` and `write_literals` once
+    # and holds them for every command of one run. Resolving here again, per
+    # command, is what turned a symlink planted by an earlier command into a
+    # grant on its target.
+    write_paths_resolved: bool = False,
 ) -> tuple[str, ...]:
+    def write_paths(paths: Sequence[Path]) -> tuple[Path, ...]:
+        return tuple(dict.fromkeys(paths)) if write_paths_resolved else unique_roots(paths)
+
     if selected == "sandbox-exec":
         executables = (argv[0], "/usr/bin/true")
         if Path(argv[0]).resolve() == Path("/bin/sh").resolve():
@@ -314,22 +322,31 @@ def sandbox_command(
             f'(allow file-write-data (literal {json.dumps(str(root))}))'
             for root in macos_write_data_literals
         )
-        write_subpaths = " ".join(
-            f'(subpath {json.dumps(str(root))})' for root in unique_roots((child.root, *write_roots))
-        )
+        write_root_paths = write_paths((child.root, *write_roots))
+        write_subpaths = " ".join(f'(subpath {json.dumps(str(root))})' for root in write_root_paths)
+        # A subpath grant covers the root's own name, so a confined process
+        # could move a write root aside and leave a symlink in its place.
+        # Seatbelt does not follow that symlink, but any later resolve of the
+        # root on the host does (a caller that does not pass
+        # `write_paths_resolved`, or the next run's preparation), and the
+        # command built from it grants the symlink's target. Unlink covers both
+        # rename and rmdir of the entry; creating, chmod and writes below it are
+        # untouched.
+        write_root_entries = " ".join(f'(literal {json.dumps(str(root))})' for root in write_root_paths)
+        write_root_pin = f"(deny file-write-unlink {write_root_entries})"
         # Seatbelt's literal grants operations on the exact name. If an
         # external writer removes that file and replaces it with a directory,
         # the literal rule still denies writes below the replacement directory.
         write_literal_policy = "".join(
-            f'(allow file-write* (literal {json.dumps(str(path.resolve()))}))'
-            for path in unique_roots(write_literals)
+            f'(allow file-write* (literal {json.dumps(str(path))}))'
+            for path in write_paths(write_literals)
         )
         mach_lookup = "".join(
             f'(allow mach-lookup (global-name {json.dumps(name)}))'
             for name in macos_mach_lookup_names
         )
         network = "(allow network*)" if allow_network else ""
-        policy = f'(version 1)(deny default)(deny syscall-unix (syscall-number 147 82))(allow process-fork){process_exec}(allow sysctl-read){file_read}{write_data_literals}{write_literal_policy}(allow file-write* {write_subpaths}){mach_lookup}{network}'
+        policy = f'(version 1)(deny default)(deny syscall-unix (syscall-number 147 82))(allow process-fork){process_exec}(allow sysctl-read){file_read}{write_data_literals}{write_literal_policy}(allow file-write* {write_subpaths}){write_root_pin}{mach_lookup}{network}'
         return ("/usr/bin/sandbox-exec", "-p", policy, *argv)
     tool = _trusted_bwrap(backend_digest)
     assert tool is not None
@@ -338,7 +355,7 @@ def sandbox_command(
         flags.insert(3, "--unshare-net")
     bind_roots = unique_roots((*roots, Path(argv[0]).resolve().parent))
     binds = [part for root in bind_roots for part in ("--ro-bind", str(root), str(root))]
-    writable_roots = tuple(root for root in unique_roots((*write_roots, *write_literals)) if root != child.root)
+    writable_roots = tuple(root for root in write_paths((*write_roots, *write_literals)) if root != child.root)
     # --bind-try keeps preparation non-fatal when an allowed state directory has
     # not been created yet; it never grants the broad parent directory instead.
     # In particular, it cannot create an absent exact file literal (#1356).

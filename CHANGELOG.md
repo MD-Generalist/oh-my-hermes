@@ -4,6 +4,27 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **A confined fanout unit can commit on its own branch.** Under the OS
+  write fence a unit in a linked worktree could edit files but not commit:
+  its git metadata lives in the shared repository, outside its write root,
+  so `git commit` failed on `index.lock` and the dispatcher, which only
+  observes a committed HEAD, got nothing. The fence now adds the unit's
+  per-worktree gitdir, `objects`, and the `agent` namespace under
+  `refs/heads` and `logs/refs/heads`, only when HEAD is the unit's own
+  `agent/<unit>` branch in a linked worktree of the dispatching repository.
+  Any failed check adds none and the receipt's `git_roots_skip` says why;
+  nothing falls back to unconfined. Carried from #1983 by @junsuplee-forjl.
+  - A path the unit changes after the fence is prepared no longer becomes
+    a grant. Each command used to resolve its write roots and exact-file
+    literals again, so a unit could replace one with a symlink and have the
+    next confined command (a verification check) write to the symlink's
+    target: `hooks/` through a git root, the repository `config` through
+    Claude Code's `~/.claude.json` literal, or any directory through the
+    worktree and an owner state root. The last two predate the git roots.
+    The paths are now resolved once per run, and on macOS a write root's
+    own directory entry cannot be renamed or removed from inside the fence.
+    A redispatch still resolves again; `docs/FANOUT.md` lists what that
+    leaves open.
 - **`omh docs workflows --installed` documents only what this machine has.**
   The workflow reference narrows to the skills the local install manifest
   records, with the harnesses those skills name, so a `core`

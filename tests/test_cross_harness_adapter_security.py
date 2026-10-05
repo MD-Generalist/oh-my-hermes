@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 from collections.abc import Callable
 from contextlib import suppress
@@ -162,6 +163,41 @@ class AdapterSandboxSecurityTests(_RunnerMixin, unittest.TestCase):
             allowed = self._run("network-allowed", sandbox=True, environment=(("OMH_NETWORK_PORT", str(port)),), allow_network=True)
         outside = self._run("outside-write-denied", sandbox=True)
         self.assertEqual((network.status, allowed.status, outside.status, allowed.network_allowed), ("observed_success", "observed_success", "observed_success", True))
+
+    @requires_posix
+    def test_sandbox_exec_policy_pins_write_roots_and_can_keep_caller_resolved_paths(self) -> None:
+        """Policy text only, so it runs on the Linux job: no macOS job runs the unit tests."""
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            real = root / "real"
+            real.mkdir()
+            child = ChildContext(real, real, real, real, real, real / "request.json", real / "result.json", "f" * 64)
+            target = root / "target"
+            target.mkdir()
+            planted = root / "planted"
+            planted.symlink_to(target, target_is_directory=True)
+            planted_literal = root / "planted-file"
+            planted_literal.symlink_to(root / "target-file")
+
+            def policy(**options: bool) -> str:
+                return sandbox_command(
+                    ("/bin/sh", "-c", "exit 0"), "sandbox-exec", (), child, False, {},
+                    write_roots=(planted,), write_literals=(planted_literal,), **options,
+                )[2]
+
+            resolved_again = policy()
+            held = policy(write_paths_resolved=True)
+
+        def quoted(path: Path) -> str:
+            return json.dumps(str(path))
+
+        self.assertIn(f"(subpath {quoted(target)})", resolved_again)
+        self.assertIn(f"(literal {quoted(root / 'target-file')})", resolved_again)
+        self.assertNotIn(quoted(target), held)
+        self.assertNotIn(quoted(root / "target-file"), held)
+        self.assertIn(f"(allow file-write* (subpath {quoted(real)}) (subpath {quoted(planted)}))", held)
+        self.assertIn(f"(allow file-write* (literal {quoted(planted_literal)}))", held)
+        self.assertIn(f"(deny file-write-unlink (literal {quoted(real)}) (literal {quoted(planted)}))", held)
 
     @unittest.skipUnless(sys.platform == "darwin", "sandbox-exec is macOS-only")
     def test_macos_default_process_exec_policy_remains_strict(self) -> None:
