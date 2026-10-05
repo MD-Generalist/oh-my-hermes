@@ -137,8 +137,9 @@ def fanout_transport_criteria() -> tuple[str, ...]:
     they are transport: they exist so a dispatched worktree can be collected
     and merged, and this lane has no collector. Leaving the commit criterion
     in put a direct contradiction in front of the model, which was told in the
-    same prompt not to commit, and falsified `PROMPT_PROFILE`. Deriving the text rather than matching it means
-    a rewording upstream stays filtered instead of silently reappearing.
+    same prompt not to commit, and falsified `PROMPT_PROFILE`. Deriving the
+    text rather than matching it means a rewording upstream stays filtered
+    instead of silently reappearing.
     """
 
     protocol = prompt_protocol()
