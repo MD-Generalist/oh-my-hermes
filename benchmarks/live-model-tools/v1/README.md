@@ -669,3 +669,54 @@ Reading:
   because no shipped slot reaches it and this run could not tell it from the
   family block. Sonnet 5.5 now takes the `claude` family blocks; see
   `MODEL_OPTI.md`.
+
+### 2026-10-04 prompt audit: Claude block vs none, and the shared unit head
+
+The 2026-10-04 prompt audit asked two questions: is the `claude` family
+block still worth sending to Fable 5.1, and does the shared unit head that
+every real fanout unit carries pay for itself?
+
+Setup:
+- Corpus: the same pinned 30-instance evaluation corpus as above.
+- Route: `claude-fable-5-1` at `xhigh`, the `architect` chain head, through
+  Hermes' `anthropic` provider on the Claude Code OAuth subscription.
+- Builds: omh `4ab239b10` for A1–A3 and the `omh/bench-unit-head` branch for
+  U1–U3; Hermes Agent 0.21.5+4533.
+
+The arms ran one at a time in the order below. Every record completed.
+
+| Arm | Condition | Window (UTC) | Passed | Mean tokens | Tool calls | API turns |
+| --- | --- | --- | ---: | ---: | ---: | ---: |
+| A1 | baseline (no block) | 06:50–07:16 | 16 / 30 | 111,383 | 356 | 227 |
+| A2 | optimized (`claude` block) | 07:16–07:40 | 17 / 30 | 99,409 | 313 | 201 |
+| A3 | baseline, repeated | 07:40–08:06 | 18 / 30 | 104,155 | 348 | 215 |
+| U1 | unit (head + block) | 08:36–09:05 | 18 / 30 | 97,546 | 219 | 188 |
+| U2 | unit_lean (head − parent clarification) | 09:05–09:33 | 17 / 30 | 102,218 | 242 | 201 |
+| U3 | unit, repeated | 09:33–10:03 | 18 / 30 | 105,478 | 236 | 202 |
+
+Paired token deltas per instance, with a template-cluster bootstrap (10,000
+draws, seed 20260813):
+
+| Pair | Mean delta | 95% CI |
+| --- | ---: | --- |
+| A3 − A1 (drift) | −7,228 (−6.5%) | [−17,928, +2,240] |
+| A2 − A1 (block vs none) | −11,974 (−10.7%) | [−21,404, −3,505] |
+| A2 − A3 (block vs none) | −4,746 (−4.6%) | [−12,179, +1,862] |
+| U3 − U1 (drift) | +7,933 (+8.1%) | [−2,845, +23,459] |
+| U2 − U1 (lean vs full head) | +4,672 (+4.8%) | [−7,690, +20,755] |
+| U2 − U3 (lean vs full head) | −3,260 (−3.1%) | [−7,259, +560] |
+| U1 − A2 (head vs no head) | −1,864 (−1.9%) | [−16,153, +12,161] |
+
+How to read it:
+- **The `claude` block stays.** It never costs more than no block, and it
+  cuts tool calls by about 11%.
+- **The shared head stays.** Its token cost against no head is within drift,
+  and it cuts tool calls by about 25–30%. Arms A2 and U1 ran on different
+  builds on the same day; only the head differs in their prompt.
+- **Dropping the parent-clarification block shows no measurable saving.**
+  This corpus never needs `input_required`, so the block stays.
+- **Wall clock is not compared.** Pass rate cannot separate the arms on this
+  corpus.
+
+Records, manifests, and lane scripts are in
+`~/Desktop/khope/bench-archive/prompt-audit-2026-10-04/runs` (outside git).
