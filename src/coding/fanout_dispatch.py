@@ -3303,8 +3303,7 @@ def _current_catalog_digest(units: Iterable[Mapping[str, Any]]) -> str:
     when some unit's frozen route actually carries a catalog fingerprint —
     contracts routed purely from built-in catalogs never trigger the read."""
     for unit in units:
-        handoff = unit.get("handoff", {}) if isinstance(unit.get("handoff"), Mapping) else {}
-        route = handoff.get("model_route")
+        route = recorded_model_route(unit)
         if isinstance(route, Mapping) and isinstance(route.get("catalog_fingerprint"), Mapping):
             break
     else:
