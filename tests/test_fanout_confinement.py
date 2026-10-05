@@ -16,7 +16,9 @@ load_local_package()
 
 from omh.coding.fanout_confinement import (  # noqa: E402
     FanoutFilesystemConfinement,
+    _git_write_roots,
     _probe,
+    git_roots_skip_reason,
     owner_state_directories,
     owner_state_files,
     prepare_fanout_filesystem_confinement,
@@ -1106,6 +1108,13 @@ class MacosLinkedWorktreeGitWriteRootTests(unittest.TestCase):
                 cwd=repo, text=True, capture_output=True, check=True,
             ).stdout.strip()
             self.assertEqual(ahead, "1")
+            # What the git-lfs clean filter does on `git add`: a temp file, then the stored object.
+            staged = self._run(
+                confinement, worktree,
+                f'mkdir -p "{common}/lfs/tmp" "{common}/lfs/objects/ab/cd" && '
+                f'printf x > "{common}/lfs/tmp/staged" && mv "{common}/lfs/tmp/staged" "{common}/lfs/objects/ab/cd/abcd"',
+            )
+            self.assertEqual(staged.returncode, 0, staged.stderr)
             refused = {
                 "hooks": f'printf x > "{common}/hooks/post-checkout"',
                 "config": f'printf "[x]" >> "{common}/config"',
@@ -1126,7 +1135,7 @@ class MacosLinkedWorktreeGitWriteRootTests(unittest.TestCase):
         # The write through the swapped name is made by a SECOND command: a
         # grant only follows the symlink when the host resolves the root again
         # to build a later command, never inside the process that planted it.
-        for target in ("refs/heads/agent", "logs/refs/heads/agent", "objects", "worktrees/linked-worktree"):
+        for target in ("refs/heads/agent", "logs/refs/heads/agent", "objects", "lfs", "worktrees/linked-worktree"):
             with self.subTest(target=target), TemporaryDirectory() as temporary:
                 root = Path(temporary).resolve()
                 worktree = _linked_worktree(root)
@@ -1227,6 +1236,53 @@ class MacosLinkedWorktreeGitWriteRootTests(unittest.TestCase):
                 attempt = self._run(confinement, root, reach, environment)
                 self.assertNotEqual(attempt.returncode, 0)
                 self.assertFalse(reached())
+
+
+@requires_posix
+class GitLfsWriteRootTests(unittest.TestCase):
+    """`_git_write_roots` needs no sandbox, so these run on every POSIX job, CI included."""
+
+    def test_lfs_is_granted_and_created_as_a_real_directory(self) -> None:
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            worktree = _linked_worktree(root)
+            common = (root / "repo" / ".git").resolve()
+            self.assertFalse((common / "lfs").exists())
+            roots = _git_write_roots(worktree, "agent/unit", root / "repo")
+            self.assertEqual(git_roots_skip_reason(worktree), "")
+            self.assertIn(common / "lfs", roots)
+            self.assertTrue((common / "lfs").is_dir())
+            self.assertFalse((common / "lfs").is_symlink())
+
+    def test_a_symlinked_lfs_root_gets_no_git_root(self) -> None:
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            worktree = _linked_worktree(root)
+            common = (root / "repo" / ".git").resolve()
+            (common / "lfs").symlink_to(common / "hooks", target_is_directory=True)
+            self.assertEqual(_git_write_roots(worktree, "agent/unit", root / "repo"), ())
+            self.assertEqual(git_roots_skip_reason(worktree), "symlink")
+
+    def test_a_symlink_planted_inside_lfs_gets_no_git_root(self) -> None:
+        for planted in ("objects", "tmp", "objects/ab"):
+            with self.subTest(planted=planted), TemporaryDirectory() as temporary:
+                root = Path(temporary).resolve()
+                worktree = _linked_worktree(root)
+                common = (root / "repo" / ".git").resolve()
+                (common / "lfs" / planted).parent.mkdir(parents=True, exist_ok=True)
+                (common / "lfs" / planted).symlink_to(common / "hooks", target_is_directory=True)
+                self.assertEqual(_git_write_roots(worktree, "agent/unit", root / "repo"), ())
+                self.assertEqual(git_roots_skip_reason(worktree), "hygiene")
+
+    def test_an_ordinary_lfs_store_keeps_its_git_roots(self) -> None:
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            worktree = _linked_worktree(root)
+            common = (root / "repo" / ".git").resolve()
+            for directory in ("tmp", "cache/locks", "objects/ab/cd"):
+                (common / "lfs" / directory).mkdir(parents=True)
+            (common / "lfs" / "objects" / "ab" / "cd" / "abcd").write_bytes(b"x")
+            self.assertIn(common / "lfs", _git_write_roots(worktree, "agent/unit", root / "repo"))
 
 
 if __name__ == "__main__":

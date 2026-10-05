@@ -4,6 +4,14 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **A confined fanout unit can commit in a Git LFS repository.** `git add`
+  runs the git-lfs clean filter, which stages through `.git/lfs/tmp` into
+  `.git/lfs/objects`; with that directory outside the write fence the filter
+  failed and the unit could stage nothing. `lfs` joins the git paths a unit
+  in a linked worktree may write, under the same conditions as the others,
+  and is created when the repository has none yet. A symlink at `lfs`, or
+  planted at the top of `lfs` or `lfs/objects`, adds no git path at all.
+  Carried from #1992 by @junsuplee-forjl.
 - **A confined fanout unit can commit on its own branch.** Under the OS
   write fence a unit in a linked worktree could edit files but not commit:
   its git metadata lives in the shared repository, outside its write root,
