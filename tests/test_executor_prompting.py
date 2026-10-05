@@ -228,11 +228,12 @@ class ExecutorPromptingTests(unittest.TestCase):
         # `gpt-6.1-sol-pro` projects to the `gpt-6.1-sol` contract, so the
         # high-effort calibration already gave it the 6.1 Sol override while
         # the overlay's own suffix check gave it plain `parallel_handoff`: one
-        # model, two answers. Both now read the contract model id.
+        # model, two answers. Both now read the contract model id, so a dated
+        # snapshot that resolves to the contract gets the overlay as well.
         from omh.coding.model_contracts import contract_model_id
         from omh.coding.unit_prompt_protocol import calibration_entry_for_route
 
-        for model in ("gpt-6.1-sol-pro", "openai/gpt-6.1-sol-pro"):
+        for model in ("gpt-6.1-sol-pro", "openai/gpt-6.1-sol-pro", "gpt-6.1-sol-2026-09-01"):
             with self.subTest(model=model):
                 self.assertEqual(contract_model_id(model), "gpt-6.1-sol")
                 entry = calibration_entry_for_route(

@@ -513,9 +513,10 @@ pairing so a benchmark claim can never mix in other prompt changes.
     (owner decision, 2026-09-23): its rules are restraint-shaped (a declared
     stop condition, stop on decisive evidence), and
     `tests/test_executor_prompting.py` names `gpt-6-sol` so the inheritance
-    is a reviewed decision rather than a suffix accident. A dated
-    `gpt-6-sol-YYYY-MM-DD` id does not match the suffix; no dated Sol
-    snapshot is published.
+    is a reviewed decision rather than a suffix accident. The suffix is read
+    off the contract model id, so a dated `gpt-6-sol-YYYY-MM-DD` id, which
+    resolves to `gpt-6-sol`, receives it too; no dated Sol snapshot is
+    published.
 
   Editorial, unmeasured. The named follow-up pairs: `gpt-5.6-sol` vs
   `gpt-6-sol` at `medium` (the last-resort rung), `gpt-5.6-terra` `high` vs
@@ -1424,7 +1425,9 @@ measured family/surface pairs:
 - `gpt_sol_codex_handoff` applies to a `*-sol` model on the codex profile and
   adds single-eval-cell internal parallelism. The suffix is read off the
   contract model id, the identity the calibration lookup uses, so a projected
-  id such as `gpt-6.1-sol-pro` gets the overlay its calibration already gets.
+  id such as `gpt-6.1-sol-pro` and a dated snapshot such as
+  `gpt-6.1-sol-2026-09-01` (both resolve to `gpt-6.1-sol`) get the overlay
+  their calibration already gets.
 - `gpt_hermes_ulw` applies to the gpt family on the hermes profile running
   ultrawork.
 - `claude_code_handoff` applies to the claude family on the Claude Code

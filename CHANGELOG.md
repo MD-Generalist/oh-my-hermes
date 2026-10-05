@@ -20,12 +20,17 @@ All notable changes will be documented here.
   - `UNIT_PROMPT_MAX_BYTES` (8,000 B) now explicitly bounds the dispatch
     prompt, gated over every calibration key with the sidecar contract and
     skill discovery. A repair brief at its own caps (9 commands x 512
-    characters) adds about 10 KB, more than that ceiling, so each redispatch
-    section gets its own producer-derived `UNIT_PROMPT_APPEND_MAX_BYTES`.
+    characters) adds about 5.5 KB of plain ASCII and up to about 10 KB for
+    characters JSON doubles (`"`, `\`), so it cannot share that ceiling;
+    each redispatch section gets its own producer-derived
+    `UNIT_PROMPT_APPEND_MAX_BYTES`. Non-ASCII command text expands further
+    (about 28.5 KB for `é` at the same caps) and is not covered.
   - Dispatch rows record `unit_prompt`: block names, byte size, and sha256
     of the prompt sent, never the text.
-  - `gpt-6.1-sol-pro` now gets the Sol Codex throughput overlay its
-    calibration already implied; the overlay reads the contract model id.
+  - `gpt-6.1-sol-pro` and dated Sol snapshots such as
+    `gpt-6.1-sol-2026-09-01` now get the Sol Codex throughput overlay their
+    calibration already implied; the overlay reads the contract model id,
+    the same identity the calibration lookup uses.
 - **The 2026-10-04 prompt audit's measurements are recorded.** All arms ran
   on `claude-fable-5-1` at `xhigh` (Claude Code subscription, 30 instances
   per arm, with same-text repeats).

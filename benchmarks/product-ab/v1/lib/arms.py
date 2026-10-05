@@ -135,9 +135,9 @@ def fanout_transport_criteria() -> tuple[str, ...]:
     `OMITTED_BLOCKS` drops; this derivation is the independent check that no
     transport criterion reaches the prompt. They have to be dropped because
     they are transport: they exist so a dispatched worktree can be collected
-    and merged, and this lane has no collector. Leaving the commit criterion in put a direct contradiction in
-    front of the model, which was told in the same prompt not to commit, and
-    falsified `PROMPT_PROFILE`. Deriving the text rather than matching it means
+    and merged, and this lane has no collector. Leaving the commit criterion
+    in put a direct contradiction in front of the model, which was told in the
+    same prompt not to commit, and falsified `PROMPT_PROFILE`. Deriving the text rather than matching it means
     a rewording upstream stays filtered instead of silently reappearing.
     """
 
