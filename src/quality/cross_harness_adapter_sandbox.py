@@ -314,9 +314,16 @@ def sandbox_command(
             f'(allow file-write-data (literal {json.dumps(str(root))}))'
             for root in macos_write_data_literals
         )
-        write_subpaths = " ".join(
-            f'(subpath {json.dumps(str(root))})' for root in unique_roots((child.root, *write_roots))
-        )
+        write_root_paths = unique_roots((child.root, *write_roots))
+        write_subpaths = " ".join(f'(subpath {json.dumps(str(root))})' for root in write_root_paths)
+        # A subpath grant covers the root's own name, and Seatbelt resolves the
+        # path when each sandbox-exec starts. Without this a confined process
+        # could move a write root aside and leave a symlink in its place, and
+        # the next command wrapped with the same roots would get the symlink's
+        # target writable instead. Unlink covers both rename and rmdir of the
+        # entry; creating, chmod and writes below it are untouched.
+        write_root_entries = " ".join(f'(literal {json.dumps(str(root))})' for root in write_root_paths)
+        write_root_pin = f"(deny file-write-unlink {write_root_entries})"
         # Seatbelt's literal grants operations on the exact name. If an
         # external writer removes that file and replaces it with a directory,
         # the literal rule still denies writes below the replacement directory.
@@ -329,7 +336,7 @@ def sandbox_command(
             for name in macos_mach_lookup_names
         )
         network = "(allow network*)" if allow_network else ""
-        policy = f'(version 1)(deny default)(deny syscall-unix (syscall-number 147 82))(allow process-fork){process_exec}(allow sysctl-read){file_read}{write_data_literals}{write_literal_policy}(allow file-write* {write_subpaths}){mach_lookup}{network}'
+        policy = f'(version 1)(deny default)(deny syscall-unix (syscall-number 147 82))(allow process-fork){process_exec}(allow sysctl-read){file_read}{write_data_literals}{write_literal_policy}(allow file-write* {write_subpaths}){write_root_pin}{mach_lookup}{network}'
         return ("/usr/bin/sandbox-exec", "-p", policy, *argv)
     tool = _trusted_bwrap(backend_digest)
     assert tool is not None

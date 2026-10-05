@@ -196,7 +196,7 @@ class FanoutFilesystemConfinement:
 # Diagnostics only (why a unit got no git write root). Never read for a security decision.
 _GIT_ROOTS_LAST_SKIP: dict[str, str] = {}
 _GIT_ROOTS_SKIP_LIMIT = 1024
-_UNIT_BRANCH_RE = __import__("re").compile(r"^agent/[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
+_UNIT_BRANCH_RE = re.compile(r"^agent/[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 _GIT_ENV_STRIP = (
     "GIT_DIR", "GIT_COMMON_DIR", "GIT_WORK_TREE", "GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES",
     "GIT_INDEX_FILE", "GIT_NAMESPACE", "GIT_CEILING_DIRECTORIES", "GIT_DISCOVERY_ACROSS_FILESYSTEM",
@@ -401,7 +401,7 @@ def planned_fanout_filesystem_confinement(
     if selected == "unsupported":
         reason_code = "no_os_confinement_backend_on_this_platform"
     owner_state_roots = owner_state_directories(owner, {} if environment is None else environment)
-    write_roots = unique_roots((worktree, *_git_write_roots(worktree), *owner_state_roots))
+    write_roots = unique_roots((worktree, *owner_state_roots))
     write_literals = owner_state_files(owner, {} if environment is None else environment)
     return _receipt(
         status="prepared_not_observed",

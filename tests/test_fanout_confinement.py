@@ -893,9 +893,6 @@ class LinuxBwrapFanoutConfinementTests(_ConfinedSpawnContract, unittest.TestCase
             self.assertFalse(marker.exists())
 
 
-if __name__ == "__main__":
-    unittest.main()
-
 
 @unittest.skipUnless(_working_linux_bwrap(), "bwrap confinement is exercised on Linux hosts with a trusted, working bwrap")
 class LinkedWorktreeGitWriteRootTests(unittest.TestCase):
@@ -1066,3 +1063,116 @@ class LinkedWorktreeGitWriteRootTests(unittest.TestCase):
             with mock.patch("subprocess.run", side_effect=FileNotFoundError("git")):
                 from omh.coding.fanout_confinement import _git_write_roots
                 self.assertEqual(_git_write_roots(worktree, "agent/unit", root / "repo"), ())
+
+
+@unittest.skipUnless(sys.platform == "darwin", "sandbox-exec confinement is exercised on macOS")
+class MacosLinkedWorktreeGitWriteRootTests(unittest.TestCase):
+    """The sandbox-exec twin of the class above, plus the root swap only Seatbelt's path grants allow."""
+
+    def _run(
+        self, confinement: FanoutFilesystemConfinement, cwd: Path, script: str,
+        environment: dict[str, str] | None = None,
+    ) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            confinement.command(("/bin/sh", "-c", script)), cwd=cwd,
+            env=confinement.command_environment(environment), text=True, capture_output=True, check=False,
+        )
+
+    def test_own_branch_commits_and_shared_metadata_stays_read_only(self) -> None:
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            worktree = _linked_worktree(root)
+            repo = root / "repo"
+            common = (repo / ".git").resolve()
+            default_branch = subprocess.run(
+                ("/usr/bin/git", "symbolic-ref", "--short", "HEAD"), cwd=repo, text=True, capture_output=True, check=True,
+            ).stdout.strip()
+            before = subprocess.run(("/usr/bin/git", "rev-parse", "HEAD"), cwd=repo, text=True, capture_output=True, check=True).stdout
+            confinement = prepare_fanout_filesystem_confinement(
+                worktree, {}, (("/bin/sh", "-c", "exit 0"),), owner="", unit_branch="agent/unit", repo_root=repo,
+            )
+            self.assertTrue(confinement.receipt["enforced"])
+            self.assertIn(str(common / "refs" / "heads" / "agent"), confinement.receipt["write_roots"])
+            commit = self._run(
+                confinement, worktree,
+                "echo y >> seed && /usr/bin/git add seed && "
+                "/usr/bin/git -c user.name=t -c user.email=t@example.test commit -qm unit",
+            )
+            self.assertEqual(commit.returncode, 0, commit.stderr)
+            ahead = subprocess.run(
+                ("/usr/bin/git", "rev-list", "--count", f"{default_branch}..agent/unit"),
+                cwd=repo, text=True, capture_output=True, check=True,
+            ).stdout.strip()
+            self.assertEqual(ahead, "1")
+            refused = {
+                "hooks": f'printf x > "{common}/hooks/post-checkout"',
+                "config": f'printf "[x]" >> "{common}/config"',
+                "packed_refs": f'printf x > "{common}/packed-refs"',
+                "default_branch": f"/usr/bin/git update-ref refs/heads/{default_branch} HEAD",
+                "other_namespace": "/usr/bin/git update-ref refs/heads/release/x HEAD",
+                "tag": "/usr/bin/git tag unit-tag",
+            }
+            for name, script in refused.items():
+                with self.subTest(name=name):
+                    self.assertNotEqual(self._run(confinement, worktree, script).returncode, 0)
+            self.assertFalse((common / "hooks" / "post-checkout").exists())
+            self.assertNotIn("[x]", (common / "config").read_text(encoding="utf-8"))
+            after = subprocess.run(("/usr/bin/git", "rev-parse", "HEAD"), cwd=repo, text=True, capture_output=True, check=True).stdout
+            self.assertEqual(before, after)
+
+    def test_a_git_write_root_cannot_be_swapped_for_a_symlink_into_hooks(self) -> None:
+        # Seatbelt resolves each subpath when sandbox-exec starts, so the write
+        # through the swapped name is made by a SECOND command: that is the one
+        # whose grant would follow the symlink.
+        for target in ("refs/heads/agent", "logs/refs/heads/agent", "objects", "worktrees/linked-worktree"):
+            with self.subTest(target=target), TemporaryDirectory() as temporary:
+                root = Path(temporary).resolve()
+                worktree = _linked_worktree(root)
+                repo = root / "repo"
+                common = (repo / ".git").resolve()
+                confinement = prepare_fanout_filesystem_confinement(
+                    worktree, {}, (("/bin/sh", "-c", "exit 0"),), owner="", unit_branch="agent/unit", repo_root=repo,
+                )
+                self.assertIn(str(common / target), confinement.receipt["write_roots"])
+                swap = self._run(
+                    confinement, worktree,
+                    f'mv "{common}/{target}" "{worktree}/moved-aside" && ln -s "{common}/hooks" "{common}/{target}"',
+                )
+                self.assertNotEqual(swap.returncode, 0)
+                self.assertIn("Operation not permitted", swap.stderr)
+                self.assertTrue((common / target).is_dir())
+                self.assertFalse((common / target).is_symlink())
+                _ = self._run(confinement, root, f'printf x > "{common}/{target}/post-checkout"')
+                self.assertFalse((common / "hooks" / "post-checkout").exists())
+
+    def test_the_worktree_cannot_be_swapped_through_an_owner_state_root(self) -> None:
+        """No git root involved: any second write root is a place to park the first one."""
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            worktree = root / "worktree"
+            worktree.mkdir()
+            state = root / "codex-state"
+            state.mkdir()
+            victim = root / "victim"
+            victim.mkdir()
+            environment = {"CODEX_HOME": str(state)}
+            confinement = prepare_fanout_filesystem_confinement(
+                worktree, environment, (("/bin/sh", "-c", "exit 0"),), owner="codex",
+            )
+            self.assertTrue(confinement.receipt["enforced"])
+            for moved, parked in ((worktree, state / "parked"), (state, worktree / "parked")):
+                with self.subTest(moved=moved.name):
+                    swap = self._run(
+                        confinement, root, f'mv "{moved}" "{parked}" && ln -s "{victim}" "{moved}"', environment,
+                    )
+                    self.assertNotEqual(swap.returncode, 0)
+                    self.assertTrue(moved.is_dir())
+                    self.assertFalse(moved.is_symlink())
+            inside = self._run(confinement, root, f'printf x > "{worktree}/kept" && printf x > "{state}/kept"', environment)
+            self.assertEqual(inside.returncode, 0, inside.stderr)
+            _ = self._run(confinement, root, f'printf x > "{victim}/reached"', environment)
+            self.assertEqual(list(victim.iterdir()), [])
+
+
+if __name__ == "__main__":
+    unittest.main()

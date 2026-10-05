@@ -4,6 +4,23 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **A confined fanout unit can commit on its own branch.** Under the OS
+  write fence a unit in a linked worktree could edit files but not commit:
+  its git metadata lives in the shared repository, outside its write root,
+  so `git commit` failed on `index.lock` and the dispatcher, which only
+  observes a committed HEAD, got nothing. The fence now adds the unit's
+  per-worktree gitdir, `objects`, and the `agent` namespace under
+  `refs/heads` and `logs/refs/heads`, only when HEAD is the unit's own
+  `agent/<unit>` branch in a linked worktree of the dispatching repository.
+  Any failed check adds none and the receipt's `git_roots_skip` says why;
+  nothing falls back to unconfined. Carried from #1983 by @junsuplee-forjl.
+  - On macOS a write root's own directory entry can no longer be renamed
+    or removed from inside the fence. Seatbelt resolves a granted path each
+    time `sandbox-exec` starts, so a unit could move a root aside, leave a
+    symlink, and have the next confined command (a verification check)
+    write to the symlink's target: `hooks/` through a git root, or any
+    directory through the worktree and an owner state root. The second form
+    predates the git roots.
 - **One function assembles every fanout unit prompt.**
   `assemble_unit_prompt()` (`src/coding/unit_prompt_assembly.py`) returns
   the prompt as named blocks in four zones (shared head, unit, tail,

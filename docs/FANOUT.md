@@ -984,6 +984,20 @@ Rules, all applied at freeze time:
   lets a confined process ask a host service, such as `systemd-run --user`, to
   write for it.
 
+  A unit in a linked worktree also gets the four git paths a commit on its
+  own branch writes: its per-worktree gitdir, `objects`, and the `agent`
+  namespace under `refs/heads` and `logs/refs/heads`. They are added only
+  when HEAD is the unit's own `agent/<unit>` branch and the worktree is a
+  linked worktree of the dispatching repository reached without a symlink;
+  otherwise none is added, the unit stays fenced and cannot commit, and the
+  receipt's `git_roots_skip` names why. `hooks/`, `config`, `packed-refs` and
+  every ref outside that namespace stay read-only. What a unit can still do
+  inside those roots is move a sibling `agent/*` ref and delete or replace
+  objects. On macOS every write root's own directory entry is pinned
+  (`deny file-write-unlink`), because Seatbelt resolves a granted path when
+  each `sandbox-exec` starts: a root moved aside and replaced by a symlink
+  would hand the next confined command the symlink's target.
+
   That cover is one socket, not the class. A read-only mount stops writes, not
   `connect()`, so any socket still reachable by a well-known path remains a way
   to ask another process to write outside the fence. A dispatching user in the
