@@ -4,6 +4,15 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **`omh docs workflows --installed` documents only what this machine has.**
+  The workflow reference narrows to the skills the local install manifest
+  records, with the harnesses those skills name, so a `core`
+  profile reads its own catalog instead of the full one. It needs an install
+  manifest and refuses `--json` and `--check`; `--output` writes the file.
+  Carried from #1984 by @kyzerleo. The same PR's dotted `plugins.enabled:` /
+  `skills.external_dirs:` config shapes are not carried: Hermes Agent does
+  not read a dotted top-level key, so writing one would report a plugin
+  enabled that Hermes never loads.
 - **One function assembles every fanout unit prompt.**
   `assemble_unit_prompt()` (`src/coding/unit_prompt_assembly.py`) returns
   the prompt as named blocks in four zones (shared head, unit, tail,
