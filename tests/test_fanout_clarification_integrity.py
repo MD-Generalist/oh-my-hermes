@@ -10,12 +10,13 @@ from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
 
-from test_fanout_clarification import GOAL, LocalFanout, _ready
+from test_fanout_clarification import GOAL, LocalFanout, _prompted_sidecar, _ready
 from omh.coding.fanout_clarification import clarification_path, read_clarification
-from omh.coding.fanout_clarification_dispatch import record_answer_redispatch
+from omh.coding.fanout_clarification_dispatch import claim_answered_worktree, record_answer_redispatch
 from omh.coding.fanout_clarification_records import ClarificationRecord
 from omh.coding.fanout_status import project_fanout_status
 from omh.coding.fanout_dispatch import dispatch_fanout
+from omh.coding.unit_prompt_assembly import assemble_unit_prompt, recorded_model_route
 from omh.system.paths import OmhPaths
 
 
@@ -177,3 +178,59 @@ class ClarificationIntegrityTests(unittest.TestCase):
                 self.assertEqual(unit["status"], "completed")
                 self.assertEqual(len(fixture.calls) - calls_before, 2)
                 self.assertEqual(len(delays), 1)
+
+    def test_a_retry_after_a_claimed_decision_resends_that_decision(self) -> None:
+        with TemporaryDirectory(prefix="omh-decision-retry-prompt-") as directory:
+            with patch.dict(os.environ, {
+                "HOME": directory, "HERMES_HOME": directory,
+                "XDG_CONFIG_HOME": directory, "OMH_FANOUT_DEPTH": "0",
+            }):
+                # Given: an observed answer, and a transport failure on the first redispatch spawn.
+                fixture = LocalFanout(Path(directory))
+                first = fixture.dispatch()
+                code, _stdout, stderr = fixture.answer(fixture.question(), "--answer", "json")
+                self.assertEqual(code, 0, stderr)
+                fixture.ask = False
+                claimed: list[ClarificationRecord] = []
+                spawned: list[list[str]] = []
+
+                def capture_claim(*args, **kwargs) -> ClarificationRecord:
+                    claimed.append(claim_answered_worktree(*args, **kwargs))
+                    return claimed[-1]
+
+                def transient_runner(argv: list[str], **kwargs) -> subprocess.CompletedProcess[str]:
+                    if argv[0] in ("git", sys.executable):
+                        return fixture.runner(argv, **kwargs)
+                    spawned.append(argv)
+                    if len(spawned) == 1:
+                        return subprocess.run(
+                            [sys.executable, "-c",
+                             "import sys; sys.stderr.write('connection reset by peer'); sys.exit(1)"],
+                            cwd=kwargs["cwd"], timeout=kwargs["timeout"],
+                            capture_output=True, text=True,
+                        )
+                    return fixture.runner(argv, **kwargs)
+
+                # When: the redispatch claims the answer once and retries the spawn.
+                with patch("omh.coding.fanout_dispatch.claim_answered_worktree", side_effect=capture_claim):
+                    dispatch_fanout(
+                        fixture.paths, fixture.contract, goal_text=GOAL, repo_root=fixture.repo,
+                        base_sha=fixture.sha, runner=transient_runner, readiness=_ready,
+                        only_units=["unit-b"], resume_journal=fixture.journal(first),
+                        goal_attempt_id="attempt-1", max_retries=1, run_verification=True,
+                        sleep=lambda _delay: None, rng=lambda: 0.0,
+                    )
+
+                # Then: the retry's prompt is the assembler's, with the claimed decision appended.
+                self.assertEqual((len(claimed), len(spawned)), (1, 2))
+                unit = next(row for row in fixture.units if row["unit_id"] == "unit-b")
+                retry_argv = spawned[1]
+                expected = assemble_unit_prompt(
+                    unit, GOAL, route=recorded_model_route(unit),
+                    binding={"path": str(_prompted_sidecar(retry_argv)), "unit_id": "unit-b",
+                             "run_id": unit["run_ref"], "fanout_id": fixture.fanout_id,
+                             "base_sha": fixture.sha},
+                    parent_decision=claimed[0],
+                )
+                self.assertEqual(expected.names()[-1], "append.parent_decision")
+                self.assertEqual(retry_argv[-1], expected.text)

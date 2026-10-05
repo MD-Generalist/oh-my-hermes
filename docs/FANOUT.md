@@ -884,10 +884,12 @@ Rules, all applied at freeze time:
   benchmark lanes. Prompts are subprocess argv, so the worst case is
   policy-gated in tests rather than trimmed at runtime:
   `UNIT_PROMPT_MAX_BYTES` for the dispatch prompt and
-  `UNIT_PROMPT_APPEND_MAX_BYTES` for each redispatch section, which is
-  bounded by the repair and clarification caps. Each unit row records
-  `unit_prompt`: the block names, byte size, and sha256 of the prompt the
-  last attempt sent, never the text.
+  `UNIT_PROMPT_APPEND_MAX_BYTES` for each redispatch section. That second
+  ceiling is derived from the repair and clarification caps and covers a
+  repair brief of up to about 10 KB for characters JSON doubles (`"`, `\`);
+  non-ASCII command text expands further and is not covered. Each unit row
+  records `unit_prompt`: the block names, byte size, and sha256 of the
+  prompt the last attempt sent, never the text.
 - **Telemetry.** Each dispatched unit records `started_at`, `finished_at`,
   and `duration_seconds`, and the full dispatch summary persists to
   `~/.omh/coding/fanout/<id>/dispatch_summary.json` (latest wins,
