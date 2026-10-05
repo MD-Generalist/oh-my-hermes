@@ -886,8 +886,10 @@ Rules, all applied at freeze time:
   `UNIT_PROMPT_MAX_BYTES` for the dispatch prompt and
   `UNIT_PROMPT_APPEND_MAX_BYTES` for each redispatch section. That second
   ceiling is derived from the repair and clarification caps and covers a
-  repair brief of up to about 10 KB for characters JSON doubles (`"`, `\`);
-  non-ASCII command text expands further and is not covered. Each unit row
+  repair brief of up to about 10 KB for characters JSON doubles (`"`, `\`).
+  Non-ASCII command text is covered too: the brief is written as UTF-8, not
+  `\uXXXX` escapes, and each command copy is cut to 512 UTF-8 bytes at a
+  character boundary, so no character set can exceed the `"` case. Each unit row
   records `unit_prompt`: the block names, byte size, and sha256 of the
   prompt the last attempt sent, never the text.
 - **Telemetry.** Each dispatched unit records `started_at`, `finished_at`,
