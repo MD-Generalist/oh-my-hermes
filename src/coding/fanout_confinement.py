@@ -176,6 +176,8 @@ class FanoutFilesystemConfinement:
             allow_broad_file_read=True,
             write_roots=self.write_roots,
             inherit_environment=True,
+            # Resolved once in `prepare_fanout_filesystem_confinement`.
+            write_paths_resolved=True,
         )
 
     def command_environment(self, environment: Mapping[str, str] | None = None) -> dict[str, str]:

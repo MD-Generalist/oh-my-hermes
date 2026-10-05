@@ -14,13 +14,17 @@ All notable changes will be documented here.
   `agent/<unit>` branch in a linked worktree of the dispatching repository.
   Any failed check adds none and the receipt's `git_roots_skip` says why;
   nothing falls back to unconfined. Carried from #1983 by @junsuplee-forjl.
-  - On macOS a write root's own directory entry can no longer be renamed
-    or removed from inside the fence. Seatbelt resolves a granted path each
-    time `sandbox-exec` starts, so a unit could move a root aside, leave a
-    symlink, and have the next confined command (a verification check)
-    write to the symlink's target: `hooks/` through a git root, or any
-    directory through the worktree and an owner state root. The second form
-    predates the git roots.
+  - A path the unit changes after the fence is prepared no longer becomes
+    a grant. Each command used to resolve its write roots and exact-file
+    literals again, so a unit could replace one with a symlink and have the
+    next confined command (a verification check) write to the symlink's
+    target: `hooks/` through a git root, the repository `config` through
+    Claude Code's `~/.claude.json` literal, or any directory through the
+    worktree and an owner state root. The last two predate the git roots.
+    The paths are now resolved once per run, and on macOS a write root's
+    own directory entry cannot be renamed or removed from inside the fence.
+    A redispatch still resolves again; `docs/FANOUT.md` lists what that
+    leaves open.
 - **One function assembles every fanout unit prompt.**
   `assemble_unit_prompt()` (`src/coding/unit_prompt_assembly.py`) returns
   the prompt as named blocks in four zones (shared head, unit, tail,

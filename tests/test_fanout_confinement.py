@@ -1067,7 +1067,7 @@ class LinkedWorktreeGitWriteRootTests(unittest.TestCase):
 
 @unittest.skipUnless(sys.platform == "darwin", "sandbox-exec confinement is exercised on macOS")
 class MacosLinkedWorktreeGitWriteRootTests(unittest.TestCase):
-    """The sandbox-exec twin of the class above, plus the root swap only Seatbelt's path grants allow."""
+    """The sandbox-exec twin of the class above, plus the swaps a path-named grant has to survive."""
 
     def _run(
         self, confinement: FanoutFilesystemConfinement, cwd: Path, script: str,
@@ -1121,9 +1121,9 @@ class MacosLinkedWorktreeGitWriteRootTests(unittest.TestCase):
             self.assertEqual(before, after)
 
     def test_a_git_write_root_cannot_be_swapped_for_a_symlink_into_hooks(self) -> None:
-        # Seatbelt resolves each subpath when sandbox-exec starts, so the write
-        # through the swapped name is made by a SECOND command: that is the one
-        # whose grant would follow the symlink.
+        # The write through the swapped name is made by a SECOND command: a
+        # grant only follows the symlink when the host resolves the root again
+        # to build a later command, never inside the process that planted it.
         for target in ("refs/heads/agent", "logs/refs/heads/agent", "objects", "worktrees/linked-worktree"):
             with self.subTest(target=target), TemporaryDirectory() as temporary:
                 root = Path(temporary).resolve()
@@ -1172,6 +1172,59 @@ class MacosLinkedWorktreeGitWriteRootTests(unittest.TestCase):
             self.assertEqual(inside.returncode, 0, inside.stderr)
             _ = self._run(confinement, root, f'printf x > "{victim}/reached"', environment)
             self.assertEqual(list(victim.iterdir()), [])
+
+    def test_a_path_planted_after_preparation_is_not_resolved_into_a_grant(self) -> None:
+        """Each command reuses the paths resolved once at preparation, so a later symlink grants nothing."""
+        cases = ("exact_file_literal", "nested_parent", "root_removed_by_the_host")
+        for case in cases:
+            with self.subTest(case=case), TemporaryDirectory() as temporary:
+                root = Path(temporary).resolve()
+                worktree = _linked_worktree(root)
+                repo = root / "repo"
+                common = (repo / ".git").resolve()
+                home = root / "home"
+                (home / ".claude").mkdir(parents=True)
+                victim = root / "victim"
+                victim.mkdir()
+                environment: dict[str, str] = {}
+                owner = "claude-code"
+                if case == "nested_parent":
+                    owner = "codex"
+                    (worktree / "sub" / "state").mkdir(parents=True)
+                    environment = {"CODEX_HOME": str(worktree / "sub" / "state")}
+                with mock.patch.dict(os.environ, {"HOME": str(home)}):
+                    confinement = prepare_fanout_filesystem_confinement(
+                        worktree, environment, (("/bin/sh", "-c", "exit 0"),),
+                        owner=owner, unit_branch="agent/unit", repo_root=repo,
+                    )
+                self.assertTrue(confinement.receipt["enforced"])
+                self.assertIn(str(common / "refs" / "heads" / "agent"), confinement.receipt["write_roots"])
+                if case == "exact_file_literal":
+                    literal = home / ".claude.json"
+                    self.assertIn(literal, confinement.write_literals)
+                    plant = f'rm -f "{literal}" && ln -s "{common}/config" "{literal}"'
+                    reach = f'printf "[planted]" >> "{common}/config"'
+                    reached = lambda: "[planted]" in (common / "config").read_text(encoding="utf-8")  # noqa: E731
+                elif case == "nested_parent":
+                    plant = f'mv "{worktree}/sub" "{worktree}/sub.away" && ln -s "{victim}" "{worktree}/sub"'
+                    (victim / "state").mkdir()
+                    reach = f'printf x > "{victim}/state/reached"'
+                    reached = lambda: (victim / "state" / "reached").exists()  # noqa: E731
+                else:
+                    # `git pack-refs --all` on the host moves the unit's loose ref into
+                    # packed-refs and prunes the now-empty namespace directory.
+                    _ = subprocess.run(("/usr/bin/git", "pack-refs", "--all"), cwd=repo, check=True)
+                    namespace = common / "refs" / "heads" / "agent"
+                    if namespace.exists():
+                        namespace.rmdir()
+                    plant = f'ln -s "{common}/hooks" "{namespace}"'
+                    reach = f'printf x > "{common}/hooks/post-checkout"'
+                    reached = lambda: (common / "hooks" / "post-checkout").exists()  # noqa: E731
+                planted = self._run(confinement, worktree, plant, environment)
+                self.assertEqual(planted.returncode, 0, planted.stderr)
+                attempt = self._run(confinement, root, reach, environment)
+                self.assertNotEqual(attempt.returncode, 0)
+                self.assertFalse(reached())
 
 
 if __name__ == "__main__":

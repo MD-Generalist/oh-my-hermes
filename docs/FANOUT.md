@@ -991,12 +991,23 @@ Rules, all applied at freeze time:
   linked worktree of the dispatching repository reached without a symlink;
   otherwise none is added, the unit stays fenced and cannot commit, and the
   receipt's `git_roots_skip` names why. `hooks/`, `config`, `packed-refs` and
-  every ref outside that namespace stay read-only. What a unit can still do
-  inside those roots is move a sibling `agent/*` ref and delete or replace
-  objects. On macOS every write root's own directory entry is pinned
-  (`deny file-write-unlink`), because Seatbelt resolves a granted path when
-  each `sandbox-exec` starts: a root moved aside and replaced by a symlink
-  would hand the next confined command the symlink's target.
+  every ref outside that namespace are not granted. What a unit can still do
+  inside the granted roots is move a sibling `agent/*` ref and delete or
+  replace objects.
+
+  A grant names a path, so the fence also has to survive the unit changing
+  what that path is. Two rules cover one run. Every write root and exact-file
+  literal is resolved once, when the fence is prepared, and each command of
+  the run reuses those paths: a symlink the unit plants later, at a literal's
+  name or at a root the host has since removed, is not resolved into a grant
+  on its target. On macOS each write root's own directory entry is also
+  pinned (`deny file-write-unlink`), so the unit cannot move a root aside and
+  leave a symlink for a later preparation to resolve. What stays open is that
+  later preparation: a redispatch resolves again, so a literal replaced by a
+  symlink, or a root that no longer exists recreated as one, is granted as
+  its target on the next run. Host-side git that the dispatcher runs in a
+  unit's worktree also reads configuration the unit controls. The Linux form
+  of the swap is unmeasured: CI runners carry no bwrap.
 
   That cover is one socket, not the class. A read-only mount stops writes, not
   `connect()`, so any socket still reachable by a well-known path remains a way
