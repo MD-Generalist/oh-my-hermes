@@ -2601,10 +2601,15 @@ To inspect the live catalog contract that generated skills and wrappers share:
 
 ```sh
 omh docs workflows --json
+omh docs workflows --installed
 omh harness list
 omh harness inspect planning
 omh harness validate
 ```
+
+`omh docs workflows --installed` renders the same reference narrowed to the
+skills the local install manifest records; it needs an install, and it cannot
+be combined with `--json` or `--check`.
 
 Use `omh runtime export --redacted` when you need a portable support artifact.
 Exports redact prompt, response, token, secret, key, and password-shaped fields by
