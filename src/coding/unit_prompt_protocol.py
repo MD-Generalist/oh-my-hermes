@@ -76,14 +76,16 @@ UNIT_PROMPT_MAX_BYTES: Final[int] = 8000
 # a repair brief echoes up to `_MAX_REPAIR_CHECKS` failing commands of up to
 # `_MAX_REPAIR_COMMAND_CHARS` characters (`fanout_repair`, the journal's own
 # bounds), and truncating one would hand the executor a command it cannot
-# run. At those caps the brief alone is larger than the dispatch ceiling, so
-# one ceiling over the whole prompt would have to more than double, letting
-# OMH-authored blocks grow by that much unnoticed. The sections are bounded
-# by their producers' caps instead: this value is the repair brief at those
-# caps with `"` commands (the printable ASCII character JSON doubles) plus
-# about 9% headroom, derived 2026-10-04. Re-derive it from the producer when
-# the test says so. A command with non-ASCII text expands further (JSON
-# `\uXXXX` escapes) and is not covered.
+# run. At those caps a brief of `"` or `\` commands (the printable ASCII
+# characters JSON doubles) is 10,132 B, above the dispatch ceiling, and even
+# a plain ASCII brief (5,524 B) on the worst dispatch prompt (7,313 B) would
+# exceed one 8,000 B ceiling over the whole prompt; raising that ceiling to
+# fit would let OMH-authored blocks grow by as much unnoticed. The sections
+# are bounded by their producers' caps instead: this value is the `"` brief
+# at those caps plus about 9% headroom (sizes measured 2026-10-05).
+# Re-derive it from the producer when the test says so. A command with
+# non-ASCII text expands further (JSON `\uXXXX` escapes: 28,564 B for `é` at
+# the same caps) and is not covered.
 UNIT_PROMPT_APPEND_MAX_BYTES: Final[int] = 11000
 
 # Reasoning efforts that mark a route as high-effort for calibration purposes.

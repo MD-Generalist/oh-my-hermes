@@ -267,6 +267,14 @@ class BlockNameGoldenTests(unittest.TestCase):
             if "tail.unit_result_contract" in names:
                 self.assertIn("head.failure_kind", names, case_id)
 
+    def test_a_sidecar_prompt_cannot_omit_the_head_failure_kind(self) -> None:
+        unit = golden_unit("codex", "implementation", "high", "gpt-6-astra", "gpt")
+        omit = frozenset({"head.failure_kind"})
+        with self.assertRaisesRegex(ValueError, "must carry head.failure_kind"):
+            assemble_unit_prompt(unit, GOAL, route=None, binding=_WORST_BINDING, omit=omit)
+        # Without the contract the block is still a benchmark lane's to drop.
+        self.assertNotIn("head.failure_kind", assemble_unit_prompt(unit, GOAL, route=None, omit=omit).names())
+
     def test_unknown_omitted_block_names_raise(self) -> None:
         unit = golden_unit("codex", "implementation", "high", "gpt-6-astra", "gpt")
         with self.assertRaisesRegex(ValueError, "unknown unit prompt blocks: head.nope"):

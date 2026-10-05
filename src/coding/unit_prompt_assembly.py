@@ -30,6 +30,7 @@ Pure data and pure functions: no IO, no clock, no environment.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import cached_property
 import hashlib
 from typing import Any, Final, Literal, Mapping
 
@@ -88,7 +89,7 @@ class PromptBlock:
 class AssembledPrompt:
     blocks: tuple[PromptBlock, ...]
 
-    @property
+    @cached_property
     def text(self) -> str:
         return "\n".join(block.text for block in self.blocks)
 
@@ -123,11 +124,15 @@ def assemble_unit_prompt(
     `repair` is the `_dispatch_unit` repair mapping (`attempt`,
     `max_repair_attempts`, `failing_checks`). `omit` drops blocks by
     vocabulary name and exists for benchmark lanes only; an unknown name
-    raises so a typo cannot silently send the full prompt.
+    raises so a typo cannot silently send the full prompt, and so does
+    omitting `head.failure_kind` from a prompt with a `binding`, because the
+    sidecar contract leaves the `process_declined` definition to that block.
     """
     unknown = sorted(set(omit) - BLOCK_NAMES)
     if unknown:
         raise ValueError(f"unknown unit prompt blocks: {', '.join(unknown)}")
+    if binding is not None and "head.failure_kind" in omit:
+        raise ValueError("a prompt with the sidecar contract must carry head.failure_kind")
     blocks = [
         *_shared_head_blocks(goal_text),
         *_unit_blocks(unit, route, discovery),
@@ -144,14 +149,21 @@ def assemble_unit_prompt(
     return AssembledPrompt(tuple(block for block in blocks if block.base_name not in omit))
 
 
+def recorded_model_route(unit: Mapping[str, Any]) -> Mapping[str, Any] | None:
+    """The model route frozen in the unit's handoff, or None when it has none."""
+    handoff = unit.get("handoff", {}) if isinstance(unit.get("handoff"), Mapping) else {}
+    route = handoff.get("model_route")
+    return route if isinstance(route, Mapping) else None
+
+
 def unit_role(unit: Mapping[str, Any]) -> str:
     """The role skill discovery and review budgeting read for one unit."""
     handoff = unit.get("handoff", {}) if isinstance(unit.get("handoff"), Mapping) else {}
     review_role = str(handoff.get("review_role", "") or "")
     if review_role:
         return review_role
-    route = handoff.get("model_route") if isinstance(handoff.get("model_route"), Mapping) else {}
-    return str(route.get("role", "") or "") if isinstance(route, Mapping) else ""
+    route = recorded_model_route(unit)
+    return str(route.get("role", "") or "") if route is not None else ""
 
 
 _HEAD_BLOCK_NAMES: Final[dict[str, str]] = {
@@ -229,8 +241,7 @@ def _protocol_blocks(unit: Mapping[str, Any], route: Mapping[str, Any] | None) -
     blocks = [PromptBlock("unit.criteria", "unit", "\n".join(["Done means, and only means:", *numbered]))]
     if commit is not None:
         blocks.append(PromptBlock("unit.commit_criterion", "unit", commit))
-    handoff = unit.get("handoff", {}) if isinstance(unit.get("handoff"), Mapping) else {}
-    recorded = handoff.get("model_route") if isinstance(handoff.get("model_route"), Mapping) else None
+    recorded = recorded_model_route(unit)
     # Contract units carry the declared role inside the recorded route, not as
     # a top-level key; accept both so pre-contract unit dicts behave the same.
     role = str(unit.get("role", "") or "") or (str(recorded.get("role", "") or "") if recorded else "")
@@ -377,5 +388,6 @@ __all__ = [
     "BLOCK_NAMES",
     "PromptBlock",
     "assemble_unit_prompt",
+    "recorded_model_route",
     "unit_role",
 ]

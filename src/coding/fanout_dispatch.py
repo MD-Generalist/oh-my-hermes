@@ -189,7 +189,7 @@ from .unit_progress import (
     empty_progress_evidence,
     stalled_for_seconds,
 )
-from .unit_prompt_assembly import AssembledPrompt, assemble_unit_prompt, unit_role as _unit_role
+from .unit_prompt_assembly import AssembledPrompt, assemble_unit_prompt, recorded_model_route, unit_role as _unit_role
 from .workspace_preflight import (
     probe_workspace,
     workspace_preflight_reason,
@@ -925,7 +925,7 @@ def build_unit_prompt(
     return assemble_unit_prompt(
         unit,
         goal_text,
-        route=_recorded_model_route(unit),
+        route=recorded_model_route(unit),
         binding=unit_result_contract,
         discovery=discovery,
     ).text
@@ -938,11 +938,6 @@ def _unit_prompt_record(assembled: AssembledPrompt) -> dict[str, Any]:
     path, so its digest is the one the executor actually received.
     """
     return {"blocks": list(assembled.names()), "size_bytes": assembled.size_bytes, "sha256": assembled.digest()}
-
-
-def _recorded_model_route(unit: Mapping[str, Any]) -> Mapping[str, Any] | None:
-    handoff = unit.get("handoff", {}) if isinstance(unit.get("handoff"), Mapping) else {}
-    return handoff.get("model_route") if isinstance(handoff.get("model_route"), Mapping) else None
 
 
 def _owner_skill_discoveries(
@@ -1096,7 +1091,7 @@ def _unit_capability_precheck(
     decision = build_executor_modality_decision(
         input_representation=handoff.get("input_representation", "text_only"),
         snapshot=snapshot,
-        route=handoff.get("model_route") if isinstance(handoff.get("model_route"), Mapping) else None,
+        route=recorded_model_route(unit),
         transformation=handoff.get("executor_modality_decision", {}).get("transformation")
         if isinstance(handoff.get("executor_modality_decision"), Mapping)
         else None,
@@ -3111,7 +3106,7 @@ def _hermes_recovery_dispatch(
         attempt = dispatcher(
             # The recovery variant: no sidecar contract and no discovery,
             # because the Hermes child lane collects neither.
-            prompt=assemble_unit_prompt(unit, goal_text, route=_recorded_model_route(unit)).text,
+            prompt=build_unit_prompt(unit, goal_text),
             routing=routing,
             parent_run_id=run_ref,
             run_id=f"{run_ref}-hermes-recovery",
@@ -4067,7 +4062,6 @@ def _dispatch_unit(
 
     unit_id = str(unit["unit_id"])
     run_ref = str(unit.get("run_ref", unit_id))
-    handoff = unit.get("handoff", {}) if isinstance(unit.get("handoff"), Mapping) else {}
     owner, capability_snapshot, capability_errors = capability_precheck
     launch_gate = launch_gate or OwnerLaunchGate()
     blocked = launch_gate.rejection(owner)
@@ -4077,7 +4071,7 @@ def _dispatch_unit(
         return _capacity_entry(paths, unit, binding, blocked, contract_digest=session_contract_digest)
     if capability_errors or capability_snapshot is None:
         return _capability_refusal_entry(unit, owner, capability_errors)
-    model_route = handoff.get("model_route") if isinstance(handoff.get("model_route"), Mapping) else None
+    model_route = recorded_model_route(unit)
     routed_model = str(model_route.get("selected_model", "") or "") if model_route else ""
     routed_effort = str(model_route.get("selected_reasoning_effort", "") or "") if model_route else ""
     fingerprint_note = catalog_fingerprint_note(model_route, current_catalog_digest)
