@@ -251,12 +251,13 @@ def _git_write_roots(worktree: Path, unit_branch: str = "", repo_root: Path | No
     unit worktree. Only these are added, and only when the unit is on its own branch:
       - the unit's gitdir (<C>/worktrees/<wt>: index, HEAD, logs/HEAD),
       - <C>/objects (new objects for the commit),
-      - <C>/refs/heads/agent and <C>/logs/refs/heads/agent (the unit branch ref + reflog).
+      - <C>/refs/heads/agent and <C>/logs/refs/heads/agent (the unit branch ref + reflog),
+      - <C>/lfs (the git-lfs clean filter stages through lfs/tmp into lfs/objects on `git add`).
     hooks/, config, packed-refs and every ref outside refs/heads/agent stay read-only.
     The bind set, not this check, is the boundary: a unit that moves its own HEAD after
     the check can still only write inside these roots. Residual exposure (recorded, not
-    closed here): sibling refs under refs/heads/agent, and objects/ (delete, replace,
-    objects/info/alternates). Policy (start-state hygiene): HEAD must be the symbolic ref
+    closed here): sibling refs under refs/heads/agent, objects/ (delete, replace,
+    objects/info/alternates), and lfs/ (delete or replace a stored LFS object). Policy (start-state hygiene): HEAD must be the symbolic ref
     refs/heads/<unit_branch> with unit_branch = agent/<name>, that ref must not itself be
     symbolic, the worktree must be linked (<C>/worktrees/<wt>) with <C>/worktrees/<wt>/gitdir naming
     this worktree's .git and <C> == repo_root's common dir, and every bound root must
@@ -358,6 +359,10 @@ def _git_write_roots(worktree: Path, unit_branch: str = "", repo_root: Path | No
             return _skip("symlink")
         if not _real_dir_chain(common_dir, ("logs", "refs", "heads", "agent"), create=True):
             return _skip("symlink")
+        # git-lfs clean/smudge filters run on `git add`/`checkout` and write `<C>/lfs/{tmp,objects,cache}`;
+        # without it a unit in an LFS repository cannot stage anything.
+        if not _real_dir_chain(common_dir, ("lfs",), create=True):
+            return _skip("symlink")
         # Start-state hygiene: an earlier unit (which held these same binds) may have planted symlinks
         # inside the namespaces or written objects/info/alternates. Any such entry -> no git root.
         # Unreadable subdirectories raise (onerror) -> git_error, never "checked clean".
@@ -373,19 +378,23 @@ def _git_write_roots(worktree: Path, unit_branch: str = "", repo_root: Path | No
                     st = os.lstat(full)
                     if stat.S_ISLNK(st.st_mode) or not (stat.S_ISDIR(st.st_mode) or stat.S_ISREG(st.st_mode)):
                         return _skip("hygiene")
-        for sub in ((), ("info",), ("pack",)):
-            target = common_dir.joinpath("objects", *sub)
-            if sub and not target.exists():
+        for target in (
+            common_dir / "objects", common_dir / "objects" / "info", common_dir / "objects" / "pack",
+            common_dir / "lfs", common_dir / "lfs" / "objects",
+        ):
+            if target != common_dir / "objects" and not target.exists():
                 continue
-            for top in os.scandir(target):
-                if top.is_symlink() or not (top.is_dir(follow_symlinks=False) or top.is_file(follow_symlinks=False)):
-                    return _skip("hygiene")
+            with os.scandir(target) as entries:
+                for top in entries:
+                    if top.is_symlink() or not (top.is_dir(follow_symlinks=False) or top.is_file(follow_symlinks=False)):
+                        return _skip("hygiene")
         _GIT_ROOTS_LAST_SKIP.pop(key, None)
         return unique_roots((
             common_dir / "worktrees" / wt_name,
             common_dir / "objects",
             common_dir / "refs" / "heads" / "agent",
             common_dir / "logs" / "refs" / "heads" / "agent",
+            common_dir / "lfs",
         ))
     except Exception:  # noqa: BLE001 - containment is the point: never let this escape to _unconfined
         return _skip("git_error")

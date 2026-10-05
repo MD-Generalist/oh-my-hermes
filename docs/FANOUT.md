@@ -988,16 +988,17 @@ Rules, all applied at freeze time:
   lets a confined process ask a host service, such as `systemd-run --user`, to
   write for it.
 
-  A unit in a linked worktree also gets the four git paths a commit on its
-  own branch writes: its per-worktree gitdir, `objects`, and the `agent`
-  namespace under `refs/heads` and `logs/refs/heads`. They are added only
+  A unit in a linked worktree also gets the git paths a commit on its own
+  branch writes: its per-worktree gitdir, `objects`, the `agent` namespace
+  under `refs/heads` and `logs/refs/heads`, and `lfs`, which the git-lfs
+  clean filter stages through on `git add`. They are added only
   when HEAD is the unit's own `agent/<unit>` branch and the worktree is a
   linked worktree of the dispatching repository reached without a symlink;
   otherwise none is added, the unit stays fenced and cannot commit, and the
   receipt's `git_roots_skip` names why. `hooks/`, `config`, `packed-refs` and
   every ref outside that namespace are not granted. What a unit can still do
   inside the granted roots is move a sibling `agent/*` ref and delete or
-  replace objects.
+  replace objects, stored LFS objects included.
 
   A grant names a path, so the fence also has to survive the unit changing
   what that path is. Two rules cover one run. Every write root and exact-file
