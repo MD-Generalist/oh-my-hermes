@@ -23,7 +23,10 @@ import re
 import shlex
 
 from ._hermes_child_process import MAX_CAPTURE_BYTES
-from typing import Literal, TypeGuard, TypedDict
+from typing import TYPE_CHECKING, Literal, TypeGuard, TypedDict
+
+if TYPE_CHECKING:
+    from .fanout_confinement import FanoutFilesystemConfinement
 
 SCHEMA_VERSION = 'fanout_executor_session/v1'
 MAX_EVENTS = 65536
@@ -407,15 +410,33 @@ def bounded_session_probe(argv: list[str], *, cwd: str | None = None,
         return None, reason
 
 
-def observe_session_workspace(path: str) -> WorkspaceSnapshot | None:
+def observe_session_workspace(
+    path: str, *, confinement: FanoutFilesystemConfinement | None = None,
+) -> WorkspaceSnapshot | None:
     """Read-only current Git/filesystem identity and bounded dirty-state digest.
 
     No git add, checkout, native-history lookup, marker writes or inherited receipt
     identity. Large/unreadable recovery state disables copy rather than guessing.
+
+    `confinement` is the unit's enforced write fence when the caller holds one.
+    Git reads its configuration from the worktree, which the unit wrote, so each
+    probe then runs inside that fence (#1990); a probe that cannot be placed in
+    it observes nothing rather than running outside it.
     """
     root = Path(path)
     environment = {key: value for key, value in os.environ.items() if not key.startswith('GIT_')}
     environment.update(GIT_OPTIONAL_LOCKS='0', GIT_TERMINAL_PROMPT='0')
+    fenced = confinement is not None and confinement.receipt.get('enforced') is True
+
+    def probe(argv: list[str]) -> tuple[bytes | None, str]:
+        if fenced:
+            assert confinement is not None
+            command = confinement.dispatcher_command(argv)
+            if command is None:
+                return None, 'probe_fence_unavailable'
+            argv = list(command)
+        return bounded_session_probe(argv, cwd=str(root), env=environment)
+
     try:
         root = root.resolve(strict=True)
         link = root / '.git'
@@ -426,7 +447,7 @@ def observe_session_workspace(path: str) -> WorkspaceSnapshot | None:
         for args in (['rev-parse', '--show-toplevel'], ['rev-parse', '--absolute-git-dir'],
                      ['rev-parse', '--path-format=absolute', '--git-common-dir'],
                      ['symbolic-ref', 'HEAD'], ['rev-parse', 'HEAD']):
-            raw, _reason = bounded_session_probe(['git', '-c', 'core.fsmonitor=false', *args], cwd=str(root), env=environment)
+            raw, _reason = probe(['git', '-c', 'core.fsmonitor=false', *args])
             if raw is None:
                 return None
             values.append(raw.decode('utf-8').strip())
@@ -439,13 +460,13 @@ def observe_session_workspace(path: str) -> WorkspaceSnapshot | None:
             link_stat.st_ino, link_stat.st_ctime_ns, directory_stat.st_dev, directory_stat.st_ino))))
         incarnation = WorktreeIncarnation(incarnation_id, str(Path(common).resolve()), branch,
                                          root_stat.st_dev, root_stat.st_ino)
-        status, _reason = bounded_session_probe(['git', '-c', 'core.fsmonitor=false', 'status', '--porcelain=v1', '-z', '--untracked-files=all'], cwd=str(root), env=environment)
+        status, _reason = probe(['git', '-c', 'core.fsmonitor=false', 'status', '--porcelain=v1', '-z', '--untracked-files=all'])
         if status is None:
             return None
         recovery: str | None = None
         if status:
-            diff, _reason = bounded_session_probe(['git', '-c', 'core.fsmonitor=false', 'diff', '--no-ext-diff', '--no-textconv', '--binary', 'HEAD'], cwd=str(root), env=environment)
-            untracked, _reason = bounded_session_probe(['git', 'ls-files', '--others', '--exclude-standard', '-z'], cwd=str(root), env=environment)
+            diff, _reason = probe(['git', '-c', 'core.fsmonitor=false', 'diff', '--no-ext-diff', '--no-textconv', '--binary', 'HEAD'])
+            untracked, _reason = probe(['git', 'ls-files', '--others', '--exclude-standard', '-z'])
             if diff is None or untracked is None:
                 return None
             digest = sha256(status + b'\x00' + diff)

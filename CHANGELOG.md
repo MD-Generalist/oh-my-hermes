@@ -4,6 +4,27 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **Git the dispatcher runs in a unit's worktree now runs inside that
+  unit's fence.** Git takes its configuration from the worktree it runs in,
+  and a fanout unit owns its worktree, so the dispatcher's own git calls
+  there were not confined by the fence the unit ran under (#1990). From the
+  moment a unit's fence is prepared, the clean-HEAD observation, the
+  changed-path listing, the recovery capture and the session workspace
+  probes are wrapped in it; a call that cannot be wrapped is not run. With
+  no enforced fence nothing changes, since the unit ran unfenced as well.
+  - A check resolved after the fence was prepared (a reproduction or
+    task-linked command) used to run on the host when the fence did not
+    know its executable. It is now fenced by its own PATH, or reported as
+    a failed check without running.
+  - In a fence without git paths `git add -N` is refused. An untouched
+    worktree still reads as unchanged, so a transient failure there is
+    retried as before; any other worktree is recorded as unmeasured, with
+    a count of tracked paths in place of the path list the host-side
+    capture used to give.
+  - Still on the host, and why #1990 stays open: the calls before the fence
+    is prepared on a reused worktree (workspace preflight, the git-path
+    decision, clarification and reuse probes), post-green diagnostics,
+    `fanout status`, and the Hermes recovery dispatch.
 - **A confined fanout unit can commit in a Git LFS repository.** `git add`
   runs the git-lfs clean filter, which stages through `.git/lfs/tmp` into
   `.git/lfs/objects`; with that directory outside the write fence the filter

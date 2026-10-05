@@ -1010,9 +1010,30 @@ Rules, all applied at freeze time:
   leave a symlink for a later preparation to resolve. What stays open is that
   later preparation: a redispatch resolves again, so a literal replaced by a
   symlink, or a root that no longer exists recreated as one, is granted as
-  its target on the next run. Host-side git that the dispatcher runs in a
-  unit's worktree also reads configuration the unit controls. The Linux form
-  of the swap is unmeasured: CI runners carry no bwrap.
+  its target on the next run. The Linux form of the swap is unmeasured: CI
+  runners carry no bwrap.
+
+  Git reads its configuration from the worktree it runs in, and a unit owns
+  its worktree. So from the moment a unit's fence is prepared, the git calls
+  the dispatcher itself makes in that worktree run inside the fence: the
+  clean-HEAD observation, the changed-path listing for task-linked checks,
+  the recovery capture, and the session workspace probes, the capacity
+  lineage's included. Whatever such a call starts can write only where the
+  unit already could. A call that cannot be placed in the fence is not run,
+  and is reported as a failed read. The same holds for a check resolved after
+  the fence was prepared, a reproduction or task-linked command: it is fenced
+  by its own PATH, or reported as a failed check without running. When the
+  fence carries no git paths, the recovery capture's `git add -N` is refused:
+  an untouched worktree is still read as unchanged, from a status that writes
+  nothing, and any other worktree is recorded as unmeasured, with a count of
+  the tracked paths seen in place of the path list.
+
+  What still runs on the host in a worktree a unit has written: everything
+  before the fence is prepared on a reused worktree (the workspace
+  preflight, the git-path decision itself, the clarification and reuse
+  probes), post-green diagnostics (`--diagnostics`), which spawn their own
+  git, and the paths outside a dispatch (`fanout status`, the Hermes
+  recovery dispatch).
 
   That cover is one socket, not the class. A read-only mount stops writes, not
   `connect()`, so any socket still reachable by a well-known path remains a way

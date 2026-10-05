@@ -1431,6 +1431,19 @@ def _run_verification_command(
         confinement_command = (
             active_confinement.command(argv) if active_confinement is not None else None
         )
+        if (
+            confinement_command is None
+            and active_confinement is not None
+            and active_confinement.receipt.get("enforced") is True
+        ):
+            # The fence knows the owner CLI and the checks declared when it was
+            # prepared. A reproduction or task-linked command is resolved later,
+            # and it runs code the unit wrote: fence it by this command's own
+            # PATH, or do not run it. It never runs outside an enforced fence.
+            confinement_command = active_confinement.dispatcher_command(argv, path=environment.get("PATH"))
+            if confinement_command is None:
+                return failed('missing_binary', None, 'not_observed',
+                              "verification binary not found, so it was not run outside the unit's write fence")
         if active_confinement is not None:
             environment = active_confinement.command_environment(environment)
         completed = runner(
@@ -1526,7 +1539,7 @@ def _run_planned_verification(
     plan = compile_verification_plan(unit, fanout_id=fanout_id, unit_id=unit_id)
     if plan is None:
         return {}
-    revision = _verification_worktree_revision(runner, worktree)
+    revision = _verification_worktree_revision(_fenced_dispatcher_runner(runner, confinement, worktree), worktree)
     if required_revision is not None and revision != required_revision:
         revision = None
     execution_environment = resolve_child_environment(
@@ -3778,13 +3791,15 @@ def _record_capacity(paths: OmhPaths, unit: Mapping[str, object], capacity: Mapp
 
 def _capacity_entry(paths: OmhPaths, unit: Mapping[str, object], binding: AdmissionBinding,
                     trip: CapacityTrip, *, status: str = 'not_started_capacity_blocked',
-                    worktree_created: bool = False, contract_digest: str = '') -> dict[str, object]:
+                    worktree_created: bool = False, contract_digest: str = '',
+                    confinement: FanoutFilesystemConfinement | None = None) -> dict[str, object]:
     capacity = capacity_fields(binding, trip, status=status, process_started=False)
     entry: dict[str, object] = {**_skipped(unit, status), 'attempt_id': binding.attempt_id,
              'invocation_id': binding.invocation_id, 'capacity': capacity,
              'planned_worktree_path': binding.worktree, 'worktree_created': worktree_created,
              'depends_on': unit.get('depends_on') or [],
-             'capacity_lineage': _capacity_lineage(unit, binding, contract_digest, observed_created=worktree_created)}
+             'capacity_lineage': _capacity_lineage(unit, binding, contract_digest, observed_created=worktree_created,
+                                                   confinement=confinement)}
     if worktree_created:
         entry['worktree_path'] = binding.worktree
     _record_capacity(paths, unit, capacity)
@@ -3792,8 +3807,9 @@ def _capacity_entry(paths: OmhPaths, unit: Mapping[str, object], binding: Admiss
 
 
 def _capacity_lineage(unit: Mapping[str, object], binding: AdmissionBinding, contract_digest: str,
-                      *, observed_created: bool = True) -> dict[str, object]:
-    workspace = observe_session_workspace(binding.worktree) if observed_created else None
+                      *, observed_created: bool = True,
+                      confinement: FanoutFilesystemConfinement | None = None) -> dict[str, object]:
+    workspace = observe_session_workspace(binding.worktree, confinement=confinement) if observed_created else None
     return {'fanout_id': binding.fanout_id, 'unit_id': binding.unit_id, 'run_ref': binding.run_ref,
             'owner': binding.owner, 'base_sha': binding.base_sha, 'worktree_path': str(Path(binding.worktree).resolve()),
             'branch': str(unit.get('branch_suggestion', f'agent/{binding.unit_id}')),
@@ -4465,6 +4481,9 @@ def _dispatch_unit(
         filesystem_confinement["git_roots_skip"] = git_roots_skip_reason(worktree.resolve())
     if confinement is not None:
         child_env = confinement.command_environment()
+    # From here on, git the dispatcher runs in this worktree runs inside the
+    # unit's own fence (#1990).
+    unit_git_runner = _fenced_dispatcher_runner(runner, confinement, worktree)
     # After the worktree exists and before anything else touches it: a linked
     # artifact must be in place before the unit's process spawns to be worth
     # anything, and re-checking from inside the worktree (see
@@ -4473,7 +4492,7 @@ def _dispatch_unit(
     shared_artifacts = plan_and_link_shared_artifacts(
         repo_root=repo_root,
         worktree_path=worktree,
-        runner=runner,
+        runner=unit_git_runner,
     )
     if fanout_id:
         # Before the spawn, like the in-flight marker below. A record from an
@@ -4667,7 +4686,8 @@ def _dispatch_unit(
                         spawn_kwargs['confinement_command'] = confinement.command(argv)
                 if not getattr(runner, 'accepts_launch', False):
                     dispatch_observed()
-            launch_workspace = observe_session_workspace(str(worktree)) if session_capability is not None else None
+            launch_workspace = (observe_session_workspace(str(worktree), confinement=confinement)
+                                if session_capability is not None else None)
             decoder = SessionDecoder(session_capability) if session_capability is not None else None
             admission_observer = CodexAdmissionObserver()
             admission_binding = AdmissionBinding(owner, fanout_id, unit_id, run_ref, attempt,
@@ -4754,7 +4774,8 @@ def _dispatch_unit(
                     failure_diagnostic = diagnostic('worker', 'nonzero', exit_code, 'process')
             except CapacityBlocked as exc:
                 entry = _capacity_entry(paths, unit, admission_binding, exc.trip,
-                                        worktree_created=True, contract_digest=session_contract_digest)
+                                        worktree_created=True, contract_digest=session_contract_digest,
+                                        confinement=confinement)
                 if retry_decisions:
                     entry['prior_attempts'] = retry_decisions
                 return entry
@@ -4806,7 +4827,7 @@ def _dispatch_unit(
                 if any(issue in capture.issues for issue in ('event_limit', 'frame_limit', 'depth_limit')):
                     decoder.invalidate_capture()
                 complete_capture = all(stream['original_bytes'] is not None for stream in capture.streams())
-                end_workspace = observe_session_workspace(str(worktree))
+                end_workspace = observe_session_workspace(str(worktree), confinement=confinement)
                 receipt = decoder.receipt(session_binding,
                     end_head=end_workspace.head if end_workspace is not None and complete_capture else None)
                 session_fields = {'executor_session': receipt.to_dict()}
@@ -4840,7 +4861,7 @@ def _dispatch_unit(
                 sidecar_path=sidecar_path,
                 worktree=worktree,
                 base_sha=base_sha,
-                runner=runner,
+                runner=unit_git_runner,
                 max_retries=max_retries,
                 rng=rng,
             )
@@ -4920,7 +4941,7 @@ def _dispatch_unit(
         summary = f"limit-shaped failure ({limit_label}); {summary}"
     unit_result = _intake_unit_result(
         paths,
-        runner=runner,
+        runner=unit_git_runner,
         sidecar_path=sidecar_path,
         run_ref=run_ref,
         unit_id=unit_id,
@@ -5004,7 +5025,7 @@ def _dispatch_unit(
         test_runner = str(unit.get("task_linked_test_runner") or "")
         if test_runner:
             task_linked = _task_linked_postcondition(
-                runner, worktree, base_sha=base_sha, head_sha=producer_revision, test_runner=test_runner
+                unit_git_runner, worktree, base_sha=base_sha, head_sha=producer_revision, test_runner=test_runner
             )
             if task_linked["command"]:
                 verification_unit = {
@@ -5074,7 +5095,7 @@ def _dispatch_unit(
         )
     diagnostics: dict[str, object] = {}
     if diagnostic_engine is not None and diagnostic_engine.settings.enabled:
-        producer_head = _observed_clean_producer_head(runner, worktree)
+        producer_head = _observed_clean_producer_head(unit_git_runner, worktree)
         diagnostics = run_post_green_diagnostics(
             diagnostic_engine,
             owner=owner,
@@ -5174,7 +5195,8 @@ def _dispatch_unit(
         result['status'] = 'executor_capacity_rejected'
         result['capacity'] = capacity_fields(admission_binding, capacity_trip,
             status='executor_capacity_rejected', process_started=True)
-        result['capacity_lineage'] = _capacity_lineage(unit, admission_binding, session_contract_digest)
+        result['capacity_lineage'] = _capacity_lineage(unit, admission_binding, session_contract_digest,
+                                                       confinement=confinement)
         _record_capacity(paths, unit, result['capacity'])
     result['worktree_created'] = bool(worktree_record.get('created'))
     result['worktree_reused'] = bool(worktree_record.get('reused'))
@@ -5256,14 +5278,14 @@ def _dispatch_unit(
             unit_id=unit_id,
             worktree=worktree,
             base_sha=base_sha,
-            runner=runner,
+            runner=unit_git_runner,
         )
         if recovery is not None:
             result["recovery"] = recovery
         # The existing recovery capture may add intent-to-add entries; measure the
         # final state independently after it, without trusting its old diff digest.
         if session_fields:
-            snapshot = observe_session_workspace(str(worktree))
+            snapshot = observe_session_workspace(str(worktree), confinement=confinement)
             _ = result.pop('session_recovery_snapshot', None)
             if snapshot is not None and snapshot.recovery_snapshot is not None:
                 result['session_recovery_snapshot'] = snapshot.recovery_snapshot
@@ -5721,6 +5743,19 @@ def _capture_unit_recovery(
     if numstat_bytes is None or patch_bytes is None:
         return _capture_failed("git refused to diff the unit worktree against the dispatch base")
     paths_changed, lines_changed = _parse_numstat(numstat_bytes.decode("utf-8", "surrogateescape"))
+    if not untracked_measured and not paths_changed and not patch_bytes:
+        # `add -N` writes the index, which a fence carrying no git paths refuses
+        # even on a worktree nobody touched. An empty porcelain status is a
+        # complete answer that writes nothing: no tracked change and no created
+        # file. Without it an untouched worktree would read as unmeasured, and
+        # a transient failure there would never be retried.
+        status = _git_text(runner, worktree, ["git", "status", "--porcelain=v1", "--untracked-files=all"])
+        if status is not None and not status.strip():
+            return {
+                "schema_version": RECOVERY_SCHEMA_VERSION,
+                "outcome": "no_changes",
+                "claim_boundary": RECOVERY_CLAIM_BOUNDARY,
+            }
     if not untracked_measured:
         # `add -N` failed, so anything the unit CREATED is invisible to
         # `git diff`. Whatever the tracked diff shows, this record cannot make
@@ -5794,6 +5829,40 @@ def _same_directory(reported: str, worktree: Path) -> bool:
         return Path(reported).resolve(strict=False) == worktree.resolve(strict=False)
     except OSError:
         return False
+
+
+def _fenced_dispatcher_runner(
+    runner: Callable[..., Any], confinement: FanoutFilesystemConfinement | None, worktree: Path
+) -> Callable[..., Any]:
+    """Runner for what the dispatcher itself runs in a unit worktree the unit has written.
+
+    Git takes its configuration from the worktree it runs in, and the unit owns
+    that worktree, so a dispatcher git call there is not the dispatcher's own
+    code alone (#1990). With an enforced fence, every call whose cwd is the unit
+    worktree is wrapped in that same fence, and a call that cannot be wrapped
+    raises rather than running outside it: the git helpers report that as a
+    failed read. That includes a cwd BELOW the worktree, which the fence cannot
+    keep (bwrap starts every command at the worktree itself). A call whose cwd
+    is outside the worktree passes through, as does every call when no fence
+    was enforced, because the unit then ran unfenced as well.
+    """
+    if confinement is None or confinement.receipt.get("enforced") is not True:
+        return runner
+    fenced_cwd = worktree.resolve()
+
+    def run(argv: Sequence[str], **kwargs: Any) -> Any:
+        cwd = kwargs.get("cwd")
+        if cwd is None:
+            return runner(argv, **kwargs)
+        resolved = Path(cwd).resolve()
+        if resolved != fenced_cwd and not resolved.is_relative_to(fenced_cwd):
+            return runner(argv, **kwargs)
+        command = confinement.dispatcher_command(argv) if resolved == fenced_cwd else None
+        if command is None:
+            raise OSError("the command could not be placed inside the unit's write fence")
+        return runner(argv, confinement_command=command, **kwargs)
+
+    return run
 
 
 def _git_text(runner: Callable[..., Any], worktree: Path, argv: list[str]) -> str | None:
