@@ -504,10 +504,15 @@ class LoopHandlerTests(unittest.TestCase):
         with mock.patch("omh.plugin_bundle.omh.tools.loop_tool.loop_say", return_value=None):
             without = self.call(action="start", loop_id="loop-without", **args)
         self.assertEqual(with_say.pop("say"), "Goal: Ship it. Done when: done.")
-        # As text, with only the loop id told apart: every other byte matches.
-        self.assertEqual(
-            json.dumps(with_say).replace("loop-with", "<id>"), json.dumps(without).replace("loop-without", "<id>")
-        )
+
+        # As text, with only the loop id and the evaluation clock told apart:
+        # every other byte matches. The two starts can straddle a second, so
+        # `evaluated_at` may differ by one tick (CI flake, 2026-10-02/05).
+        def _text(payload: dict, loop_id: str) -> str:
+            text = json.dumps(payload).replace(loop_id, "<id>")
+            return re.sub(r'"evaluated_at": "[^"]*"', '"evaluated_at": "<t>"', text)
+
+        self.assertEqual(_text(with_say, "loop-with"), _text(without, "loop-without"))
 
 
 def _prepared(**overrides: object) -> dict:

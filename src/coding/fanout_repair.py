@@ -173,11 +173,22 @@ def repair_trigger_checks(result: Mapping[str, Any]) -> list[dict[str, Any]]:
     return failing
 
 
+def _bounded_command(command: str) -> str:
+    """The command cut to `_MAX_REPAIR_COMMAND_CHARS` characters and to as many
+    UTF-8 bytes, at a character boundary. The byte bound keeps a non-ASCII
+    command from outgrowing the brief's prompt ceiling; ASCII is unaffected."""
+    text = command[:_MAX_REPAIR_COMMAND_CHARS]
+    encoded = text.encode("utf-8")
+    if len(encoded) <= _MAX_REPAIR_COMMAND_CHARS:
+        return text
+    return encoded[:_MAX_REPAIR_COMMAND_CHARS].decode("utf-8", errors="ignore")
+
+
 def journal_repair_checks(checks: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
     """The bounded copy of a failing-check list the journal and the brief carry."""
     return [
         {
-            "command": str(check.get("command", ""))[:_MAX_REPAIR_COMMAND_CHARS],
+            "command": _bounded_command(str(check.get("command", ""))),
             "exit_code": check.get("exit_code"),
             "failure_kind": str(check.get("failure_kind", "")),
         }
@@ -201,6 +212,9 @@ def repair_brief_prompt(*, attempt: int, max_repair_attempts: int, failing_check
             "authority": "original_goal_scope_and_criteria_unchanged",
         },
         sort_keys=True,
+        # The brief rides argv as UTF-8 text; `\uXXXX` escapes would only
+        # multiply a non-ASCII command's bytes by up to six.
+        ensure_ascii=False,
     )
 
 

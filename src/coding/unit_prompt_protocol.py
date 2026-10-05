@@ -83,9 +83,10 @@ UNIT_PROMPT_MAX_BYTES: Final[int] = 8000
 # fit would let OMH-authored blocks grow by as much unnoticed. The sections
 # are bounded by their producers' caps instead: this value is the `"` brief
 # at those caps plus about 9% headroom (sizes measured 2026-10-05).
-# Re-derive it from the producer when the test says so. A command with
-# non-ASCII text expands further (JSON `\uXXXX` escapes: 28,564 B for `é` at
-# the same caps) and is not covered.
+# Re-derive it from the producer when the test says so. Non-ASCII command
+# text cannot exceed that case: the brief is UTF-8 (no `\uXXXX` escapes) and
+# each command copy is cut to `_MAX_REPAIR_COMMAND_CHARS` UTF-8 bytes, so `é`,
+# Hangul, and emoji commands at the caps measure 5,524-5,542 B (2026-10-05).
 UNIT_PROMPT_APPEND_MAX_BYTES: Final[int] = 11000
 
 # Reasoning efforts that mark a route as high-effort for calibration purposes.

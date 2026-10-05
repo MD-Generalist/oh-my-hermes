@@ -403,6 +403,34 @@ class PromptCeilingTests(unittest.TestCase):
             with self.subTest(section=name):
                 self.assertEqual(assembled.names()[-1], name)
                 self.assertLessEqual(added, UNIT_PROMPT_APPEND_MAX_BYTES, f"{name} adds {added} B")
+        # Non-ASCII command text at the caps: the brief is UTF-8 (no `\uXXXX`
+        # expansion) and each command is cut to the cap in UTF-8 bytes, so no
+        # character set can outgrow the `"` brief measured above.
+        for label, char in (("latin", "é"), ("cjk", "한"), ("emoji", "🙂"), ("mixed", 'é"')):
+            command = (char * _MAX_REPAIR_COMMAND_CHARS)[:_MAX_REPAIR_COMMAND_CHARS]
+            repair = dict(_WORST_REPAIR)
+            repair["failing_checks"] = [
+                {"command": command, "exit_code": 4294967295, "failure_kind": max(_FAILURE_KINDS, key=len)}
+            ] * _MAX_REPAIR_CHECKS
+            assembled = assemble_unit_prompt(
+                unit, GOAL * 3, route=route, binding=_WORST_BINDING, discovery=_WORST_DISCOVERY, repair=repair,
+            )
+            added = assembled.size_bytes - base.size_bytes
+            with self.subTest(command_text=label):
+                self.assertLessEqual(added, UNIT_PROMPT_APPEND_MAX_BYTES, f"{label} repair adds {added} B")
+                self.assertNotIn("\\u", assembled.blocks[-1].text)
+
+    def test_a_brief_command_is_cut_to_the_cap_in_utf8_bytes(self) -> None:
+        from omh.coding.fanout_repair import journal_repair_checks
+
+        ascii_command = "a" * _MAX_REPAIR_COMMAND_CHARS
+        self.assertEqual(journal_repair_checks([{"command": ascii_command}])[0]["command"], ascii_command)
+        for char in ("é", "한", "🙂"):
+            with self.subTest(char=char):
+                cut = journal_repair_checks([{"command": char * _MAX_REPAIR_COMMAND_CHARS}])[0]["command"]
+                self.assertLessEqual(len(cut.encode("utf-8")), _MAX_REPAIR_COMMAND_CHARS)
+                self.assertEqual(cut, char * len(cut))
+                self.assertGreater(len(cut), 0)
 
 
 _SENTENCE_BOUNDARY = re.compile(r"(?<=[.!?])\s+|\n")

@@ -12,6 +12,20 @@ All notable changes will be documented here.
   and is created when the repository has none yet. A symlink at `lfs`, or
   planted at the top of `lfs` or `lfs/objects`, adds no git path at all.
   Carried from #1992 by @junsuplee-forjl.
+- **Repair briefs stay inside their prompt ceiling for any command text.**
+  The brief was JSON with `\uXXXX` escapes, so a failing command written in
+  non-ASCII text grew up to sixfold (about 28.5 KB for nine `é` commands at
+  the caps) and escaped `UNIT_PROMPT_APPEND_MAX_BYTES`. The brief is now
+  written as UTF-8, and each command copy is cut to 512 UTF-8 bytes at a
+  character boundary instead of 512 characters. ASCII commands are
+  byte-identical to before; nine `é`, Hangul, or emoji commands at the caps
+  measure about 5.5 KB, under the `"` worst case of about 10 KB.
+- **A flaky say-handler test no longer depends on the wall clock.** The loop
+  start test compared two payloads as text, and its `evaluated_at` field
+  differed when the two calls straddled a second. It failed CI twice. That
+  one field is now normalized before the comparison; every other byte is
+  still compared.
+
 - **A confined fanout unit can commit on its own branch.** Under the OS
   write fence a unit in a linked worktree could edit files but not commit:
   its git metadata lives in the shared repository, outside its write root,
@@ -61,8 +75,8 @@ All notable changes will be documented here.
     characters) adds about 5.5 KB of plain ASCII and up to about 10 KB for
     characters JSON doubles (`"`, `\`), so it cannot share that ceiling;
     each redispatch section gets its own producer-derived
-    `UNIT_PROMPT_APPEND_MAX_BYTES`. Non-ASCII command text expands further
-    (about 28.5 KB for `é` at the same caps) and is not covered.
+    `UNIT_PROMPT_APPEND_MAX_BYTES`. Non-ASCII command text is bounded by the
+    same ceiling (see the repair-brief entry above).
   - Dispatch rows record `unit_prompt`: block names, byte size, and sha256
     of the prompt sent, never the text.
   - `gpt-6.1-sol-pro` and dated Sol snapshots such as
