@@ -11,6 +11,7 @@ from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 from typing import Any
 import unittest
+from unittest import mock
 
 from _local_package import load_local_package
 from _platform_support import requires_posix
@@ -21,7 +22,9 @@ from omh.coding.fanout_confinement import (  # noqa: E402
     FanoutFilesystemConfinement,
     prepare_fanout_filesystem_confinement,
 )
+from omh.coding.fanout_capacity import AdmissionBinding  # noqa: E402
 from omh.coding.fanout_dispatch import (  # noqa: E402
+    _capacity_lineage,
     _capture_unit_recovery,
     _fenced_dispatcher_runner,
     _git_text,
@@ -101,6 +104,16 @@ class FencedDispatcherRunnerTests(unittest.TestCase):
             _ = fenced(["git", "check-ignore", "-q", "--", "node_modules"])
         self.assertEqual([("confinement_command" in kwargs) for _argv, kwargs in runner.calls], [False, False])
 
+    def test_a_call_below_the_unit_worktree_is_refused_not_run_on_the_host(self) -> None:
+        runner = _Recorder()
+        with TemporaryDirectory() as temporary:
+            worktree = Path(temporary)
+            (worktree / "nested").mkdir()
+            fenced = _fenced_dispatcher_runner(runner, _fence(), worktree)  # type: ignore[arg-type]
+            with self.assertRaises(OSError):
+                _ = fenced(["git", "status"], cwd=str(worktree / "nested"))
+        self.assertEqual(runner.calls, [])
+
     def test_a_call_that_cannot_be_wrapped_is_never_run(self) -> None:
         runner = _Recorder()
         with TemporaryDirectory() as temporary:
@@ -112,52 +125,97 @@ class FencedDispatcherRunnerTests(unittest.TestCase):
 
 
 _DISPATCH_SOURCE = Path(__file__).resolve().parents[1] / "src" / "coding" / "fanout_dispatch.py"
-# Helpers that run git in the unit worktree, and where each takes its runner.
-_RUNNER_KEYWORD_HELPERS = frozenset(
-    {"_consider_unit_retry", "_intake_unit_result", "_capture_unit_recovery", "plan_and_link_shared_artifacts"}
-)
-_RUNNER_POSITIONAL_HELPERS = frozenset({"_task_linked_postcondition", "_observed_clean_producer_head"})
+# Every call in `_dispatch_unit`, once the fence exists, that still receives the
+# BARE runner, with why that is right. Anything else that takes it fails below.
+_BARE_RUNNER_CALLEES = {
+    "getattr": "reads a capability flag off the runner; runs nothing",
+    "_run_unit_verification": "needs the runner's identity to prepare a fence, and wraps its own revision read",
+    "_observe_reproduction": "hands the declared command to `_run_verification_command`, which fences it",
+}
+# The one place the bare runner is CALLED after the fence exists: the unit's own
+# spawn, which carries `confinement_command` itself.
+_BARE_RUNNER_DIRECT_CALLS = 1
 
 
-def _calls(function: ast.FunctionDef, names: frozenset[str]) -> list[ast.Call]:
-    return [
-        node for node in ast.walk(function)
-        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in names
-    ]
+def _is_bare_runner(node: ast.AST) -> bool:
+    return isinstance(node, ast.Name) and node.id == "runner"
 
 
 class DispatchWiringTests(unittest.TestCase):
-    """Re-derived from source: a call site that goes back to the bare runner fails here."""
+    """Re-derived from source, so a new or reverted call on the bare runner fails on every job.
+
+    It sees what `_dispatch_unit` hands its runner to. It cannot see a helper
+    that spawns a process of its own without taking a runner at all.
+    """
 
     def setUp(self) -> None:
         tree = ast.parse(_DISPATCH_SOURCE.read_text(encoding="utf-8"))
         self.functions = {node.name: node for node in tree.body if isinstance(node, ast.FunctionDef)}
-
-    def test_dispatch_hands_the_fenced_runner_to_every_unit_worktree_git_helper(self) -> None:
         dispatch = self.functions["_dispatch_unit"]
-        keyword_calls = _calls(dispatch, _RUNNER_KEYWORD_HELPERS)
-        positional_calls = _calls(dispatch, _RUNNER_POSITIONAL_HELPERS)
-        self.assertEqual({call.func.id for call in keyword_calls}, set(_RUNNER_KEYWORD_HELPERS))  # type: ignore[attr-defined]
-        self.assertEqual({call.func.id for call in positional_calls}, set(_RUNNER_POSITIONAL_HELPERS))  # type: ignore[attr-defined]
-        for call in keyword_calls:
-            runners = [keyword.value for keyword in call.keywords if keyword.arg == "runner"]
-            self.assertEqual([ast.unparse(value) for value in runners], ["unit_git_runner"], ast.unparse(call.func))
-        for call in positional_calls:
-            self.assertEqual(ast.unparse(call.args[0]), "unit_git_runner", ast.unparse(call.func))
+        (self.fence_line,) = [
+            node.lineno for node in ast.walk(dispatch)
+            if isinstance(node, ast.Assign)
+            and any(isinstance(target, ast.Name) and target.id == "unit_git_runner" for target in node.targets)
+        ]
+        self.calls_after_fence = [
+            node for node in ast.walk(dispatch) if isinstance(node, ast.Call) and node.lineno > self.fence_line
+        ]
 
-    def test_dispatch_gives_every_session_workspace_probe_the_units_fence(self) -> None:
-        probes = _calls(self.functions["_dispatch_unit"], frozenset({"observe_session_workspace"}))
-        self.assertGreaterEqual(len(probes), 3)
+    def test_only_the_listed_callees_receive_the_bare_runner_once_the_fence_exists(self) -> None:
+        receiving = {
+            ast.unparse(call.func)
+            for call in self.calls_after_fence
+            if any(_is_bare_runner(argument) for argument in call.args)
+            or any(_is_bare_runner(keyword.value) for keyword in call.keywords)
+        }
+        self.assertEqual(receiving, set(_BARE_RUNNER_CALLEES))
+
+    def test_the_bare_runner_is_called_only_for_the_units_own_spawn(self) -> None:
+        direct = [call for call in self.calls_after_fence if _is_bare_runner(call.func)]
+        self.assertEqual(len(direct), _BARE_RUNNER_DIRECT_CALLS)
+        self.assertIn("spawn_kwargs", ast.unparse(direct[0]))
+
+    def test_the_fenced_runner_is_built_from_the_units_own_fence_and_worktree(self) -> None:
+        dispatch = self.functions["_dispatch_unit"]
+        (assignment,) = [
+            node for node in ast.walk(dispatch) if isinstance(node, ast.Assign) and node.lineno == self.fence_line
+        ]
+        self.assertEqual(ast.unparse(assignment.value), "_fenced_dispatcher_runner(runner, confinement, worktree)")
+        handed_on = [
+            call for call in self.calls_after_fence
+            if any(ast.unparse(argument) == "unit_git_runner" for argument in call.args)
+            or any(ast.unparse(keyword.value) == "unit_git_runner" for keyword in call.keywords)
+        ]
+        self.assertGreaterEqual(len(handed_on), 6)
+
+    def test_every_session_workspace_probe_after_the_fence_is_given_it(self) -> None:
+        probes = [
+            call for call in self.calls_after_fence
+            if isinstance(call.func, ast.Name) and call.func.id in {"observe_session_workspace", "_capacity_lineage", "_capacity_entry"}
+        ]
+        self.assertGreaterEqual(len(probes), 5)
         for probe in probes:
             fences = [ast.unparse(keyword.value) for keyword in probe.keywords if keyword.arg == "confinement"]
             self.assertEqual(fences, ["confinement"], ast.unparse(probe))
 
     def test_planned_verification_reads_the_worktree_revision_through_the_fence(self) -> None:
-        revisions = _calls(self.functions["_run_planned_verification"], frozenset({"_verification_worktree_revision"}))
+        revisions = [
+            node for node in ast.walk(self.functions["_run_planned_verification"])
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+            and node.func.id == "_verification_worktree_revision"
+        ]
         self.assertEqual(len(revisions), 1)
         self.assertEqual(
             ast.unparse(revisions[0].args[0]), "_fenced_dispatcher_runner(runner, confinement, worktree)",
         )
+
+    def test_capacity_lineage_probes_the_worktree_with_the_fence_it_was_handed(self) -> None:
+        fence = object()
+        binding = AdmissionBinding("codex", "fanout", "unit", "run", 1, "0" * 40, "/nonexistent/worktree")
+        with mock.patch("omh.coding.fanout_dispatch.observe_session_workspace", return_value=None) as probe:
+            lineage = _capacity_lineage({}, binding, "digest", confinement=fence)  # type: ignore[arg-type]
+        probe.assert_called_once_with("/nonexistent/worktree", confinement=fence)
+        self.assertIsNone(lineage["incarnation_id"])
 
 
 @requires_posix
@@ -291,6 +349,32 @@ class MacosDispatcherGitFenceTests(unittest.TestCase):
             self.assertEqual(recovery["outcome"], "recovery_available", recovery)
             self.assertEqual(recovery["paths_changed"], 2)
             self.assertEqual(sorted(recovery["paths"]), ["created", "seed"])
+
+    def test_without_git_roots_an_untouched_worktree_still_reads_as_no_changes(self) -> None:
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            worktree, _confinement, runner = self._prepared(root, git_roots=False)
+            base_sha = _host_git(root / "repo", "rev-parse", "HEAD")
+            paths = OmhPaths(omh_home=root / ".omh", hermes_home=root / ".hermes")
+            recovery = _capture_unit_recovery(
+                paths, fanout_id="", unit_id="", worktree=worktree, base_sha=base_sha, runner=runner,
+            )
+            assert recovery is not None
+            self.assertEqual(recovery["outcome"], "no_changes", recovery)
+
+    def test_without_git_roots_a_created_file_alone_is_not_read_as_no_changes(self) -> None:
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            worktree, confinement, runner = self._prepared(root, git_roots=False)
+            base_sha = _host_git(root / "repo", "rev-parse", "HEAD")
+            self._unit(confinement, worktree, "echo new > created")
+            paths = OmhPaths(omh_home=root / ".omh", hermes_home=root / ".hermes")
+            recovery = _capture_unit_recovery(
+                paths, fanout_id="", unit_id="", worktree=worktree, base_sha=base_sha, runner=runner,
+            )
+            assert recovery is not None
+            self.assertNotIn(recovery["outcome"], {"no_changes", "recovery_available"}, recovery)
+            self.assertIn("git add -N failed", str(recovery))
 
     def test_without_git_roots_the_capture_says_it_could_not_measure_created_files(self) -> None:
         with TemporaryDirectory() as temporary:

@@ -3778,13 +3778,15 @@ def _record_capacity(paths: OmhPaths, unit: Mapping[str, object], capacity: Mapp
 
 def _capacity_entry(paths: OmhPaths, unit: Mapping[str, object], binding: AdmissionBinding,
                     trip: CapacityTrip, *, status: str = 'not_started_capacity_blocked',
-                    worktree_created: bool = False, contract_digest: str = '') -> dict[str, object]:
+                    worktree_created: bool = False, contract_digest: str = '',
+                    confinement: FanoutFilesystemConfinement | None = None) -> dict[str, object]:
     capacity = capacity_fields(binding, trip, status=status, process_started=False)
     entry: dict[str, object] = {**_skipped(unit, status), 'attempt_id': binding.attempt_id,
              'invocation_id': binding.invocation_id, 'capacity': capacity,
              'planned_worktree_path': binding.worktree, 'worktree_created': worktree_created,
              'depends_on': unit.get('depends_on') or [],
-             'capacity_lineage': _capacity_lineage(unit, binding, contract_digest, observed_created=worktree_created)}
+             'capacity_lineage': _capacity_lineage(unit, binding, contract_digest, observed_created=worktree_created,
+                                                   confinement=confinement)}
     if worktree_created:
         entry['worktree_path'] = binding.worktree
     _record_capacity(paths, unit, capacity)
@@ -3792,8 +3794,9 @@ def _capacity_entry(paths: OmhPaths, unit: Mapping[str, object], binding: Admiss
 
 
 def _capacity_lineage(unit: Mapping[str, object], binding: AdmissionBinding, contract_digest: str,
-                      *, observed_created: bool = True) -> dict[str, object]:
-    workspace = observe_session_workspace(binding.worktree) if observed_created else None
+                      *, observed_created: bool = True,
+                      confinement: FanoutFilesystemConfinement | None = None) -> dict[str, object]:
+    workspace = observe_session_workspace(binding.worktree, confinement=confinement) if observed_created else None
     return {'fanout_id': binding.fanout_id, 'unit_id': binding.unit_id, 'run_ref': binding.run_ref,
             'owner': binding.owner, 'base_sha': binding.base_sha, 'worktree_path': str(Path(binding.worktree).resolve()),
             'branch': str(unit.get('branch_suggestion', f'agent/{binding.unit_id}')),
@@ -4758,7 +4761,8 @@ def _dispatch_unit(
                     failure_diagnostic = diagnostic('worker', 'nonzero', exit_code, 'process')
             except CapacityBlocked as exc:
                 entry = _capacity_entry(paths, unit, admission_binding, exc.trip,
-                                        worktree_created=True, contract_digest=session_contract_digest)
+                                        worktree_created=True, contract_digest=session_contract_digest,
+                                        confinement=confinement)
                 if retry_decisions:
                     entry['prior_attempts'] = retry_decisions
                 return entry
@@ -5178,7 +5182,8 @@ def _dispatch_unit(
         result['status'] = 'executor_capacity_rejected'
         result['capacity'] = capacity_fields(admission_binding, capacity_trip,
             status='executor_capacity_rejected', process_started=True)
-        result['capacity_lineage'] = _capacity_lineage(unit, admission_binding, session_contract_digest)
+        result['capacity_lineage'] = _capacity_lineage(unit, admission_binding, session_contract_digest,
+                                                       confinement=confinement)
         _record_capacity(paths, unit, result['capacity'])
     result['worktree_created'] = bool(worktree_record.get('created'))
     result['worktree_reused'] = bool(worktree_record.get('reused'))
@@ -5725,6 +5730,19 @@ def _capture_unit_recovery(
     if numstat_bytes is None or patch_bytes is None:
         return _capture_failed("git refused to diff the unit worktree against the dispatch base")
     paths_changed, lines_changed = _parse_numstat(numstat_bytes.decode("utf-8", "surrogateescape"))
+    if not untracked_measured and not paths_changed and not patch_bytes:
+        # `add -N` writes the index, which a fence carrying no git paths refuses
+        # even on a worktree nobody touched. An empty porcelain status is a
+        # complete answer that writes nothing: no tracked change and no created
+        # file. Without it an untouched worktree would read as unmeasured, and
+        # a transient failure there would never be retried.
+        status = _git_text(runner, worktree, ["git", "status", "--porcelain=v1", "--untracked-files=all"])
+        if status is not None and not status.strip():
+            return {
+                "schema_version": RECOVERY_SCHEMA_VERSION,
+                "outcome": "no_changes",
+                "claim_boundary": RECOVERY_CLAIM_BOUNDARY,
+            }
     if not untracked_measured:
         # `add -N` failed, so anything the unit CREATED is invisible to
         # `git diff`. Whatever the tracked diff shows, this record cannot make
@@ -5810,8 +5828,10 @@ def _fenced_dispatcher_runner(
     code alone (#1990). With an enforced fence, every call whose cwd is the unit
     worktree is wrapped in that same fence, and a call that cannot be wrapped
     raises rather than running outside it: the git helpers report that as a
-    failed read. A call with any other cwd passes through, as does every call
-    when no fence was enforced, because the unit then ran unfenced as well.
+    failed read. That includes a cwd BELOW the worktree, which the fence cannot
+    keep (bwrap starts every command at the worktree itself). A call whose cwd
+    is outside the worktree passes through, as does every call when no fence
+    was enforced, because the unit then ran unfenced as well.
     """
     if confinement is None or confinement.receipt.get("enforced") is not True:
         return runner
@@ -5819,9 +5839,12 @@ def _fenced_dispatcher_runner(
 
     def run(argv: Sequence[str], **kwargs: Any) -> Any:
         cwd = kwargs.get("cwd")
-        if cwd is None or Path(cwd).resolve() != fenced_cwd:
+        if cwd is None:
             return runner(argv, **kwargs)
-        command = confinement.dispatcher_command(argv)
+        resolved = Path(cwd).resolve()
+        if resolved != fenced_cwd and not resolved.is_relative_to(fenced_cwd):
+            return runner(argv, **kwargs)
+        command = confinement.dispatcher_command(argv) if resolved == fenced_cwd else None
         if command is None:
             raise OSError("the command could not be placed inside the unit's write fence")
         return runner(argv, confinement_command=command, **kwargs)

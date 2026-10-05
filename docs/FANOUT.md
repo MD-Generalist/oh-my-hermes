@@ -1014,16 +1014,23 @@ Rules, all applied at freeze time:
   runners carry no bwrap.
 
   Git reads its configuration from the worktree it runs in, and a unit owns
-  its worktree. So the git calls the dispatcher itself makes there during a
-  unit's dispatch (the clean-HEAD observation, the changed-path listing for
-  task-linked checks, the recovery capture, the session workspace probe) run
-  inside that unit's fence: whatever such a call starts can write only where
-  the unit already could. A call that cannot be placed in the fence is not
-  run, and is reported as a failed read. One consequence: when the fence
-  carries no git paths, the recovery capture's `git add -N` is refused, and
-  the record says the files the unit created could not be measured. Outside
-  a dispatch there is no fence in hand, so `fanout status`, clarification
-  resume and worktree reuse still probe a unit worktree on the host.
+  its worktree. So from the moment a unit's fence is prepared, the git calls
+  the dispatcher itself makes in that worktree run inside the fence: the
+  clean-HEAD observation, the changed-path listing for task-linked checks,
+  the recovery capture, and the session workspace probes, the capacity
+  lineage's included. Whatever such a call starts can write only where the
+  unit already could. A call that cannot be placed in the fence is not run,
+  and is reported as a failed read. When the fence carries no git paths, the
+  recovery capture's `git add -N` is refused: an untouched worktree is still
+  read as unchanged, from a status that writes nothing, and a worktree with a
+  created file is recorded as unmeasured.
+
+  What still runs on the host in a worktree a unit has written: everything
+  before the fence is prepared on a reused worktree (the workspace
+  preflight, the git-path decision itself, the clarification and reuse
+  probes), post-green diagnostics (`--diagnostics`), which spawn their own
+  git, and the paths outside a dispatch (`fanout status`, the Hermes
+  recovery dispatch).
 
   That cover is one socket, not the class. A read-only mount stops writes, not
   `connect()`, so any socket still reachable by a well-known path remains a way

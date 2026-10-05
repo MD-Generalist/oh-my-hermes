@@ -7,16 +7,19 @@ All notable changes will be documented here.
 - **Git the dispatcher runs in a unit's worktree now runs inside that
   unit's fence.** Git takes its configuration from the worktree it runs in,
   and a fanout unit owns its worktree, so the dispatcher's own git calls
-  there were not confined by the fence the unit ran under (#1990). During a
-  unit's dispatch, the clean-HEAD observation, the changed-path listing, the
-  recovery capture and the session workspace probe are wrapped in the unit's
-  fence; a call that cannot be wrapped is not run. With no enforced fence
-  nothing changes, since the unit ran unfenced as well.
-  - A recovery capture in a fence without git paths now reports that
-    created files could not be measured, because `git add -N` is refused
-    there.
-  - `fanout status`, clarification resume and worktree reuse hold no fence
-    and still probe on the host; #1990 stays open for them.
+  there were not confined by the fence the unit ran under (#1990). From the
+  moment a unit's fence is prepared, the clean-HEAD observation, the
+  changed-path listing, the recovery capture and the session workspace
+  probes are wrapped in it; a call that cannot be wrapped is not run. With
+  no enforced fence nothing changes, since the unit ran unfenced as well.
+  - In a fence without git paths `git add -N` is refused. An untouched
+    worktree still reads as unchanged, so a transient failure there is
+    retried as before; a worktree with a created file is recorded as
+    unmeasured, where the host-side capture used to list it.
+  - Still on the host, and why #1990 stays open: the calls before the fence
+    is prepared on a reused worktree (workspace preflight, the git-path
+    decision, clarification and reuse probes), post-green diagnostics,
+    `fanout status`, and the Hermes recovery dispatch.
 - **A confined fanout unit can commit in a Git LFS repository.** `git add`
   runs the git-lfs clean filter, which stages through `.git/lfs/tmp` into
   `.git/lfs/objects`; with that directory outside the write fence the filter
