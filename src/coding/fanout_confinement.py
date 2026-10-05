@@ -163,20 +163,24 @@ class FanoutFilesystemConfinement:
             return None
         return self._fenced(executable, argv)
 
-    def dispatcher_command(self, argv: Sequence[str]) -> tuple[str, ...] | None:
+    def dispatcher_command(self, argv: Sequence[str], *, path: str | None = None) -> tuple[str, ...] | None:
         """Fence a command the DISPATCHER runs in this unit's worktree.
 
         `command` wraps only the executables named when the fence was prepared:
         the owner CLI and the declared checks. The dispatcher's own git calls are
         not among them, and git takes its configuration from the worktree it runs
-        in, which the unit wrote (#1990). Run inside the unit's fence, whatever
-        such a call starts can write only where the unit already could. None when
-        no receipt proved the fence or the executable is not on the dispatcher's
-        PATH; a caller must not run the command unfenced instead.
+        in, which the unit wrote (#1990). Neither is a check resolved after the
+        fence was prepared, which runs code the unit wrote. Run inside the unit's
+        fence, whatever such a call starts can write only where the unit already
+        could. `path` is the PATH the command will be spawned with; the
+        dispatcher's own when omitted. None when no receipt proved the fence or
+        the executable cannot be located; a caller must not run the command
+        unfenced instead.
         """
         if self.receipt.get("enforced") is not True or not argv or self.child is None:
             return None
-        located = shutil.which(str(argv[0]))
+        name = str(argv[0])
+        located = name if Path(name).is_absolute() else shutil.which(name, path=path)
         if located is None:
             return None
         return self._fenced(str(Path(located).resolve()), argv)

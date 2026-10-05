@@ -29,6 +29,7 @@ from omh.coding.fanout_dispatch import (  # noqa: E402
     _fenced_dispatcher_runner,
     _git_text,
     _observed_clean_producer_head,
+    _run_verification_command,
     signal_safe_unit_runner,
 )
 from omh.coding.fanout_executor_sessions import observe_session_workspace  # noqa: E402
@@ -129,8 +130,13 @@ _DISPATCH_SOURCE = Path(__file__).resolve().parents[1] / "src" / "coding" / "fan
 # BARE runner, with why that is right. Anything else that takes it fails below.
 _BARE_RUNNER_CALLEES = {
     "getattr": "reads a capability flag off the runner; runs nothing",
-    "_run_unit_verification": "needs the runner's identity to prepare a fence, and wraps its own revision read",
-    "_observe_reproduction": "hands the declared command to `_run_verification_command`, which fences it",
+    "_run_unit_verification": (
+        "needs the runner's identity to prepare a fence; each command goes through "
+        "`_run_verification_command`, which fences it or does not run it, and the revision read is wrapped"
+    ),
+    "_observe_reproduction": (
+        "hands the declared command to `_run_verification_command`, which fences it or does not run it"
+    ),
 }
 # The one place the bare runner is CALLED after the fence exists: the unit's own
 # spawn, which carries `confinement_command` itself.
@@ -216,6 +222,47 @@ class DispatchWiringTests(unittest.TestCase):
             lineage = _capacity_lineage({}, binding, "digest", confinement=fence)  # type: ignore[arg-type]
         probe.assert_called_once_with("/nonexistent/worktree", confinement=fence)
         self.assertIsNone(lineage["incarnation_id"])
+
+
+class VerificationCommandFenceTests(unittest.TestCase):
+    """A check the fence was not prepared for is fenced anyway, or it does not run."""
+
+    def _fence(self, *, locates: bool) -> SimpleNamespace:
+        self.located_with: list[str | None] = []
+
+        def dispatcher_command(argv: Any, *, path: str | None = None) -> tuple[str, ...] | None:
+            self.located_with.append(path)
+            return ("fence", *argv) if locates else None
+
+        return SimpleNamespace(
+            receipt={"enforced": True},
+            command=lambda argv: None,
+            dispatcher_command=dispatcher_command,
+            command_environment=lambda environment: dict(environment),
+        )
+
+    def test_a_check_not_named_at_preparation_is_fenced_by_its_own_path(self) -> None:
+        runner = _Recorder()
+        with TemporaryDirectory() as temporary:
+            status, _message, _truncation = _run_verification_command(
+                "task-linked-runner tests/test_one.py", Path(temporary), runner,
+                child_env={"PATH": "/opt/unit-tools/bin"}, confinement=self._fence(locates=True),  # type: ignore[arg-type]
+            )
+        self.assertEqual(status, "passed")
+        (argv, kwargs), = runner.calls
+        self.assertEqual(kwargs["confinement_command"], ("fence", *argv))
+        self.assertEqual(self.located_with, ["/opt/unit-tools/bin"])
+
+    def test_a_check_the_fence_cannot_wrap_is_a_failed_check_and_never_runs(self) -> None:
+        runner = _Recorder()
+        with TemporaryDirectory() as temporary:
+            status, message, _truncation = _run_verification_command(
+                "task-linked-runner tests/test_one.py", Path(temporary), runner,
+                child_env={"PATH": "/opt/unit-tools/bin"}, confinement=self._fence(locates=False),  # type: ignore[arg-type]
+            )
+        self.assertEqual(status, "failed")
+        self.assertIn("not found on PATH", message)
+        self.assertEqual(runner.calls, [])
 
 
 @requires_posix
@@ -334,6 +381,23 @@ class MacosDispatcherGitFenceTests(unittest.TestCase):
             )
             self.assertEqual(bare.returncode, 0, bare.stderr)
             self.assertTrue(outside.exists())
+
+    def test_a_check_the_fence_was_not_prepared_for_still_cannot_write_outside_it(self) -> None:
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            worktree, confinement, _runner = self._prepared(root)
+            self.assertIsNone(confinement.command(("/usr/bin/touch", "x")))
+            outside = root / "outside"
+            inside = _run_verification_command(
+                f"/usr/bin/touch {worktree}/inside", worktree, signal_safe_unit_runner, confinement=confinement,
+            )
+            escaped = _run_verification_command(
+                f"/usr/bin/touch {outside}", worktree, signal_safe_unit_runner, confinement=confinement,
+            )
+            self.assertEqual(inside[0], "passed", inside)
+            self.assertTrue((worktree / "inside").exists())
+            self.assertEqual(escaped[0], "failed", escaped)
+            self.assertFalse(outside.exists())
 
     def test_recovery_capture_measures_a_failed_units_work_from_inside_the_fence(self) -> None:
         with TemporaryDirectory() as temporary:

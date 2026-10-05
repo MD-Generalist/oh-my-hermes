@@ -1431,6 +1431,18 @@ def _run_verification_command(
         confinement_command = (
             active_confinement.command(argv) if active_confinement is not None else None
         )
+        if (
+            confinement_command is None
+            and active_confinement is not None
+            and active_confinement.receipt.get("enforced") is True
+        ):
+            # The fence knows the owner CLI and the checks declared when it was
+            # prepared. A reproduction or task-linked command is resolved later,
+            # and it runs code the unit wrote: fence it by this command's own
+            # PATH, or do not run it. It never runs outside an enforced fence.
+            confinement_command = active_confinement.dispatcher_command(argv, path=environment.get("PATH"))
+            if confinement_command is None:
+                return failed('missing_binary', None, 'not_observed', 'verification binary not found on PATH')
         if active_confinement is not None:
             environment = active_confinement.command_environment(environment)
         completed = runner(

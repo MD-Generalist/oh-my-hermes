@@ -1020,10 +1020,13 @@ Rules, all applied at freeze time:
   the recovery capture, and the session workspace probes, the capacity
   lineage's included. Whatever such a call starts can write only where the
   unit already could. A call that cannot be placed in the fence is not run,
-  and is reported as a failed read. When the fence carries no git paths, the
-  recovery capture's `git add -N` is refused: an untouched worktree is still
-  read as unchanged, from a status that writes nothing, and a worktree with a
-  created file is recorded as unmeasured.
+  and is reported as a failed read. The same holds for a check resolved after
+  the fence was prepared, a reproduction or task-linked command: it is fenced
+  by its own PATH, or reported as a failed check without running. When the
+  fence carries no git paths, the recovery capture's `git add -N` is refused:
+  an untouched worktree is still read as unchanged, from a status that writes
+  nothing, and any other worktree is recorded as unmeasured, with a count of
+  the tracked paths seen in place of the path list.
 
   What still runs on the host in a worktree a unit has written: everything
   before the fence is prepared on a reused worktree (the workspace

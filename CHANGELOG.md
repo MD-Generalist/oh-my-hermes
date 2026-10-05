@@ -12,10 +12,15 @@ All notable changes will be documented here.
   changed-path listing, the recovery capture and the session workspace
   probes are wrapped in it; a call that cannot be wrapped is not run. With
   no enforced fence nothing changes, since the unit ran unfenced as well.
+  - A check resolved after the fence was prepared (a reproduction or
+    task-linked command) used to run on the host when the fence did not
+    know its executable. It is now fenced by its own PATH, or reported as
+    a failed check without running.
   - In a fence without git paths `git add -N` is refused. An untouched
     worktree still reads as unchanged, so a transient failure there is
-    retried as before; a worktree with a created file is recorded as
-    unmeasured, where the host-side capture used to list it.
+    retried as before; any other worktree is recorded as unmeasured, with
+    a count of tracked paths in place of the path list the host-side
+    capture used to give.
   - Still on the host, and why #1990 stays open: the calls before the fence
     is prepared on a reused worktree (workspace preflight, the git-path
     decision, clarification and reuse probes), post-green diagnostics,
