@@ -4,6 +4,19 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **The 2026-10-04 prompt audit's measurements are recorded.** All arms ran
+  on `claude-fable-5-1` at `xhigh` (Claude Code subscription, 30 instances
+  per arm, with same-text repeats).
+  - The `claude` family block keeps its place. Against no block it never
+    cost more and cut tool calls by about 11%.
+  - The shared unit head is measured for the first time. It cuts tool calls
+    by about 25–30% at no measurable token cost, so it stays.
+  - Removing the parent-clarification block saves nothing measurable, so it
+    stays too.
+  - The GPT-6.x overrides stay as recorded on 2026-10-02: no measured
+    effect either way.
+  - The DeepSeek override is unmeasured. It has no subscription route.
+
 - **The live-model benchmark can measure the shared unit head.** Every
   benchmark arm used to send only a calibration paragraph in front of the
   bare benchmark contract, so the head that every dispatched fanout unit

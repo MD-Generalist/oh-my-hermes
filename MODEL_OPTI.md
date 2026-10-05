@@ -171,6 +171,22 @@ create an issue.
 
 ## Universal protocols (every model, every family)
 
+**Measured (2026-10-04, prompt audit):** until this run the benchmark sent
+only the calibration paragraph, so the shared head below had never been
+measured. The `unit` condition (`benchmarks/live-model-tools/v1`, added in
+the same audit) sends the real head. On `claude-fable-5-1` at `xhigh`, 30
+instances per arm, Claude Code subscription:
+- **Head vs no head:** `unit` used −1.9% tokens against `optimized`, which
+  carries the calibration but no head (CI spans zero). Its tool calls fell
+  from 313 to 219 / 236, about 25–30% fewer.
+- **Clarification block:** `unit_lean` drops the parent-clarification
+  block (1,163 B). It measured +4.8% / −3.1% against the two `unit` arms,
+  inside the +8.1% same-text drift.
+
+The head stays. The clarification block also stays: this corpus never
+exercises `input_required`, but real fanout units do. Archive:
+`~/Desktop/khope/bench-archive/prompt-audit-2026-10-04/runs` (outside git).
+
 `src/coding/unit_prompt_protocol.py` attaches four deterministic blocks to
 every dispatched unit prompt, regardless of model, and adds one composer-side
 discipline for how those prompts are assembled:
@@ -749,6 +765,25 @@ pairing so a benchmark claim can never mix in other prompt changes.
   this corpus, route, and effort. Archive (outside git, owner checkout):
   `.omc/research/claude-calibration-bench-2026-09-23/`, where
   `three_arm_analysis.py` and `paired_tokens.py` produce every number above.
+- **Measured against no block (2026-10-04, prompt audit):** the block had
+  only ever been compared with its own earlier wording, so the audit asked
+  whether Fable 5.1 still needs it at all. Three arms, same corpus and
+  harness, `claude-fable-5-1` at `xhigh` on the Claude Code subscription
+  (Hermes `anthropic` provider):
+
+  | arm | window (UTC) | pass | mean tokens | tool calls | API calls |
+  |---|---|---|---|---|---|
+  | baseline (no block) | 06:50–07:16 | 16 / 30 | 111,383 | 356 | 227 |
+  | optimized (this block) | 07:16–07:40 | 17 / 30 | 99,409 | 313 | 201 |
+  | baseline (repeat) | 07:40–08:06 | 18 / 30 | 104,155 | 348 | 215 |
+
+  - Same-text drift was −6.5% [−17,928, +2,240] per instance.
+  - The block against the first baseline was −10.7% [−21,404, −3,505] (CI
+    excludes zero), and −4.6% [−12,179, +1,862] against the repeat.
+  - Tool calls were about 11% lower than both baselines (313 vs 356 / 348).
+
+  **Decision: keep.** The block does not cost more than no block, and it
+  consistently trims tool calls. It is no longer a removal candidate.
 - **What OMH injects (composer):** split only what the goal requires, no
   speculative units, no unit whose only job is re-checking the split itself
   (a fresh-context review of a unit's deliverable is a legitimate unit);
