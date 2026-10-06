@@ -11,7 +11,8 @@ The data tables live in `catalog_definitions`, `catalog_feature_surfaces`, and
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 from typing import Literal
 
 from ..workflows.operations_contracts import ArtifactContractRef, artifact_contracts_for_workflow
@@ -897,6 +898,20 @@ class SkillDefinition:
     # of the skill's own trigger words, so a path mentioned in passing adds
     # nothing. Empty means the skill routes exactly as it would without it.
     path_globs: tuple[str, ...] = ()
+    # Agent Skills projection only: section name -> complete replacement lines
+    # for the fields whose host boundary changes outside Hermes. Hermes
+    # rendering never reads it; scalar prose fields use one line, joined with
+    # newlines. A key must name a field above, which
+    # `tests/test_agent_skills_projection.py` holds. Excluded from the hash
+    # because a dict is not hashable; equality still compares it.
+    portable_overrides: Mapping[str, tuple[str, ...]] = field(default_factory=dict, hash=False)
+    # One entry per `portable_overrides` key: sha256 of the JSON form of the
+    # catalog section that override replaces, as it read when the override was
+    # last reviewed. The override REPLACES the section, so a line added to it
+    # never reaches the portable body; the same test fails naming
+    # `<skill>::<section>` when the section moves, so the override is re-read
+    # (#1786). Never rendered.
+    portable_override_shadows: Mapping[str, str] = field(default_factory=dict, hash=False)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "description", omh_description(self.description))
@@ -1308,6 +1323,8 @@ def _feature_surface_skill(
     extra_quality_bar: tuple[str, ...] = (),
     extra_do_not_use_when: tuple[str, ...] = (),
     situations: tuple[str, ...] = (),
+    portable_overrides: Mapping[str, tuple[str, ...]] | None = None,
+    portable_override_shadows: Mapping[str, str] | None = None,
 ) -> SkillDefinition:
     return SkillDefinition(
         name,
@@ -1362,4 +1379,6 @@ def _feature_surface_skill(
         final_checklist=final_checklist or (),
         recovery_notes=recovery_notes or (),
         situations=situations,
+        portable_overrides=portable_overrides or {},
+        portable_override_shadows=portable_override_shadows or {},
     )

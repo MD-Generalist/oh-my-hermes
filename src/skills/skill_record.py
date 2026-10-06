@@ -3,7 +3,7 @@
 A skill's truth is spread over several tables today: the definition
 (`catalog_feature_surfaces.py` / `catalog_definitions.py`), its surface
 exposure (`catalog.py`), its harness (`catalog_harnesses.py`), its portability
-class and portable overrides (`catalog_portable.py`), its routing policy
+class (`catalog_portable.py`), its routing policy
 (`routing/recommend.py`), the label of that policy's next action
 (`routing/action_copy.py`), and its body and reference renderers
 (`render.py`). `SkillRecord` assembles those into one value, and
@@ -18,7 +18,11 @@ as its table states it.
 
 Migration plan: later changes move each table's per-skill fields into the
 record behind this interface, one table at a time, with the generated tree and
-`tests/test_skill_record.py` holding the bytes still. Today only `packaging.py`
+`tests/test_skill_record.py` holding the bytes still. The first table moved is
+the Agent Skills portable overrides: once a display-name-keyed
+`PORTABLE_OVERRIDES` table in `catalog_portable.py`, now the
+`portable_overrides` field on each owning definition, which both the record and
+the portable renderer read. Today only `packaging.py`
 reads through `skill_record(name)` (bodies and references); the docs, Agent
 Skills, shortlist and capability-family generators still read their tables
 directly and expose the per-skill unit that `project()` calls, so a moved
@@ -358,7 +362,7 @@ def _skill_references(name: str) -> tuple[SkillReferenceTemplate, ...]:
 def _build_record(definition: SkillDefinition) -> SkillRecord:
     from ..routing.action_copy import next_action_label
     from ..routing.recommend import policy_with_source
-    from .catalog_portable import PORTABLE_OVERRIDES, skill_portability
+    from .catalog_portable import skill_portability
 
     name = definition.name
     harness_name = declared_primary_harness(name)
@@ -369,7 +373,7 @@ def _build_record(definition: SkillDefinition) -> SkillRecord:
         exposure=surface_exposure_for_skill(name),
         harness=harness_definition(harness_name) if harness_name else None,
         portability=skill_portability(name),
-        portable_overrides=PORTABLE_OVERRIDES.get(omh_skill_display_name(name), {}),
+        portable_overrides=definition.portable_overrides,
         policy=policy,
         policy_source=source,
         next_action_label=next_action_label(policy.next_action),

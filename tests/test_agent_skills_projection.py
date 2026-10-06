@@ -6,10 +6,28 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
-from unittest import mock
 
 
-OVERRIDE_DIGEST_FIXTURE = "fixtures/portable_override_source_digests.json"
+
+def _shadow_problems(definitions) -> list[str]:
+    """Every override whose recorded shadow digest no longer matches its section (#1786)."""
+    from omh.skills.catalog import omh_skill_display_name
+
+    problems: list[str] = []
+    for definition in definitions:
+        name = omh_skill_display_name(definition.name)
+        recorded = definition.portable_override_shadows
+        for section in sorted(definition.portable_overrides.keys() | recorded.keys()):
+            if section not in definition.portable_overrides:
+                problems.append(f"{name}::{section}: portable_override_shadows entry without an override; drop it")
+                continue
+            actual = hashlib.sha256(json.dumps(getattr(definition, section, None), ensure_ascii=False).encode()).hexdigest()
+            if recorded.get(section) != actual:
+                problems.append(
+                    f"{name}::{section}: shadowed section changed; re-read the override, "
+                    f"then update portable_override_shadows[{section!r}] to {actual}"
+                )
+    return problems
 
 
 class AgentSkillsProjectionTests(unittest.TestCase):
@@ -127,134 +145,78 @@ class AgentSkillsProjectionTests(unittest.TestCase):
             "re-derive the fixture with json.dumps(..., indent=2, sort_keys=True)",
         )
 
-    def _assert_overridden_sections_pinned(self, actual):
-        """The shared body, so the mutation test below reads the shipped message."""
-        expected = json.loads((Path(__file__).parent / OVERRIDE_DIGEST_FIXTURE).read_text())
-        moved = sorted(key for key in actual.keys() & expected.keys() if actual[key] != expected[key])
-        added = sorted(actual.keys() - expected.keys())
-        removed = sorted(expected.keys() - actual.keys())
+    def test_every_portable_override_replaces_a_section_the_portable_body_renders(self):
+        """An override lives on the definition it shadows, so it cannot name a missing skill.
+
+        It can still name a section by a string that stops matching: a renamed
+        definition field, or a field the portable body never renders. The
+        first dies in `_target_definition` on an `AttributeError` that names
+        only the field; the second is applied and silently dropped. Checking
+        the key against the definition's fields before rendering, then each
+        replacement line against the rendered body, names the skill and the
+        section for both.
+        """
+        from dataclasses import fields
+        from omh.skills.catalog import installable_skill_definitions, omh_skill_display_name
+        from omh.skills.catalog_types import SkillDefinition
+        from omh.skills.render import agent_skill_template
+        from omh.skills.catalog_portable import portable_skill_names
+
+        sections = {field.name for field in fields(SkillDefinition)} - {"portable_overrides"}
+        overridden = [d for d in installable_skill_definitions() if d.portable_overrides]
+        self.assertTrue(overridden, "no definition carries portable_overrides; the check below would be vacuous")
+        portable = set(portable_skill_names())
+        problems = []
+        for definition in overridden:
+            name = omh_skill_display_name(definition.name)
+            unknown = sorted(set(definition.portable_overrides) - sections)
+            problems.extend(f"{name}::{section} (not a SkillDefinition field)" for section in unknown)
+            if unknown:
+                continue
+            if name not in portable:
+                problems.append(f"{name} (overrides a skill with no Agent Skills projection)")
+                continue
+            body = agent_skill_template(definition).content
+            problems.extend(
+                f"{name}::{section} (replacement line absent from the portable body)"
+                for section, lines in definition.portable_overrides.items()
+                if any(line not in body for line in lines)
+            )
         self.assertEqual(
-            (moved, added, removed),
-            ([], [], []),
-            "overridden catalog sections changed: moved="
-            f"{moved or 'none'} added={added or 'none'} removed={removed or 'none'}. "
-            "PORTABLE_OVERRIDES REPLACES each of these sections, so a line added to the "
-            "catalog is absent from agent-skills/<skill>/SKILL.md with every other gate "
-            "green. Re-read each named section, edit the override in "
-            "src/skills/catalog_portable.py if the line belongs in the portable body, "
-            "then re-derive tests/" + OVERRIDE_DIGEST_FIXTURE + " with "
-            "json.dumps(portable_override_source_digests(), indent=2, sort_keys=True).",
+            problems,
+            [],
+            "portable_overrides entries that do not replace a rendered section. Point the key at "
+            "the field that replaced it, or drop the entry.",
         )
 
-    def test_overridden_catalog_sections_are_pinned(self):
-        """The only gate that sees the source of a hand-written portable section.
+    def test_every_portable_override_pins_the_section_it_shadows(self):
+        """The #1786 gate, recorded beside the override it protects.
 
-        `docs agent-skills --check` compares the shipped bytes against the
-        projection that already applied the override, so it agrees with the
-        override by construction. The catalog line the override replaced is
-        never on either side of that comparison (#1786).
+        An override REPLACES its catalog section, so a line added to that
+        section never reaches agent-skills/<skill>/SKILL.md, and
+        `docs agent-skills --check` agrees with the override by construction.
+        The digest is sha256 of the section's JSON form, so a scalar and a
+        one-element tuple never collide.
         """
-        from omh.skills.catalog_portable import portable_override_source_digests
-        self._assert_overridden_sections_pinned(portable_override_source_digests())
+        from omh.skills.catalog import installable_skill_definitions
 
-    def test_the_override_digest_fixture_stays_in_sorted_order(self):
-        """Sorted keys are what keeps one re-decided section a one-line diff."""
-        path = Path(__file__).parent / OVERRIDE_DIGEST_FIXTURE
-        keys = list(json.loads(path.read_text()))
-        self.assertEqual(
-            keys,
-            sorted(keys),
-            "re-derive the fixture with json.dumps(..., indent=2, sort_keys=True)",
-        )
+        self.assertEqual(_shadow_problems(installable_skill_definitions()), [], "portable_override_shadows out of date (#1786)")
 
-    def test_the_pin_names_the_section_whose_catalog_source_moved(self):
-        """Mutation: a line added to one overridden section, nothing else touched.
-
-        Asserted against the shipped assertion message rather than against the
-        digests, because naming the skill and the section is the requirement --
-        a pin that only said "something moved" would send the author diffing
-        28 hand-written tuples.
-        """
+    def test_a_changed_shadowed_section_is_named_alone(self):
+        # The guard's precision is part of the contract: one section edited
+        # upstream names exactly that skill::section, and nothing else, so the
+        # fix is one literal away rather than a hunt.
         from dataclasses import replace
-        from omh.skills import catalog_portable as portable
+
         from omh.skills.catalog import installable_skill_definitions, omh_skill_display_name
-        mutated = [
-            replace(definition, quality_bar=definition.quality_bar + (
-                "A catalog line added upstream that nobody reviewed for the portable body.",
-            ))
-            if omh_skill_display_name(definition.name) == "ulw-qa" else definition
-            for definition in installable_skill_definitions()
-        ]
-        with mock.patch.object(portable, "installable_skill_definitions", return_value=mutated):
-            digests = portable.portable_override_source_digests()
-            with self.assertRaises(AssertionError) as raised:
-                self._assert_overridden_sections_pinned(digests)
-        message = str(raised.exception)
-        self.assertIn("ulw-qa::quality_bar", message)
-        self.assertIn("moved=['ulw-qa::quality_bar']", message)
-        self.assertIn("added=none removed=none", message)
-        self.assertNotIn("ulw-qa::why_this_exists", message)
-        self.assertNotIn("ulw-plan", message)
 
-    def test_every_override_entry_resolves_against_the_catalog(self):
-        from omh.skills.catalog_portable import portable_override_unresolved
-        unresolved = portable_override_unresolved()
-        self.assertEqual(
-            unresolved,
-            (),
-            "PORTABLE_OVERRIDES entries no longer in the catalog: "
-            f"{list(unresolved)}. Each replaces something that is gone, so it is "
-            "never applied. Drop the entry or point it at the section that replaced it.",
-        )
-
-    def test_an_override_entry_that_stops_resolving_is_named_with_its_reason(self):
-        """Mutation, both halves. The reason is the discriminator, not decoration.
-
-        The two failures differ at projection time -- see
-        `portable_override_unresolved` -- and a bare "does not resolve" would
-        make the author check the wrong one first.
-        """
-        from omh.skills import catalog_portable as portable
-        from omh.skills.catalog import installable_skill_definitions, omh_skill_display_name
-        without_qa = [
-            definition for definition in installable_skill_definitions()
-            if omh_skill_display_name(definition.name) != "ulw-qa"
-        ]
-        with mock.patch.object(portable, "installable_skill_definitions", return_value=without_qa):
-            self.assertEqual(
-                portable.portable_override_unresolved(),
-                (
-                    "ulw-qa::quality_bar (skill absent from the installable catalog)",
-                    "ulw-qa::why_this_exists (skill absent from the installable catalog)",
-                ),
-            )
-        with mock.patch.dict(portable.PORTABLE_OVERRIDES, {"ulw-qa": {"renamed_section": ("x",)}}):
-            self.assertEqual(
-                portable.portable_override_unresolved(),
-                ("ulw-qa::renamed_section (catalog field absent)",),
-            )
-
-    def test_the_two_unresolved_reasons_match_what_the_projection_does(self):
-        """Proves the sentences in `portable_override_unresolved` are measured.
-
-        A dropped skill is looked up by display name and simply misses, so the
-        projection renders as if the override were never written. A renamed
-        section is read off the definition to classify it and raises there.
-        One is silent and one is loud; neither names the table it came from,
-        and the loud one was predicted here as the `TypeError` from
-        `dataclasses.replace` until this test measured the `AttributeError`
-        that the classifying `getattr` raises one line earlier.
-        """
-        from omh.skills import catalog_portable as portable
-        from omh.skills.render import agent_skill_templates
-        with mock.patch.dict(portable.PORTABLE_OVERRIDES, {"no-such-skill": {"quality_bar": ("x",)}}):
-            rendered = {template.name for template in agent_skill_templates()}
-        self.assertIn("ulw-qa", rendered)
-        self.assertNotIn("no-such-skill", rendered)
-        with mock.patch.dict(portable.PORTABLE_OVERRIDES, {"ulw-qa": {"renamed_section": ("x",)}}):
-            with self.assertRaises(AttributeError) as raised:
-                agent_skill_templates()
-        self.assertIn("renamed_section", str(raised.exception))
+        definitions = list(installable_skill_definitions())
+        victim = next(d for d in definitions if "quality_bar" in d.portable_overrides)
+        mutated = replace(victim, quality_bar=(*victim.quality_bar, "a line added upstream"))
+        problems = _shadow_problems([mutated if d is victim else d for d in definitions])
+        self.assertEqual(len(problems), 1, problems)
+        self.assertTrue(problems[0].startswith(f"{omh_skill_display_name(victim.name)}::quality_bar: shadowed section changed"), problems[0])
+        self.assertIn("update portable_override_shadows['quality_bar'] to ", problems[0])
 
     def test_user_scope_mirror_has_shared_manifest_and_drift(self):
         from omh.install.agent_skills_projection import install_agent_skills, agent_skills_status, MANIFEST_NAME
