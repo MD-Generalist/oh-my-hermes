@@ -4,6 +4,23 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **A local-source skill import no longer swallows a nested checkout or
+  OMH's own install output.** `omh install --source local` discovers
+  `SKILL.md` under the whole source root; a linked worktree left under it
+  (its root carries a `.git` FILE, which the `".git" in parts` test never
+  saw), a submodule or a clone contributed another revision of the same
+  skills, and the project `.omh/skills/` tree — the managed install OUTPUT
+  in another layout — did too. Two templates then claimed one install path
+  and the second write refused as "local skill differs". Discovery now stops
+  at any nested repository root and skips `.omh`; the same source installs
+  twice as a no-op. Capture of one fact from two parallel tool calls now
+  persists one record: the duplicate check, candidate write and auto-safe
+  approval run under a capture lock (without it, 8 of 8 concurrent captures
+  persisted). The legacy expiry reader lists with `os.scandir` like the v2
+  reader, the open-reminders ledger writes through the shared atomic writer,
+  and capture imports the duplicate-summary normalizer from the bundle
+  instead of keeping a pinned copy.
+
 - **The memory provider serves its pack in the order Hermes calls its
   hooks.** Hermes runs `on_turn_start` and then `prefetch` inside the same
   turn, and queues the next render only after the turn ends. Since 2026-09-12

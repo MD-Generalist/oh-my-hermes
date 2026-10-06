@@ -24,9 +24,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 import json
-import os
 from pathlib import Path
-import tempfile
 from typing import Any
 
 from .awareness_delivery import _awareness_delivery_lock as _ledger_lock
@@ -39,6 +37,7 @@ from .memory_recall_support import (
     _redact_admitted_text,
 )
 from .memory_records import RECORD_SUMMARY_LIMIT_CHARS
+from .memory_state_files import write_text_atomic
 
 MEMORY_OPEN_REMINDERS_SCHEMA_VERSION = "omh_memory_open_reminders/v1"
 OPEN_REMINDERS_FILENAME = "open_reminders.json"
@@ -76,8 +75,8 @@ def mark_open_reminder_asked(omh_home: str | Path, record_id: str, *, asked_at: 
     to the ledger) so a provider prefetch racing an operator's
     ``omh memory keep-open`` cannot read the same ledger and overwrite the
     answer: both writers pass through this function. The write itself goes
-    through a temporary file and ``os.replace`` so a crash leaves a whole
-    ledger, not half of one. Raises ``OSError`` (a lock timeout is one) on a
+    through ``write_text_atomic`` (temporary file and ``os.replace``) so a
+    crash leaves a whole ledger, not half of one. Raises ``OSError`` (a lock timeout is one) on a
     home that cannot be written; the provider swallows that through
     ``_safely`` because a lost ledger line must never cost a turn, and the
     CLI reports it, so an operator's answer is either recorded or refused
@@ -97,18 +96,7 @@ def mark_open_reminder_asked(omh_home: str | Path, record_id: str, *, asked_at: 
             ensure_ascii=False,
             sort_keys=True,
         )
-        descriptor, temporary = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent, text=True)
-        try:
-            with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
-                handle.write(payload + "\n")
-            os.chmod(temporary, 0o600)
-            os.replace(temporary, path)
-        except OSError:
-            try:
-                os.unlink(temporary)
-            except OSError:
-                pass
-            raise
+        write_text_atomic(path, payload + "\n")
     return entry
 
 

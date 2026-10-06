@@ -351,6 +351,33 @@ class OnDuplicateSkipTests(unittest.TestCase):
             self.assertEqual(kept["receipt_state"], "candidate_persisted")
             self.assertEqual(len(list(candidates.iterdir())), len(before) + 1)
 
+    def test_parallel_captures_of_one_fact_persist_one_record(self) -> None:
+        # Two captures of the same fact arriving together both passed the
+        # duplicate check and both persisted; the capture lock serializes the
+        # check, the write and the approval.
+        from concurrent.futures import ThreadPoolExecutor
+
+        from omh.workflows.memory import capture_project_memory_candidate, scan_project_memory_records
+
+        with TemporaryDirectory() as tmp, chdir(tmp):
+            root = Path(tmp)
+            seed_project_identity(root)
+            paths = resolve_paths(root / "store", root / "hermes")
+
+            def capture(_: int) -> dict:
+                return capture_project_memory_candidate(paths, "Staging deploys run before production.", on_duplicate="skip")
+
+            with ThreadPoolExecutor(max_workers=8) as pool:
+                results = list(pool.map(capture, range(8)))
+            captured = [result for result in results if result["captured"]]
+            self.assertEqual(len(captured), 1, [result.get("reason") for result in results])
+            self.assertTrue(captured[0]["auto_approved"])
+            skipped = [result for result in results if not result["captured"]]
+            self.assertEqual({result["reason"] for result in skipped}, {"duplicate"})
+            self.assertEqual({result["duplicate_of"] for result in skipped}, {captured[0]["record"]["record_id"]})
+            records, unreadable = scan_project_memory_records(paths)
+            self.assertEqual((len(records), unreadable), (1, []))
+
     def test_skip_only_counts_a_record_held_under_the_same_scope(self) -> None:
         # The same fact stated in another project is a different memory: a
         # record confined to project A is never recalled in project B, so

@@ -474,8 +474,10 @@ def count_record_expiry(
 def _legacy_expiry_records(omh_home: str | Path) -> list[dict[str, Any]]:
     directory = Path(omh_home).expanduser() / "memory" / "records"
     records: list[dict[str, Any]] = []
+    # Listed the same way as the v2 reader: `Path.glob` turned an unreadable
+    # directory into [] and the `except OSError` here never ran.
     try:
-        candidates = sorted(directory.glob("*.json"))
+        candidates = _json_candidates(directory)
     except OSError:
         return records
     for path in candidates:

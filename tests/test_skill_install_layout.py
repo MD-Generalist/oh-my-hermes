@@ -172,6 +172,45 @@ class InstalledLayoutTests(unittest.TestCase):
             uninstall_skill_pack(paths, remove_files=True)
             self.assertFalse(apple_dir.exists())
 
+    def test_local_source_ignores_a_nested_checkout(self) -> None:
+        # A linked worktree (`.git` is a FILE at its root), a submodule or a
+        # clone left under the source root carries another revision of the
+        # same skills. Importing it beside the source's own copy made two
+        # templates claim one install path, and the second write refused as a
+        # local modification -- on every machine with a stale worktree under
+        # the checkout.
+        raw = "---\nname: omh-browser\n---\nsource-sentinel\n"
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "source"
+            skill = source / "skills/omh-browser/SKILL.md"
+            skill.parent.mkdir(parents=True)
+            skill.write_text(raw, encoding="utf-8")
+            for nested_root, marker in (
+                (source / ".claude/worktrees/agent-1", "gitdir: /elsewhere/.git/worktrees/agent-1\n"),
+                (source / "vendor/clone", None),
+            ):
+                copy = nested_root / "skills/omh-browser/SKILL.md"
+                copy.parent.mkdir(parents=True)
+                copy.write_text(raw + "other-revision\n", encoding="utf-8")
+                if marker is None:
+                    (nested_root / ".git").mkdir()
+                else:
+                    (nested_root / ".git").write_text(marker, encoding="utf-8")
+            # OMH's own project state root under the source is its managed
+            # install OUTPUT in another layout, never an input.
+            own_output = source / ".omh/skills/guide/omh-browser/SKILL.md"
+            own_output.parent.mkdir(parents=True)
+            own_output.write_text(raw + "installed-layout\n", encoding="utf-8")
+            self.assertEqual(discover_skill_files(source), [skill])
+            paths = resolve_paths(root / ".omh", root / ".hermes")
+            install_skill_pack(paths, source="local", source_dir=source, profile="full")
+            template = convert_skill(raw, skill.parent.name)
+            installed = paths.skills_dir / skill_install_relative_dir(template.name) / "SKILL.md"
+            self.assertEqual(installed.read_text(encoding="utf-8"), template.content)
+            # A second install over the same source is a no-op, not a refusal.
+            install_skill_pack(paths, source="local", source_dir=source, profile="full")
+
     def test_local_source_ignores_stale_omc_skill_and_reference_copies(self) -> None:
         raw = "---\nname: omh-browser\n---\nsource-sentinel\n"
         with TemporaryDirectory() as tmp:

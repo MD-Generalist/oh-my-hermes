@@ -44,6 +44,7 @@ from ..plugin_bundle.omh.memory_governance import (
     stable_artifact_identity,
 )
 from ..plugin_bundle.omh.memory_principals import build_memory_identity, memory_identity_errors, parse_principal_context
+from ..plugin_bundle.omh.memory_recall_support import normalized_summary_key
 from ..plugin_bundle.omh.memory_recall_selector import (
     _evaluate_memory_artifact as _shared_evaluate_memory_artifact,
     effective_recall_configuration as effective_recall_configuration,
@@ -1111,72 +1112,78 @@ def capture_project_memory_candidate(
     # comparison uses the candidate's own summary, which already went through
     # the same redaction/truncation pipeline as every stored summary; the raw
     # input would miss any match past the redaction cap.
-    if on_duplicate == "skip":
-        # The model-driven capture path: a candidate stamped duplicate_of
-        # would wait for a reviewer who is not in that loop, so it names the
-        # record already held and persists nothing -- but only a record held
-        # under the SAME confinement counts as held. The review-first stamp
-        # below may point across scopes because a reviewer sees it; here
-        # nothing is persisted, and a match in another project or for another
-        # principal would never be recalled under this lens, so it is not
-        # "already remembered" and the capture goes through.
-        duplicate_of = _duplicate_held_in_confinement(paths, candidate)
-    else:
-        duplicate_of = _find_duplicate_record(paths, str(candidate.get("summary", "")))
-    if duplicate_of and on_duplicate == "skip":
-        return {
-            "schema_version": PROJECT_MEMORY_CAPTURE_SCHEMA_VERSION,
-            "captured": False,
-            "auto_approved": False,
-            "policy": policy,
-            "reason": "duplicate",
-            "duplicate_of": duplicate_of,
-            "receipt_state": None,
-            "redaction_policy": "metadata_only",
-            "claim_boundary": (
-                "An existing OMH-local record already carries this summary; nothing was persisted. "
-                "This is not evidence that Hermes recalled or used that record."
-            ),
-        }
-    if duplicate_of:
-        candidate["duplicate_of"] = duplicate_of
-    # Relative-time prose is detected on the summary as it will be STORED
-    # (post-redaction), because that is the text that will lie later. The
-    # verdict rides on the candidate for the review card, and it suppresses
-    # auto-approval below: a fact with a hidden expiry needs a human to
-    # either accept the rot or restate it with an absolute date.
-    relative_phrase = _relative_time_phrase(str(candidate.get("summary", "")))
-    if relative_phrase:
-        candidate["time_sensitivity"] = {
-            "relative_phrase": relative_phrase,
-            "detail": (
-                "The summary contains a relative-time phrase whose anchor (the moment of capture) "
-                "is not part of the stored content, so it will read wrong once time passes."
-            ),
-            "next_action": (
-                "Restate the fact with an absolute date, or set the deadline structurally "
-                "(--stale-after YYYY-MM-DD / --stale-after-days N) and approve as-is."
-            ),
-        }
-    _write_project_memory_candidate(paths, candidate)
-    auto_approved = False
-    record: dict[str, object] = {}
-    # force_review keeps derived aggregates (e.g. rollup episodes) on the
-    # review path even under auto-safe: derived content is a curation act,
-    # not a captured observation.
-    if bool(policy.get("auto_approve_safe")) and candidate.get("safety", {}).get("status") == "safe" and not duplicate_of and not force_review and not relative_phrase:
-        # Auto-safe binds to the candidate it just wrote: the revision comes
-        # from that object, so this path proves the same payload it approved
-        # rather than skipping the guard it asks reviewers to carry.
-        approved = approve_project_memory_candidate(
-            paths,
-            str(candidate["candidate_id"]),
-            approved_by="auto-safe",
-            expected_revision=project_memory_review_revision(candidate),
-        )
-        record = approved.get("record", {}) if isinstance(approved.get("record"), dict) else {}
-        candidate = approved.get("candidate", candidate) if isinstance(approved.get("candidate"), dict) else candidate
-        auto_approved = True
+    # Duplicate check, candidate write and auto-safe approval happen under
+    # one capture lock: two captures of the same fact arriving together both
+    # passed the check and both persisted. The store (index) lock inside
+    # `approve_project_memory_candidate` is a different file, so holding this
+    # one across the call is not a re-entry.
+    with file_lock(_memory_capture_lock_path(paths), private=True):
+        if on_duplicate == "skip":
+            # The model-driven capture path: a candidate stamped duplicate_of
+            # would wait for a reviewer who is not in that loop, so it names the
+            # record already held and persists nothing -- but only a record held
+            # under the SAME confinement counts as held. The review-first stamp
+            # below may point across scopes because a reviewer sees it; here
+            # nothing is persisted, and a match in another project or for another
+            # principal would never be recalled under this lens, so it is not
+            # "already remembered" and the capture goes through.
+            duplicate_of = _duplicate_held_in_confinement(paths, candidate)
+        else:
+            duplicate_of = _find_duplicate_record(paths, str(candidate.get("summary", "")))
+        if duplicate_of and on_duplicate == "skip":
+            return {
+                "schema_version": PROJECT_MEMORY_CAPTURE_SCHEMA_VERSION,
+                "captured": False,
+                "auto_approved": False,
+                "policy": policy,
+                "reason": "duplicate",
+                "duplicate_of": duplicate_of,
+                "receipt_state": None,
+                "redaction_policy": "metadata_only",
+                "claim_boundary": (
+                    "An existing OMH-local record already carries this summary; nothing was persisted. "
+                    "This is not evidence that Hermes recalled or used that record."
+                ),
+            }
+        if duplicate_of:
+            candidate["duplicate_of"] = duplicate_of
+        # Relative-time prose is detected on the summary as it will be STORED
+        # (post-redaction), because that is the text that will lie later. The
+        # verdict rides on the candidate for the review card, and it suppresses
+        # auto-approval below: a fact with a hidden expiry needs a human to
+        # either accept the rot or restate it with an absolute date.
+        relative_phrase = _relative_time_phrase(str(candidate.get("summary", "")))
+        if relative_phrase:
+            candidate["time_sensitivity"] = {
+                "relative_phrase": relative_phrase,
+                "detail": (
+                    "The summary contains a relative-time phrase whose anchor (the moment of capture) "
+                    "is not part of the stored content, so it will read wrong once time passes."
+                ),
+                "next_action": (
+                    "Restate the fact with an absolute date, or set the deadline structurally "
+                    "(--stale-after YYYY-MM-DD / --stale-after-days N) and approve as-is."
+                ),
+            }
+        _write_project_memory_candidate(paths, candidate)
+        auto_approved = False
+        record: dict[str, object] = {}
+        # force_review keeps derived aggregates (e.g. rollup episodes) on the
+        # review path even under auto-safe: derived content is a curation act,
+        # not a captured observation.
+        if bool(policy.get("auto_approve_safe")) and candidate.get("safety", {}).get("status") == "safe" and not duplicate_of and not force_review and not relative_phrase:
+            # Auto-safe binds to the candidate it just wrote: the revision comes
+            # from that object, so this path proves the same payload it approved
+            # rather than skipping the guard it asks reviewers to carry.
+            approved = approve_project_memory_candidate(
+                paths,
+                str(candidate["candidate_id"]),
+                approved_by="auto-safe",
+                expected_revision=project_memory_review_revision(candidate),
+            )
+            record = approved.get("record", {}) if isinstance(approved.get("record"), dict) else {}
+            candidate = approved.get("candidate", candidate) if isinstance(approved.get("candidate"), dict) else candidate
+            auto_approved = True
     review_reason = "" if auto_approved else _capture_review_reason(
         candidate, policy, duplicate_of=duplicate_of, relative_phrase=relative_phrase, force_review=force_review
     )
@@ -1722,6 +1729,10 @@ def record_attached_recall_usage(paths: OmhPaths, payload: dict[str, object]) ->
         return {"schema_version": MEMORY_RECALL_USAGE_SCHEMA_VERSION, "recorded": 0, "records": {}}
 
 
+def _memory_capture_lock_path(paths: OmhPaths) -> Path:
+    return paths.memory_dir / ".capture.lock"
+
+
 def _memory_usage_path(paths: OmhPaths) -> Path:
     return paths.memory_dir / "usage.json"
 
@@ -1795,8 +1806,10 @@ def record_recall_usage(paths: OmhPaths, record_ids: list[str], *, now: str | No
     }
 
 
-def _normalized_summary_key(summary: str) -> str:
-    return " ".join(unicodedata.normalize("NFC", str(summary or "")).lower().split())
+# One identity for "the same fact": capture's `duplicate_of` and recall's
+# `duplicate_record` read the same function, so the two can never disagree.
+# The bundle owns it because the bundle cannot import this package.
+_normalized_summary_key = normalized_summary_key
 
 
 def _find_duplicate_record(paths: OmhPaths, summary: str, *, now: datetime | None = None) -> str:
