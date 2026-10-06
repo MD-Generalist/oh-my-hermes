@@ -589,7 +589,11 @@ def _router_intent_module() -> object | None:
         try:
             from omh.routing import intent as module
         except ImportError:
-            return None  # mid-import of the cycle; the next call resolves it.
+            # `routing` itself is unimportable although localization bound:
+            # keep the fallbacks. A half-initialised module is not this case;
+            # `from pkg import submodule` hands it back from sys.modules and
+            # the caller's getattr returns None for that call only.
+            return None
     return module
 
 
@@ -687,7 +691,11 @@ def _router_policy_module() -> object | None:
         try:
             from omh.routing import policy as module
         except ImportError:
-            return None  # mid-import of the cycle; the next call resolves it.
+            # `routing` itself is unimportable although localization bound:
+            # keep the fallbacks. A half-initialised module is not this case;
+            # `from pkg import submodule` hands it back from sys.modules and
+            # the caller's getattr returns None for that call only.
+            return None
     return module
 
 
