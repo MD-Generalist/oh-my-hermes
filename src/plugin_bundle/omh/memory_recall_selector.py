@@ -58,6 +58,7 @@ from .memory_recall_support import (
     _replay_evaluation,
     _resolve_query_intent,
     _scope,
+    normalized_summary_key,
 )
 
 
@@ -177,7 +178,60 @@ def effective_recall_configuration() -> dict[str, object]:
         "expires_soon_days": _EXPIRES_SOON_DAYS,
         "review_due_soon_days": _REVIEW_DUE_SOON_DAYS,
         "cadence_defaults": dict(sorted(_MEMORY_CADENCE_DEFAULTS.items())),
+        # Behaviour switches with no tunable constant: naming them here is
+        # what makes a report built before either existed refuse comparison.
+        "query_fallback": "active_tier/v1",
+        "duplicate_collapse": "normalized_exact_match/v1",
     }
+
+
+def _collapse_duplicate_summaries(
+    included: list[dict[str, object]], *, pins: set[str]
+) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
+    """One pack slot per normalized summary; the others are named, not dropped.
+
+    Two approved records saying the same thing would spend two slots of the
+    budget on one fact. Capture already flags the second as `duplicate_of`,
+    but review may approve both, so the pack keeps one: a pinned record first
+    (a pin is the operator's explicit anchor), then the newest `approved_at`,
+    then the smaller record id. The match is exact after normalization --
+    never similarity -- so two facts that merely look alike both stay.
+    """
+    groups: dict[str, list[dict[str, object]]] = {}
+    for item in included:
+        key = normalized_summary_key(str(item.get("summary", "")))
+        if key:
+            groups.setdefault(key, []).append(item)
+    keep_by_id: dict[str, str] = {}
+    for group in groups.values():
+        if len(group) < 2:
+            continue
+        # max() returns the first maximal element, so sorting by record id
+        # first makes the smaller id win an equal (pinned, approved_at) pair.
+        kept = max(
+            sorted(group, key=lambda item: str(item.get("record_id", ""))),
+            key=lambda item: (str(item.get("record_id", "")) in pins, str(item.get("approved_at", ""))),
+        )
+        for item in group:
+            if item is not kept:
+                keep_by_id[str(item.get("record_id", ""))] = str(kept.get("record_id", ""))
+    remaining: list[dict[str, object]] = []
+    duplicates: list[dict[str, object]] = []
+    for item in included:
+        record_id = str(item.get("record_id", ""))
+        if record_id not in keep_by_id:
+            remaining.append(item)
+            continue
+        duplicates.append(
+            {
+                "record_id": record_id,
+                "reason": "duplicate_record",
+                "duplicate_of": keep_by_id[record_id],
+                "staleness": item.get("staleness", {"state": "not_checked"}),
+                **_recall_evidence_fields(item.get("replay_evaluation")),
+            }
+        )
+    return remaining, duplicates
 
 
 def _evaluate_memory_artifact(
@@ -339,6 +393,7 @@ def select_memory_recall(
     usage = usage or {}
     included: list[dict[str, object]] = []
     excluded: list[dict[str, object]] = []
+    no_overlap_active: list[tuple[dict[str, object], dict[str, Any], dict[str, object], dict[str, object]]] = []
     archived_excluded = 0
     for record in records:
         identity_decision = principal_recall_decision(record, parsed_principal, shared_surface=shared_surface)
@@ -422,9 +477,31 @@ def select_memory_recall(
         # A pinned anchor is always in context: it skips only the
         # no_query_overlap cut, never an eligibility check above.
         if query and score <= 0 and str(record.get("record_id", "")) not in pins:
-            excluded.append(_recall_exclusion(record, evaluation, staleness=staleness, reason="no_query_overlap"))
+            exclusion = _recall_exclusion(record, evaluation, staleness=staleness, reason="no_query_overlap")
+            excluded.append(exclusion)
+            if attention_tier == "active":
+                no_overlap_active.append((exclusion, record, evaluation, staleness))
             continue
         included.append(_recall_item(record, score=score, staleness=staleness, evaluation=evaluation, attention_tier=attention_tier))
+    # A chat message that shares no token with any record used to hand the
+    # model an empty pack while approved active memories sat in the store,
+    # every such turn. When the query matched nothing at all -- no pin, no
+    # overlap -- the active tier is served as an unqueried pack would serve
+    # it, and the pack says so. Reference stays keyword-gated and archive
+    # stays explicit, and any overlap at all (a partial match) means the
+    # query did its job, so nothing is re-admitted then. A query with no
+    # indexable tokens never reaches here: it already scores every record 1.
+    query_fallback: dict[str, object] | None = None
+    if query and not included and no_overlap_active:
+        readmitted = {id(entry) for entry, *_ in no_overlap_active}
+        excluded = [entry for entry in excluded if id(entry) not in readmitted]
+        included = [
+            _recall_item(record, score=1, staleness=staleness, evaluation=evaluation, attention_tier="active")
+            for _, record, evaluation, staleness in no_overlap_active
+        ]
+        query_fallback = {"mode": "active_tier", "reason": "no_query_overlap", "readmitted_count": len(included)}
+    included, duplicates = _collapse_duplicate_summaries(included, pins=pins)
+    excluded.extend(duplicates)
     _attach_recall_ranking(
         included,
         usage,
@@ -503,6 +580,9 @@ def select_memory_recall(
         "scope": _scope(scope_kind or "project", scope_ref or "default"),
         "perspective": {"observer": observer or "", "observed": observed or ""},
         "query_intent": query_intent,
+        # Present only when the active-tier fallback served this pack, so a
+        # pack the query answered stays byte-identical to before it existed.
+        **({"query_fallback": query_fallback} if query_fallback else {}),
         "included_records": included,
         "excluded_records": excluded,
         "freshness_warnings": _freshness_warnings(included, excluded),

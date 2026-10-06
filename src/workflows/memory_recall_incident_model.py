@@ -113,6 +113,7 @@ REASON_STAGES: Final[dict[str, Stage]] = {
     'source_changed': 'stale_expired_or_archived', 'source_unverifiable': 'stale_expired_or_archived',
     'no_query_overlap': 'relevance_attention_or_budget_exclusion',
     'attention_cut': 'relevance_attention_or_budget_exclusion', 'over_budget': 'relevance_attention_or_budget_exclusion',
+    'duplicate_record': 'relevance_attention_or_budget_exclusion',
     'selected_not_rendered': 'selected_not_rendered',
     'rendered_delivery_not_observed': 'rendered_delivery_not_observed',
     'delivered_model_use_unknown': 'delivered_model_use_unknown', 'used': 'used',

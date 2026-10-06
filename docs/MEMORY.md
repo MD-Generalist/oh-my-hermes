@@ -689,6 +689,24 @@ carries a `ranking` block with its per-signal ranks and an integer
 The usage signal ranks on saturating buckets (0, 1-2, 3-9, 10+ deliveries) so
 delivery counts cannot compound into a permanent head start.
 
+A query that matches nothing does not empty the pack. When a query has
+indexable tokens and no eligible record overlaps it and no pin applies, every
+`active`-tier record that was held out only as `no_query_overlap` is served the
+way an unqueried pack serves it — relevance ties, recency and usage decide the
+order, and the normal budget cut applies — and the pack carries
+`query_fallback: {"mode": "active_tier", "reason": "no_query_overlap",
+"readmitted_count": N}` (the key is absent when the fallback did not fire; the
+prefetch receipt records it as `selection.query_fallback`, null otherwise).
+Reference records stay keyword-gated and archived records stay explicit, so
+they remain `no_query_overlap` / `archived_tier` exclusions. Any overlap at all
+means the query did its job: a partial match never falls back. Two eligible
+records whose summaries are equal after NFC, lowercasing and whitespace
+collapse — the same normalization capture uses for `duplicate_of` — take one
+slot: the pinned one, else the newest `approved_at`, else the smaller record
+id stays, and the other is excluded as `duplicate_record` with `duplicate_of`
+naming the record kept. The collapse runs after eligibility and before
+ranking, so a duplicate never spends budget.
+
 Delivery usage counts only recall packs that were actually attached to a
 prepared handoff payload — building a pack is speculative, so a delegation
 that ends without a handoff, or rejects the pack, counts nothing. A CLI

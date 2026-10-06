@@ -118,6 +118,9 @@ def build_prefetch_receipt(
             "selected_record_ids": selected_ids,
             "selected_count": len(selected_ids),
             "truncated": bool(pack.get("truncated", False)),
+            # The pack carries this only when the active-tier fallback served
+            # it; the receipt keeps a fixed shape and says null otherwise.
+            "query_fallback": dict(pack["query_fallback"]) if isinstance(pack.get("query_fallback"), dict) else None,
             "exclusion_reason_counts": {str(key): int(value) for key, value in sorted(selection.exclusion_reason_counts.items())},
         },
         "rendering": {

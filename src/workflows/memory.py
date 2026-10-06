@@ -247,6 +247,7 @@ _PROJECT_MEMORY_RECALL_PACK_KEYS = {
     "scope",
     "perspective",
     "query_intent",
+    "query_fallback",
     "included_records",
     "excluded_records",
     "freshness_warnings",
@@ -334,6 +335,7 @@ _RECALL_RANKING_KEYS = {
 # `records/` and writes a tombstone; a tier change moves nothing and deletes
 # nothing. The tier feeds the one existing ranking ladder in
 # `build_project_memory_recall_pack`, never a second ordering pass.
+_RECALL_QUERY_FALLBACK_KEYS = {"mode", "reason", "readmitted_count"}
 _RECALL_ATTENTION_KEYS = {
     "active_included",
     "reference_included",
@@ -422,6 +424,7 @@ _PROJECT_MEMORY_EXCLUDED_KEYS = {
     "reason",
     "staleness",
     "sibling_included",
+    "duplicate_of",
     "revision",
     "admission_mode",
     "source_class",
@@ -3310,6 +3313,9 @@ def validate_project_memory_recall_pack(value: Any, *, label: str = "memory_reca
     # the full scalar-only shape.
     if "attention" in value:
         _validate_context_map(value.get("attention"), _RECALL_ATTENTION_KEYS, errors, f"{label}.attention")
+    # Present only when the active-tier fallback served the pack.
+    if "query_fallback" in value:
+        _validate_context_map(value.get("query_fallback"), _RECALL_QUERY_FALLBACK_KEYS, errors, f"{label}.query_fallback")
     _validate_context_map(value.get("task_ref"), _PROJECT_MEMORY_TASK_REF_KEYS, errors, f"{label}.task_ref")
     if not isinstance(value.get("truncated"), bool):
         errors.append(f"{label}.truncated must be a boolean")

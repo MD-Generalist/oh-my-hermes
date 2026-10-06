@@ -34,7 +34,7 @@ from ..plugin_bundle.omh.memory_governance import (
     stable_artifact_identity,
 )
 
-FIXTURE_CORPUS_VERSION = "omh-memory-retrieval-fixtures/v2"
+FIXTURE_CORPUS_VERSION = "omh-memory-retrieval-fixtures/v3"
 FIXTURE_PROJECT_IDENTITY = "repo:" + hashlib.sha256(b"example.invalid/memory-fixture").hexdigest()[:32]
 # The corpus clock. Absolute, declared once, never derived from the host.
 FIXTURE_CLOCK = datetime(2031, 1, 2, 3, 4, 5, tzinfo=timezone.utc)
@@ -250,19 +250,54 @@ RETRIEVAL_CASES: tuple[dict[str, object], ...] = (
         excluded_reasons=(("mem_r03_unrelated", "no_query_overlap"),),
     ),
     _case(
-        "no_match_yields_an_empty_pack_with_named_reasons",
-        "A query nothing answers returns an empty pack in which every record still carries its exclusion reason.",
+        "no_match_falls_back_to_the_active_tier",
+        "A query nothing answers serves the active records as an unqueried pack would, instead of an empty pack.",
         records=(
             _record("mem_r01_exact", "Staging deploys run canary batches before promotion", approved_at=_YOUNG, tags=("deploy", "staging")),
             _record("mem_r02_partial", "Deploys are announced in the release channel", approved_at=_YOUNG, tags=("deploy",)),
             _record("mem_r03_unrelated", "The parser owner is the platform team", approved_at=_YOUNG, tags=("parser",)),
         ),
         query="quantum ledger reconciliation",
-        excluded_reasons=(
-            ("mem_r01_exact", "no_query_overlap"),
-            ("mem_r02_partial", "no_query_overlap"),
-            ("mem_r03_unrelated", "no_query_overlap"),
+        included_order=("mem_r01_exact", "mem_r02_partial", "mem_r03_unrelated"),
+    ),
+    _case(
+        "no_match_fallback_leaves_reference_keyword_gated",
+        "The no-match fallback re-admits only the active tier; a reference record still needs a keyword.",
+        records=(
+            _record("mem_r04_active", "Deploys wait for a green nightly run", approved_at=_YOUNG, tags=("deploy",)),
+            _record(
+                "mem_r05_reference",
+                "The parser owner is the platform team",
+                approved_at=_YOUNG,
+                tags=("parser",),
+                attention_tier="reference",
+            ),
         ),
+        query="quantum ledger reconciliation",
+        included_order=("mem_r04_active",),
+        excluded_reasons=(("mem_r05_reference", "no_query_overlap"),),
+    ),
+    _case(
+        "partial_match_never_falls_back",
+        "Once any record overlaps the query, an active record that does not stays out as no_query_overlap.",
+        records=(
+            _record("mem_r06_match", "Staging deploys run canary batches before promotion", approved_at=_YOUNG, tags=("staging",)),
+            _record("mem_r07_miss", "The parser owner is the platform team", approved_at=_YOUNGER, tags=("parser",)),
+        ),
+        query="staging quantum",
+        included_order=("mem_r06_match",),
+        excluded_reasons=(("mem_r07_miss", "no_query_overlap"),),
+    ),
+    _case(
+        "duplicate_records_collapse_to_the_newest",
+        "Two approved records with the same normalized summary take one slot; the older one names why it is out.",
+        records=(
+            _record("mem_r08_older", "Hotfixes go through the release branch", approved_at=_AGING, tags=("hotfix",)),
+            _record("mem_r09_newer", "  hotfixes GO through   the release branch ", approved_at=_YOUNGER, tags=("hotfix",)),
+        ),
+        query="hotfixes release branch",
+        included_order=("mem_r09_newer",),
+        excluded_reasons=(("mem_r08_older", "duplicate_record"),),
     ),
     _case(
         "same_topic_disagreement_names_the_cut_sibling",
@@ -465,7 +500,7 @@ RETRIEVAL_CASES: tuple[dict[str, object], ...] = (
         "Two records of equal relevance, equal age, and equal usage order by record id, never by store order.",
         records=(
             _record("mem_ra1_first", "Backups run every night", approved_at=_YOUNG, tags=("backup",)),
-            _record("mem_ra2_second", "Backups run every night", approved_at=_YOUNG, tags=("backup",)),
+            _record("mem_ra2_second", "Backups run each night", approved_at=_YOUNG, tags=("backup",)),
         ),
         query="backups night",
         included_order=("mem_ra1_first", "mem_ra2_second"),

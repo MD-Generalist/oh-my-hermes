@@ -841,10 +841,13 @@ class ProviderReminderTests(unittest.TestCase):
             # does not mention it: the reminder is eligibility-bound, not
             # query-bound.
             unrelated = _open_record(paths, "the cache question nobody typed", days_open=34)
+            # A query that overlaps no record at all re-admits the active tier,
+            # so one record must match for the open one to stay out of the pack.
+            _approved(paths, "zzz overlaps the deploy notes")
             provider.on_turn_start(2, "next")
             provider.queue_prefetch("zzz nothing overlaps")
             pack = provider.prefetch("zzz nothing overlaps")
-            self.assertNotIn("<memory_records>", pack)
+            self.assertNotIn('<record id="%s"' % unrelated["record_id"], pack)
             self.assertIn(f"({unrelated['record_id']})", pack)
             self.assertEqual(set(read_open_reminders(root / ".omh")), {unrelated["record_id"]})
 
