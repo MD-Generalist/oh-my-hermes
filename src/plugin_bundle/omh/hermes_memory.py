@@ -27,8 +27,10 @@ edits them.
 
 from __future__ import annotations
 
+import fnmatch
 import hashlib
 import json
+import os
 import re
 import time
 from dataclasses import dataclass
@@ -284,7 +286,14 @@ PROJECT_MEMORY_RECORD_SCHEMA_VERSION = "project_memory_record/v2"
 PRINCIPAL_PROJECT_MEMORY_RECORD_SCHEMA_VERSION = "project_memory_record/v3"
 
 
-def read_reviewed_records(omh_home: str | Path) -> list[dict[str, Any]]:
+# What `unreadable` holds when a whole directory could not be listed, in place
+# of a file basename. Relative on purpose: the receipt carries home digests,
+# never home paths.
+RECORDS_DIRECTORY_LABEL = "memory/records"
+REVIEWS_DIRECTORY_LABEL = "memory/reviews"
+
+
+def read_reviewed_records(omh_home: str | Path, *, unreadable: list[str] | None = None) -> list[dict[str, Any]]:
     """Every v2 record whose admission review exists, never legacy display-only records.
 
     No replay verdict is applied here. Supersession, expiry and review
@@ -293,9 +302,15 @@ def read_reviewed_records(omh_home: str | Path) -> list[dict[str, Any]]:
     would drop a superseded or expired record before the selector could name
     it, so the live receipt could never report the exclusion the canonical
     handoff reports.
+
+    A record or review that cannot be read or parsed is still skipped, so
+    one corrupt file never costs the rest of the store. When ``unreadable``
+    is given, each skip appends the file's basename (never its content) and
+    a directory that cannot be listed appends its label, so the caller can
+    tell a corrupt store from an empty one.
     """
     home = Path(omh_home).expanduser() / "memory"
-    return _reviewed_records(home, _read_reviews(home / "reviews"))
+    return _reviewed_records(home, _read_reviews(home / "reviews", unreadable=unreadable), unreadable=unreadable)
 
 
 def read_approved_records(omh_home: str | Path) -> list[dict[str, Any]]:
@@ -311,11 +326,18 @@ def read_approved_records(omh_home: str | Path) -> list[dict[str, Any]]:
     ]
 
 
-def _reviewed_records(home: Path, reviews: dict[str, dict[str, object]]) -> list[dict[str, Any]]:
+def _reviewed_records(
+    home: Path,
+    reviews: dict[str, dict[str, object]],
+    *,
+    unreadable: list[str] | None = None,
+) -> list[dict[str, Any]]:
     records: list[dict[str, Any]] = []
     try:
-        candidates = sorted((home / "records").glob("*.json"))
+        candidates = _json_candidates(home / "records")
     except OSError:
+        if unreadable is not None:
+            unreadable.append(RECORDS_DIRECTORY_LABEL)
         return records
     for path in candidates:
         try:
@@ -323,6 +345,8 @@ def _reviewed_records(home: Path, reviews: dict[str, dict[str, object]]) -> list
                 continue
             data = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, UnicodeDecodeError, ValueError):
+            if unreadable is not None:
+                unreadable.append(path.name)
             continue
         if not isinstance(data, dict) or data.get("schema_version") not in {
             PROJECT_MEMORY_RECORD_SCHEMA_VERSION,
@@ -336,11 +360,29 @@ def _reviewed_records(home: Path, reviews: dict[str, dict[str, object]]) -> list
     return records
 
 
-def _read_reviews(directory: Path) -> dict[str, dict[str, object]]:
+def _json_candidates(directory: Path) -> list[Path]:
+    """The directory's ``*.json`` entries, sorted; [] when it does not exist.
+
+    Listed with ``os.scandir`` rather than ``Path.glob`` because glob turns a
+    directory it may not read into an empty result (measured on CPython
+    3.14), which made a store whose directory lost its permissions look
+    exactly like an empty one. Any listing failure but absence raises.
+    """
+    try:
+        with os.scandir(directory) as entries:
+            names = [entry.name for entry in entries if fnmatch.fnmatch(entry.name, "*.json")]
+    except FileNotFoundError:
+        return []
+    return sorted(directory / name for name in names)
+
+
+def _read_reviews(directory: Path, *, unreadable: list[str] | None = None) -> dict[str, dict[str, object]]:
     reviews: dict[str, dict[str, object]] = {}
     try:
-        candidates = sorted(directory.glob("*.json"))
+        candidates = _json_candidates(directory)
     except OSError:
+        if unreadable is not None:
+            unreadable.append(REVIEWS_DIRECTORY_LABEL)
         return reviews
     for path in candidates:
         try:
@@ -348,6 +390,8 @@ def _read_reviews(directory: Path) -> dict[str, dict[str, object]]:
                 continue
             review = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, UnicodeDecodeError, ValueError):
+            if unreadable is not None:
+                unreadable.append(path.name)
             continue
         if isinstance(review, dict) and isinstance(review.get("review_id"), str):
             reviews[review["review_id"]] = review

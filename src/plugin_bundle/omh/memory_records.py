@@ -30,7 +30,7 @@ from pathlib import Path
 import re
 from typing import Any
 
-from .hermes_memory import _read_reviews, read_reviewed_records
+from .hermes_memory import RECORDS_DIRECTORY_LABEL, REVIEWS_DIRECTORY_LABEL, _read_reviews, read_reviewed_records
 from .memory_recall_selector import MemoryRecallSelection, select_memory_recall
 from .memory_recall_support import PROJECT_MEMORY_RECALL_PACK_SCHEMA_VERSION
 
@@ -61,6 +61,13 @@ class RecordStoreSnapshot:
     usage: dict[str, dict[str, object]]
     pins: frozenset[str]
     home_digests: tuple[str, ...]
+    # Basenames of record and review files the reader skipped as unreadable
+    # or unparseable, plus a directory label for a directory it could not
+    # list. Names only, never content. Empty means every file was read.
+    unreadable: tuple[str, ...] = ()
+    # True when a records or reviews directory could not be listed at all: the
+    # store may be full, and this snapshot cannot say.
+    store_read_error: bool = False
 
 
 @dataclass(frozen=True)
@@ -82,18 +89,23 @@ class PreparedPrefetch:
     clock: datetime
 
 
-def read_project_memory_records(homes: list[Path] | tuple[Path, ...]) -> list[dict[str, Any]]:
+def read_project_memory_records(
+    homes: list[Path] | tuple[Path, ...],
+    *,
+    unreadable: list[str] | None = None,
+) -> list[dict[str, Any]]:
     """Reviewed v2 records from every home, first home wins on a shared record id.
 
     No replay prefilter: supersession, expiry and review staleness are the
     selector's verdicts at the caller's clock, so the live receipt can name
     them exactly as the handoff does. Legacy display-only records and records
-    without a resolvable review never enter the snapshot.
+    without a resolvable review never enter the snapshot. ``unreadable``
+    collects what the reader skipped (see ``read_reviewed_records``).
     """
     seen: set[str] = set()
     records: list[dict[str, Any]] = []
     for home in homes:
-        for record in read_reviewed_records(home):
+        for record in read_reviewed_records(home, unreadable=unreadable):
             record_id = str(record.get("record_id", "") or "")
             if not record_id or record_id in seen:
                 continue
@@ -109,7 +121,10 @@ def read_record_store_snapshot(homes: list[Path] | tuple[Path, ...]) -> RecordSt
     `read_project_memory_records`; pins are a union because a pin in either
     store is a delivery-priority hint, never an eligibility input.
     """
-    records = read_project_memory_records(homes)
+    # Reviews are read twice below; only this pass collects, so a corrupt
+    # review is named once.
+    unreadable: list[str] = []
+    records = read_project_memory_records(homes, unreadable=unreadable)
     reviews: dict[str, dict[str, object]] = {}
     usage: dict[str, dict[str, object]] = {}
     pins: set[str] = set()
@@ -127,6 +142,8 @@ def read_record_store_snapshot(homes: list[Path] | tuple[Path, ...]) -> RecordSt
         usage=usage,
         pins=frozenset(pins),
         home_digests=tuple(_sha256(str(Path(home).expanduser().resolve())) for home in homes),
+        unreadable=tuple(unreadable),
+        store_read_error=any(name in (RECORDS_DIRECTORY_LABEL, REVIEWS_DIRECTORY_LABEL) for name in unreadable),
     )
 
 

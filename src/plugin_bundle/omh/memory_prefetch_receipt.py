@@ -37,6 +37,9 @@ CLAIM_BOUNDARY = (
     "It is not evidence of host delivery, model use, execution, review, CI, merge, or Hermes internal memory."
 )
 _HEX64 = frozenset("0123456789abcdef")
+_UNSIGNED_KEYS = frozenset({"receipt_id", "state", "served_at"})
+# Basenames of unreadable store files the receipt names; the count is never cut.
+MAX_UNREADABLE_NAMES = 16
 
 
 def build_prefetch_receipt(
@@ -47,11 +50,18 @@ def build_prefetch_receipt(
     rendered_block_count: int = 0,
     project_resolution: ProjectIdentityResolution | None = None,
     reminder: dict[str, object] | None = None,
+    unreadable: tuple[str, ...] | list[str] = (),
+    store_read_error: bool = False,
 ) -> dict[str, Any]:
     """Bind one selection and its rendering to configuration, lens, session and store.
 
     Raises ValueError when the rendering does not describe the selection it
     claims to render: a receipt must never be assembled from mismatched parts.
+
+    ``unreadable`` names the store files the reader skipped (basenames, or a
+    directory label when a whole directory could not be listed) and
+    ``store_read_error`` says a directory listing failed: without them a
+    corrupt record and a missing one produce the same receipt.
 
     ``reminder`` discloses the one ``omh reminder:`` line the pack carries
     about an open record -- record id and age only, never its summary -- so
@@ -77,7 +87,12 @@ def build_prefetch_receipt(
         "schema_version": MEMORY_PREFETCH_RECEIPT_SCHEMA_VERSION,
         "prepared_at": _stamp(prepared.clock),
         "session_id": str(pack.get("session_id", "") or session_id or ""),
-        "store": {"home_digests": [str(digest) for digest in home_digests]},
+        "store": {
+            "home_digests": [str(digest) for digest in home_digests],
+            "unreadable_count": len(unreadable),
+            "unreadable": [str(name) for name in list(unreadable)[:MAX_UNREADABLE_NAMES]],
+            "store_read_error": bool(store_read_error),
+        },
         "configuration_id": selection.configuration_id,
         "resolver_version": str(configuration["resolver_version"]),
         "project_identity": str(configuration["project_identity"]),
@@ -118,6 +133,8 @@ def build_prefetch_receipt(
             "rendered_block_count": max(int(rendered_block_count), 0),
         },
         "reminder": _reminder_projection(reminder),
+        "write_failures_count": 0,
+        "last_write_failure": None,
         "delivery_observed": None,
         "model_use_observed": None,
         "proves": PROVES,
@@ -127,9 +144,25 @@ def build_prefetch_receipt(
     return {**body, "receipt_id": _digest(body), "state": "prepared", "served_at": ""}
 
 
-def mark_prefetch_receipt_returned(receipt: dict[str, Any], *, served_at: datetime | None = None) -> dict[str, Any]:
-    """The prepared receipt, now recording that the section was handed back to the host."""
-    return {**receipt, "state": "returned_to_host", "served_at": _stamp(served_at if served_at is not None else datetime.now(timezone.utc))}
+def mark_prefetch_receipt_returned(
+    receipt: dict[str, Any],
+    *,
+    served_at: datetime | None = None,
+    write_failures_count: int = 0,
+    last_write_failure: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    """The prepared receipt, now recording that the section was handed back to the host.
+
+    ``write_failures_count`` and ``last_write_failure`` are the provider's
+    swallowed state writes up to this serve: a receipt that reports what the
+    provider did must also report what it failed to record. They are known
+    only at serve time, so the receipt id is re-derived over them here.
+    """
+    body = {key: value for key, value in receipt.items() if key not in _UNSIGNED_KEYS}
+    body["write_failures_count"] = max(int(write_failures_count), 0)
+    body["last_write_failure"] = _write_failure_projection(last_write_failure)
+    stamp = _stamp(served_at if served_at is not None else datetime.now(timezone.utc))
+    return {**body, "receipt_id": _digest(body), "state": "returned_to_host", "served_at": stamp}
 
 
 def validate_prefetch_receipt(value: object) -> list[str]:
@@ -141,7 +174,7 @@ def validate_prefetch_receipt(value: object) -> list[str]:
         encoded = json.dumps(value, ensure_ascii=False).encode("utf-8")
         if len(encoded) > MAX_PREFETCH_RECEIPT_BYTES:
             return ["size"]
-        body = {key: item for key, item in value.items() if key not in {"receipt_id", "state", "served_at"}}
+        body = {key: item for key, item in value.items() if key not in _UNSIGNED_KEYS}
         if value.get("receipt_id") != _digest(body):
             errors.append("receipt_id")
     except (TypeError, ValueError, RecursionError):
@@ -206,6 +239,17 @@ def validate_prefetch_receipt(value: object) -> list[str]:
         or reminder["open_days"] < 0
     ):
         errors.append("reminder")
+    # Absent on a receipt an earlier bundle wrote; when present, closed shapes.
+    store = value.get("store")
+    if isinstance(store, dict) and "unreadable_count" in store and not _store_unreadable_ok(store):
+        errors.append("store.unreadable")
+    if "write_failures_count" in value or "last_write_failure" in value:
+        count = value.get("write_failures_count")
+        last = value.get("last_write_failure")
+        if not _non_negative_int(count) or (last is None) != (count == 0) or (
+            last is not None and _write_failure_projection(last) != last
+        ):
+            errors.append("write_failures")
     if value.get("proves") != PROVES:
         errors.append("proves")
     for key in ("summary", "included_records", "query", "rendered_text"):
@@ -254,6 +298,31 @@ def _reminder_projection(reminder: dict[str, object] | None) -> dict[str, object
         "record_id": str(reminder["record_id"]),
         "open_days": days if isinstance(days, int) and not isinstance(days, bool) and days >= 0 else 0,
     }
+
+
+def _write_failure_projection(failure: object) -> dict[str, str] | None:
+    """Op and error class only: never the file path or the exception message."""
+    if not isinstance(failure, dict):
+        return None
+    op, error = failure.get("op"), failure.get("error")
+    if not isinstance(op, str) or not op or not isinstance(error, str) or not error:
+        return None
+    return {"op": op, "error": error}
+
+
+def _store_unreadable_ok(store: dict[str, Any]) -> bool:
+    count, names = store.get("unreadable_count"), store.get("unreadable")
+    return (
+        _non_negative_int(count)
+        and isinstance(names, list)
+        and all(isinstance(name, str) and name for name in names)
+        and len(names) == min(count, MAX_UNREADABLE_NAMES)
+        and isinstance(store.get("store_read_error"), bool)
+    )
+
+
+def _non_negative_int(value: object) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and value >= 0
 
 
 def _hex64(value: object) -> bool:

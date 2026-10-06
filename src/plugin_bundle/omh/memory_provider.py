@@ -34,8 +34,6 @@ from . import runtime_paths
 
 import hashlib
 import json
-import os
-import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -74,13 +72,14 @@ from .memory_dreaming import (
     build_consolidation_handoff,
     clear_after_consolidation,
     consolidation_reasons,
+    dreaming_state_path,
     read_dreaming_state,
     read_latest_consolidation,
     record_compaction,
     record_consolidation_observed,
     record_memory_write,
     record_turn,
-    write_dreaming_state,
+    update_dreaming_state,
 )
 from .memory_eviction import build_eviction_plan
 from .memory_principals import parse_principal_context
@@ -97,10 +96,12 @@ from .memory_records import (
 )
 from .memory_open_reminders import (
     mark_open_reminder_asked,
+    open_reminders_path,
     read_open_reminders,
     render_open_reminder,
     select_open_reminder,
 )
+from .memory_state_files import state_file_lock, write_text_atomic, write_text_locked
 
 PROVIDER_NAME = "omh"
 # What Hermes prints in front of "recalled N memories" on every surface it
@@ -113,6 +114,9 @@ CONSOLIDATION_RENDER_BUDGET_CHARS = 1600
 CONSOLIDATION_MAX_ITEMS = 6
 WRITE_JOURNAL_SCHEMA_VERSION = "omh_memory_write_journal_entry/v1"
 JOURNAL_LIMIT = 32
+# Swallowed write failures kept on the provider for the receipt; the count
+# keeps going past it, only the detail is bounded.
+WRITE_FAILURE_LIMIT = 16
 
 # Hermes states that only a primary agent should write; a cron or subagent
 # context replaying its own system prompt would otherwise move the counters that
@@ -187,6 +191,11 @@ class OmhMemoryProvider(_MemoryProviderBase):
         # gateway platforms travel a different path and get the brief through
         # the pack instead. None means "say nothing here", never "fail".
         self._status_callback = None
+        # Every write `_safely` swallowed: op, file basename and error class
+        # only. Kept for the life of the provider, not reset per session, so a
+        # failure during one session's shutdown still reaches the next receipt.
+        self._write_failures: list[dict[str, str]] = []
+        self._write_failure_count = 0
 
     @property
     def name(self) -> str:
@@ -269,12 +278,21 @@ class OmhMemoryProvider(_MemoryProviderBase):
             self._pack = self.render_pack()
         self._served_pack, self._served_count = self._pack, self._pack_count
         self._served_has_memory = self._pack_has_memory
+        # The failures carried are the ones swallowed BEFORE this serve; a
+        # failure writing this very receipt shows on the next one.
         self._served_receipt = (
-            mark_prefetch_receipt_returned(self._prepared_receipt) if self._prepared_receipt is not None else None
+            mark_prefetch_receipt_returned(
+                self._prepared_receipt,
+                write_failures_count=self._write_failure_count,
+                last_write_failure=self._write_failures[-1] if self._write_failures else None,
+            )
+            if self._prepared_receipt is not None
+            else None
         )
         if self._served_receipt is not None:
             payload = json.dumps(self._served_receipt, ensure_ascii=False, sort_keys=True)
-            self._safely(lambda: _write_text(prefetch_receipt_path(self._omh_home), payload))
+            receipt_path = prefetch_receipt_path(self._omh_home)
+            self._safely("prefetch_receipt", receipt_path, lambda: _write_text(receipt_path, payload))
         # Serving the pack is what makes the reminder an ask -- and only a pack
         # that actually carries the line counts, never a prepared reminder
         # whose pack was blanked. The ledger line goes through `_safely` like
@@ -289,7 +307,11 @@ class OmhMemoryProvider(_MemoryProviderBase):
         if self._served_reminder is not None and not self._reminder_recorded:
             self._reminder_recorded = True
             record_id = str(self._served_reminder.get("record_id", ""))
-            self._safely(lambda: mark_open_reminder_asked(self._omh_home, record_id, asked_at=_utc_now()))
+            self._safely(
+                "open_reminder",
+                open_reminders_path(self._omh_home),
+                lambda: mark_open_reminder_asked(self._omh_home, record_id, asked_at=_utc_now()),
+            )
         return self._pack
 
     def queue_prefetch(
@@ -538,6 +560,8 @@ class OmhMemoryProvider(_MemoryProviderBase):
             rendered_block_count=block_count,
             project_resolution=self._project_resolution,
             reminder=self._prepared_reminder,
+            unreadable=snapshot.unreadable,
+            store_read_error=snapshot.store_read_error,
         )
         reminder = render_open_reminder(self._prepared_reminder) if self._prepared_reminder is not None else ""
         # The brief is a request, not a memory: it is served so the model can
@@ -594,10 +618,12 @@ class OmhMemoryProvider(_MemoryProviderBase):
         )
         if reasons:
             self._write_handoff(handoff)
-            write_dreaming_state(
-                self._omh_home,
-                clear_after_consolidation(state, at=_utc_now(), reasons=reasons),
-            )
+            # Cleared on the counters as they stand under the lock, not on the
+            # copy read above: the clear zeroes the counters either way, and
+            # writing the stale copy back would discard what a concurrent
+            # session wrote in between without saying so.
+            cleared_at = _utc_now()
+            self._mutate_state(lambda current: clear_after_consolidation(current, at=cleared_at, reasons=reasons))
             self._say(consolidation_status_line(trigger, reasons))
         else:
             # Suppression keeps an unchanged `expiring_records:N` from re-firing,
@@ -654,7 +680,8 @@ class OmhMemoryProvider(_MemoryProviderBase):
         updated = dict(brief)
         updated["record_expiry"] = dict(record_expiry)
         payload = json.dumps(updated, ensure_ascii=False, sort_keys=True)
-        self._safely(lambda: _write_text(self._omh_home / "memory" / "consolidation.json", payload))
+        path = self._omh_home / "memory" / "consolidation.json"
+        self._safely("consolidation_brief", path, lambda: _write_text(path, payload))
 
     def _standing_reasons(self) -> list[str]:
         """Is anything still true at all? Read-only, suppression bypassed.
@@ -759,16 +786,21 @@ class OmhMemoryProvider(_MemoryProviderBase):
         return next((item for item in readings if item.label == "MEMORY.md" and item.exists), None)
 
     def _mutate_state(self, mutate) -> None:
-        state = read_dreaming_state(self._omh_home)
-        self._safely(lambda: write_dreaming_state(self._omh_home, mutate(state)))
+        """Read-modify-write the counters under the state lock; a failure is counted."""
+        self._safely(
+            "dreaming_state",
+            dreaming_state_path(self._omh_home),
+            lambda: update_dreaming_state(self._omh_home, mutate),
+        )
 
     def _write_handoff(self, handoff: dict[str, object]) -> None:
         """Write the latest handoff and retain a bounded metadata-only journal."""
         directory = self._omh_home / "memory"
         payload = json.dumps(handoff, ensure_ascii=False, sort_keys=True)
-        self._safely(lambda: _write_text(directory / "consolidation.json", payload))
+        brief, journal = directory / "consolidation.json", directory / "consolidation.jsonl"
+        self._safely("consolidation_brief", brief, lambda: _write_text(brief, payload))
         entry = _consolidation_journal_entry(handoff)
-        self._safely(lambda: _append_bounded_json_line(directory / "consolidation.jsonl", entry))
+        self._safely("consolidation_journal", journal, lambda: _append_bounded_json_line(journal, entry))
 
     def _append_write_journal(
         self,
@@ -794,7 +826,7 @@ class OmhMemoryProvider(_MemoryProviderBase):
         if identity is not None:
             entry["record_identity"] = identity
         path = self._omh_home / "memory" / "write_journal.jsonl"
-        self._safely(lambda: _append_bounded_json_line(path, entry))
+        self._safely("write_journal", path, lambda: _append_bounded_json_line(path, entry))
 
     def _native_write_scope_decision(
         self,
@@ -833,18 +865,23 @@ class OmhMemoryProvider(_MemoryProviderBase):
         except Exception:  # noqa: BLE001 - host callback; the memory hook must survive it
             return
 
-    @staticmethod
-    def _safely(write) -> None:
+    def _safely(self, op: str, path: Path, write) -> None:
         """A memory-provider write must never take down the turn that triggered it.
 
         Hermes calls these hooks inside a live conversation. A read-only home, a
-        full disk, or a racing writer is a lost journal line -- not a failed turn
-        -- so the failure is swallowed here and nowhere else in this module.
+        full disk, or a lock another session held past its deadline is a lost
+        journal line -- not a failed turn -- so the failure is swallowed here
+        and nowhere else in this module. Swallowed is not silent: each one is
+        recorded as op, file basename and error class -- never the message,
+        which can carry a path or content -- and the next served receipt
+        reports the count and the latest one.
         """
         try:
             write()
-        except OSError:
-            return
+        except OSError as error:
+            self._write_failure_count += 1
+            self._write_failures.append({"op": op, "path": path.name, "error": type(error).__name__})
+            del self._write_failures[:-WRITE_FAILURE_LIMIT]
 
 
 def _askable_record_ids(pack: dict[str, Any]) -> set[str]:
@@ -878,26 +915,20 @@ def _askable_record_ids(pack: dict[str, Any]) -> set[str]:
 
 
 def _write_text(path: Path, text: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(text, encoding="utf-8")
+    write_text_locked(path, text)
 
 
 def _append_bounded_json_line(path: Path, entry: dict[str, object]) -> None:
-    """Atomically retain the newest metadata-only journal entries."""
+    """Atomically retain the newest metadata-only journal entries.
+
+    The read and the replace share one lock, so two sessions appending at
+    once both keep their line instead of the later replace dropping the other.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
-    lines = _metadata_journal_lines(path)
-    lines.append(json.dumps(entry, ensure_ascii=False, sort_keys=True))
-    descriptor, temporary = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent, text=True)
-    try:
-        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
-            handle.write("\n".join(lines[-JOURNAL_LIMIT:]) + "\n")
-        os.replace(temporary, path)
-    except OSError:
-        try:
-            os.unlink(temporary)
-        except OSError:
-            pass
-        raise
+    with state_file_lock(path):
+        lines = _metadata_journal_lines(path)
+        lines.append(json.dumps(entry, ensure_ascii=False, sort_keys=True))
+        write_text_atomic(path, "\n".join(lines[-JOURNAL_LIMIT:]) + "\n")
 
 
 def _metadata_journal_lines(path: Path) -> list[str]:
