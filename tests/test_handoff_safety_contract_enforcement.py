@@ -345,6 +345,12 @@ PROCESS_SPAWN_ALLOWLIST: dict[str, str] = {
     "src/plugin_bundle/omh/tools/evidence_tool.py": (
         "allowlisted local verification-command runner; its allowlist is itself gated below."
     ),
+    "src/plugin_bundle/omh/tools/memory_tool.py": (
+        "`omh_memory(action=\"capture\")`, the model's one write path into OMH memory (owner "
+        "decision 2026-10-06): runs only the installed `omh memory capture` console script with "
+        "a closed argv (shell=False, allowlisted child environment, 30s timeout), which writes one "
+        "local JSON record; it starts no executor, no handoff, and no network client."
+    ),
     "src/surfaces/menubar_app.py": (
         "`swiftc` compile plus `launchctl` load for the opt-in macOS menubar helper install."
     ),

@@ -111,7 +111,7 @@ OMH_MEMORY_SCHEMA = {
             "scope": {
                 "type": "string",
                 "enum": list(CAPTURE_SCOPES),
-                "description": "capture: 'project' for this repository, 'user' for every session. Defaults to 'project' inside a repository, else 'user'.",
+                "description": "capture: defaults to 'project' inside an identified repository.",
             },
             "retention_class": {
                 "type": "string",
