@@ -55,8 +55,6 @@ NAMED_CODING_AGENT_PHRASES: tuple[str, ...] = (
 )
 
 
-
-
 # Multi-word or non-tokenizable coding-delivery requests.
 #
 # Japanese entries avoid dakuten/handakuten characters because `normalized_phrase`
