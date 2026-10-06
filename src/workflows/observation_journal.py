@@ -20,11 +20,14 @@ from ..coding.fanout_repair import (
 )
 
 from ..system.local_store import append_jsonl_locked, read_json_object, read_jsonl_objects, utc_now
+from ..plugin_bundle.omh.run_records import (
+    CODING_DELEGATION_FILE,
+    LIFECYCLE_PROJECTION_SCHEMA_VERSION,
+    OBSERVATION_EVENT_SCHEMA_VERSION,
+)
 from ..system.paths import OmhPaths
 
 
-OBSERVATION_EVENT_SCHEMA_VERSION = "omh_observation_event/v1"
-LIFECYCLE_PROJECTION_SCHEMA_VERSION = "omh_lifecycle_projection/v1"
 OBSERVATION_PRIVACY = "metadata_only"
 # `cancelled` is a member because the projection below already produces it:
 # `project_run_lifecycle` sets `observation_status` to "cancelled" from the
@@ -541,7 +544,7 @@ def _join_required_events(events: list[str]) -> str:
 
 def _journal_review_required(paths: OmhPaths, run_id: str) -> bool:
     try:
-        coding = read_json_object(paths.runtime_runs_dir / run_id / "coding_delegation.json")
+        coding = read_json_object(paths.runtime_runs_dir / run_id / CODING_DELEGATION_FILE)
     except (OSError, json.JSONDecodeError, ValueError):
         return False
     if not isinstance(coding, dict):

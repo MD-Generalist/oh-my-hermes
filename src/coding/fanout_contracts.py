@@ -3,12 +3,15 @@ from __future__ import annotations
 import re
 import shlex
 
+# Re-exported (`X as X`): callers import both versions from here.
+from ..plugin_bundle.omh.run_records import (
+    FANOUT_CONTRACT_PROVENANCE_SCHEMA_VERSION as FANOUT_CONTRACT_PROVENANCE_SCHEMA_VERSION,
+    FANOUT_CONTRACT_SCHEMA_VERSION as FANOUT_CONTRACT_SCHEMA_VERSION,
+)
 from .executors import EXECUTOR_PROFILES, HERMES_CODING_TEAM_STATUS_LADDER
 
 
-FANOUT_CONTRACT_SCHEMA_VERSION = "fanout_contract/v2"
 LEGACY_FANOUT_CONTRACT_SCHEMA_VERSION = "fanout_contract/v1"
-FANOUT_CONTRACT_PROVENANCE_SCHEMA_VERSION = "fanout_contract_provenance/v1"
 FANOUT_ID_PATTERN = r"^fanout-[0-9a-f]{12}$"
 FANOUT_UNIT_STATUSES = ("prepared", *HERMES_CODING_TEAM_STATUS_LADDER)
 FANOUT_UNIT_OWNERS = EXECUTOR_PROFILES

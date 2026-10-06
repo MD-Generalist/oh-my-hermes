@@ -21,13 +21,15 @@ from typing import Any
 from ..context_safety import RUN_CONTEXT_BUDGET_BYTES
 from ..local_store import ensure_dir, locked_json_update, read_json_object, utc_now
 from ..paths import OmhPaths
+from ..plugin_bundle.omh.run_records import (
+    CONTEXT_BUDGET_FILE as CONTEXT_BUDGET_LEDGER_NAME,
+    RUN_CONTEXT_BUDGET_SCHEMA_VERSION,
+)
 
 
-RUN_CONTEXT_BUDGET_SCHEMA_VERSION = "omh_run_context_budget/v1"
 RUN_UNCHANGED_SCHEMA_VERSION = "omh_run_show_unchanged/v1"
 PROGRESS_STATUS_UNCHANGED_SCHEMA_VERSION = "omh_progress_status_unchanged/v1"
 CAPABILITY_PROJECTION_SUMMARY_ONLY_SCHEMA_VERSION = "omh_capability_projection_summary_only/v1"
-CONTEXT_BUDGET_LEDGER_NAME = "context_budget.json"
 
 # The ledger bucket a task-scoped capability projection spends from. A
 # projection is emitted per task, not per run, so the ledger key is the task id

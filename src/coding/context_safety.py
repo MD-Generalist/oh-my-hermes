@@ -4,9 +4,11 @@ import hashlib
 import re
 from typing import Any
 
+from ..plugin_bundle.omh.run_records import EXECUTOR_PROGRESS_EVENT_SCHEMA_VERSION
+
 
 CONTEXT_ARTIFACT_REF_SCHEMA_VERSION = "omh_context_artifact_ref/v1"
-PROGRESS_EVENT_SCHEMA_VERSION = "omh_progress_event/v1"
+PROGRESS_EVENT_SCHEMA_VERSION = EXECUTOR_PROGRESS_EVENT_SCHEMA_VERSION
 CODING_PROGRESS_REPORTING_POLICY_SCHEMA_VERSION = "coding_progress_reporting_policy/v1"
 CODING_PROGRESS_POLICY_ENFORCEMENT_SCHEMA_VERSION = "coding_progress_policy_enforcement/v1"
 MAX_VISIBLE_MESSAGE_CHARS = 180

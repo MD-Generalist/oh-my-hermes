@@ -109,6 +109,7 @@ from __future__ import annotations
 
 from typing import Any, Final, NamedTuple
 
+from ..plugin_bundle.omh.run_records import EXECUTOR_PROGRESS_EVENT_TYPES, UNMAPPED_SOURCE_EVENT
 from .executors import EXECUTOR_PROFILES
 
 OWNER_PROGRESS_NORMALIZATION_SCHEMA_VERSION: Final[str] = "omh_owner_progress_normalization/v1"
@@ -119,40 +120,17 @@ OWNER_PROGRESS_NORMALIZATION_CLAIM_BOUNDARY: Final[str] = (
     "merge-readiness, or merge evidence, and it never raises the evidence tier the source event carried."
 )
 
-# The one addition to the shipped vocabulary. It carries the bounded raw
-# `source_event` verbatim so an owner word this repo does not map stays VISIBLE
-# instead of being rounded to a neighbouring event. It is deliberately NOT a
-# terminal or closing event type in `executor_progress`: an unrecognized word
-# ends nothing.
-UNMAPPED_NORMALIZED_EVENT: Final[str] = "unmapped_source_event"
+# The one addition to the shipped vocabulary: an owner word this repo does not
+# map stays VISIBLE instead of being rounded to a neighbouring event. Defined in
+# `plugin_bundle/omh/run_records.py` beside the vocabulary it closes.
+UNMAPPED_NORMALIZED_EVENT: Final[str] = UNMAPPED_SOURCE_EVENT
 
 # The shared progress vocabulary. `executor_progress.PROGRESS_EVENT_TYPES` is
-# this tuple -- there is one definition, not two, because the mirror in
-# `plugin_bundle/omh/runtime_reader.py` already proves how expensive a second
-# copy is. The first twelve entries keep their original order; the CLI derives
+# this tuple, and so is the plugin reader's -- there is one definition, owned
+# by `run_records` in the plugin bundle because the bundle cannot import
+# `omh.*`. The first twelve entries keep their original order; the CLI derives
 # `omh runtime progress observe --event` choices from it.
-NORMALIZED_PROGRESS_EVENT_TYPES: Final[tuple[str, ...]] = (
-    "executor_dispatched",
-    "repo_exploration",
-    "running_no_diff_observed",
-    "diff_started",
-    "tests_started",
-    "tests_failed",
-    "tests_passed",
-    "executor_completed",
-    "executor_blocked",
-    "executor_failed",
-    # An observed cancellation. It sits beside the other three end-state words
-    # rather than folding into `executor_failed`, because "this ran and did not
-    # work" and "someone stopped this" call for different recovery. The lane
-    # (`executor_progress.infer_progress_event_type`) is what decides whether a
-    # word this table translates is CORROBORATED; a run whose process was never
-    # observed to stop cannot reach this event by narration alone.
-    "executor_cancelled",
-    "reported_change_not_observed",
-    "progress_observed",
-    UNMAPPED_NORMALIZED_EVENT,
-)
+NORMALIZED_PROGRESS_EVENT_TYPES: Final[tuple[str, ...]] = EXECUTOR_PROGRESS_EVENT_TYPES
 
 # Evidence tiers, weakest first. The rank is the index, so "is this an upgrade"
 # is one comparison. `preparation` is the floor and the only tier with no

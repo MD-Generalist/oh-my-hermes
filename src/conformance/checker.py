@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
+from ..plugin_bundle.omh.run_records import RUN_FILE
 from ..paths import OmhPaths
 from ..runtime.artifacts import show_run, summarize_delegated_coding_status, validate_runtime
 from ..runtime.claims import allowed_runtime_claims, blocked_runtime_claims
@@ -20,7 +21,7 @@ VALIDATION_FAILURE_SUMMARY = "Runtime validation failed; fix the listed violatio
 
 
 def check_runtime_run(paths: OmhPaths, run_id: str) -> ConformanceReport:
-    if not (paths.runtime_runs_dir / run_id / "run.json").exists():
+    if not (paths.runtime_runs_dir / run_id / RUN_FILE).exists():
         raise FileNotFoundError(run_id)
     validation = validate_runtime(paths, run_id)
     violations = _validation_violations(validation)

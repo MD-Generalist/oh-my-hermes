@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 import re
 
+from ..plugin_bundle.omh.run_records import RUN_CONTEXT_BUDGET_SCHEMA_VERSION
 from ..local_store import atomic_write_json, ensure_dir
 from ..paths import OmhPaths
 from ..system.metadata_safety import require_opaque_metadata_ref
@@ -29,7 +30,7 @@ class RunEfficiencyBudget:
 
     def to_dict(self) -> dict[str, object]:
         return {
-            "schema_version": "omh_run_context_budget/v1",
+            "schema_version": RUN_CONTEXT_BUDGET_SCHEMA_VERSION,
             "run_id": self.run_id,
             "budget_bytes": self.budget_bytes,
             "emitted_bytes": self.emitted_bytes,
@@ -98,7 +99,7 @@ def write_run_efficiency_report(paths: OmhPaths, report: dict[str, object]) -> d
 
 
 def _parse_budget(raw: object, run_id: str) -> RunEfficiencyBudget:
-    if not isinstance(raw, dict) or raw.get("schema_version") != "omh_run_context_budget/v1":
+    if not isinstance(raw, dict) or raw.get("schema_version") != RUN_CONTEXT_BUDGET_SCHEMA_VERSION:
         raise ValueError("context_budget must be an omh_run_context_budget/v1 object")
     if _required_run_id(raw.get("run_id")) != run_id:
         raise ValueError("context_budget.run_id must match run_id")

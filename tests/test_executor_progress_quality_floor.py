@@ -10,7 +10,6 @@ from omh.context_safety import (
     build_progress_event as build_chat_progress_event,
 )
 from omh.executor_progress import (
-    ALLOWED_EXECUTOR_PROFILES,
     CLOSING_EVENT_TYPES,
     DEFAULT_MINIMUM_REPEAT_INTERVAL_SECONDS,
     PROGRESS_EVENT_TYPES,
@@ -22,10 +21,6 @@ from omh.executor_progress import (
     reported_event_types,
     should_report_event,
     update_binding_reporter_state,
-)
-from omh.plugin_bundle.omh.runtime_reader import (
-    EXECUTOR_PROGRESS_EVENT_TYPES,
-    EXECUTOR_PROGRESS_PROFILES,
 )
 
 
@@ -422,26 +417,6 @@ class ClaimMismatchDetectionTests(unittest.TestCase):
             git_status_short="",
         )
         self.assertEqual(infer_progress_event_type(signal), "tests_passed")
-
-
-class VendoredBundleParityTests(unittest.TestCase):
-    def test_bundle_event_types_match_the_source_of_truth(self) -> None:
-        """The plugin bundle keeps its own copy and cannot import from src.
-
-        Nothing enforced parity before, so adding an event type in one place and
-        not the other silently dropped it at the plugin read boundary.
-        """
-        self.assertEqual(EXECUTOR_PROGRESS_EVENT_TYPES, set(PROGRESS_EVENT_TYPES))
-
-    def test_bundle_profiles_match_the_source_of_truth(self) -> None:
-        """The profile set drifted exactly the way the event set was gated against.
-
-        `omo_runtime` joined the lane and the bundle copy was not updated, so
-        every omo binding, event, and report the plugin read was rejected as an
-        unsupported profile -- silently, at the read boundary, long after the
-        lane itself accepted them.
-        """
-        self.assertEqual(EXECUTOR_PROGRESS_PROFILES, set(ALLOWED_EXECUTOR_PROFILES))
 
 
 if __name__ == "__main__":

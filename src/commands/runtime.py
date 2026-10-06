@@ -4,6 +4,7 @@ import argparse
 import json
 from datetime import datetime, timezone
 
+from ..plugin_bundle.omh.run_records import CODING_DELEGATION_FILE, RUN_FILE
 from ..codex_progress import summarize_codex_jsonl_file
 from ..executor_progress import (
     ExecutorProgressError,
@@ -252,7 +253,7 @@ def cmd_runtime_record(args: argparse.Namespace) -> int:
 def cmd_runtime_delegate(args: argparse.Namespace) -> int:
     paths = _paths(args)
     run_dir = paths.runtime_runs_dir / args.run_id
-    if not (run_dir / "run.json").exists():
+    if not (run_dir / RUN_FILE).exists():
         raise OmhError(f"runtime run not found: {args.run_id}")
     observed = args.observed
     result = args.result
@@ -285,7 +286,7 @@ def cmd_runtime_delegate(args: argparse.Namespace) -> int:
 def cmd_runtime_wrapper(args: argparse.Namespace) -> int:
     paths = _paths(args)
     run_dir = paths.runtime_runs_dir / args.run_id
-    if not (run_dir / "run.json").exists():
+    if not (run_dir / RUN_FILE).exists():
         raise OmhError(f"runtime run not found: {args.run_id}")
     try:
         wrapper = write_wrapper_contract(
@@ -308,7 +309,7 @@ def cmd_runtime_wrapper(args: argparse.Namespace) -> int:
 def cmd_runtime_review(args: argparse.Namespace) -> int:
     paths = _paths(args)
     run_dir = paths.runtime_runs_dir / args.run_id
-    if not (run_dir / "run.json").exists():
+    if not (run_dir / RUN_FILE).exists():
         raise OmhError(f"runtime run not found: {args.run_id}")
     preflight = summarize_delegated_coding_status(paths, args.run_id)
     allowed_preflight = {"record_review_evidence"} | RECORDED_GATE_PREFLIGHT_ACTIONS
@@ -337,7 +338,7 @@ def cmd_runtime_review(args: argparse.Namespace) -> int:
 def cmd_runtime_ci(args: argparse.Namespace) -> int:
     paths = _paths(args)
     run_dir = paths.runtime_runs_dir / args.run_id
-    if not (run_dir / "run.json").exists():
+    if not (run_dir / RUN_FILE).exists():
         raise OmhError(f"runtime run not found: {args.run_id}")
     preflight = summarize_delegated_coding_status(paths, args.run_id)
     allowed_preflight = {"record_ci_evidence"} | RECORDED_GATE_PREFLIGHT_ACTIONS
@@ -367,7 +368,7 @@ def cmd_runtime_ci(args: argparse.Namespace) -> int:
 def cmd_runtime_merge(args: argparse.Namespace) -> int:
     paths = _paths(args)
     run_dir = paths.runtime_runs_dir / args.run_id
-    if not (run_dir / "run.json").exists():
+    if not (run_dir / RUN_FILE).exists():
         raise OmhError(f"runtime run not found: {args.run_id}")
     selected_statuses = [
         status
@@ -425,7 +426,7 @@ def cmd_runtime_observe(args: argparse.Namespace) -> int:
         if target_type == "run"
         else paths.runtime_wrapper_sessions_dir / target_id
     )
-    required_file = target_dir / ("run.json" if target_type == "run" else "session.json")
+    required_file = target_dir / (RUN_FILE if target_type == "run" else "session.json")
     if not required_file.exists():
         raise OmhError(f"runtime {target_type} not found: {target_id}")
     write_legacy_observation = _validate_runtime_observation_target(target_dir, target_type, args.runtime_profile)
@@ -642,8 +643,8 @@ def _validate_runtime_observation_target(target_dir, target_type: str, runtime_p
     if not expected_profile:
         if target_type == "wrapper_session":
             raise OmhError("runtime observe requires a runtime_handoff_prepared wrapper session")
-        run = read_json_object(target_dir / "run.json")
-        coding = read_json_object(target_dir / "coding_delegation.json")
+        run = read_json_object(target_dir / RUN_FILE)
+        coding = read_json_object(target_dir / CODING_DELEGATION_FILE)
         if (
             isinstance(run, dict)
             and run.get("artifact_kind") == "prepared_coding_delegation"
@@ -662,8 +663,8 @@ def _expected_runtime_profile_for_target(target_dir, target_type: str) -> str | 
         if not isinstance(session, dict) or session.get("status") != "runtime_handoff_prepared":
             return ""
         return _runtime_profile_from_handoff(session.get("runtime_handoff")) or str(session.get("selected_executor_profile") or "")
-    run = read_json_object(target_dir / "run.json")
-    coding = read_json_object(target_dir / "coding_delegation.json")
+    run = read_json_object(target_dir / RUN_FILE)
+    coding = read_json_object(target_dir / CODING_DELEGATION_FILE)
     if isinstance(coding, dict):
         if coding.get("work_owner_mode") == "runtime_handoff":
             return _runtime_profile_from_handoff(coding.get("runtime_handoff")) or str(coding.get("selected_executor_profile") or "")
@@ -691,7 +692,7 @@ def _progress_target(args: argparse.Namespace) -> tuple[str, str]:
 
 def _require_progress_target(paths, target_type: str, target_id: str) -> None:
     if target_type == "run":
-        if not (paths.runtime_runs_dir / target_id / "run.json").exists():
+        if not (paths.runtime_runs_dir / target_id / RUN_FILE).exists():
             raise OmhError(f"runtime run not found: {target_id}")
         return
     if target_type == "wrapper_session":

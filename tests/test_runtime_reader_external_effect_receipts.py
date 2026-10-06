@@ -11,9 +11,11 @@ Two things are pinned here:
   report `ci_observed` or `merge_observed`. That is the state of every store
   written before #836, so the reader has to withdraw the claim rather than
   trust the local `ci.json` / `merge.json` beside it.
-* Parity. The vendored constants must still name the store the source writes,
-  and the reader's verdict must match the CLI claim gate's verdict for the same
-  run. A differential, not a restatement: it fails when either side moves.
+* Parity. The reader's verdict must match the CLI claim gate's verdict for the
+  same run. A differential, not a restatement: it fails when either side moves.
+  The store name, schema version, and claim boundary are no longer copies --
+  both sides import them from `run_records` (gated by
+  `tests/test_run_record_format_policy.py`).
 """
 
 from __future__ import annotations
@@ -28,14 +30,9 @@ load_local_package()
 
 from omh.coding_delegation import build_coding_delegation_payload, coding_delegation_record_payload
 from omh.conformance.checker import check_runtime_run
-from omh.external_effect_receipts import (
-    CLAIM_BOUNDARY,
-    EXTERNAL_EFFECT_RECEIPT_SCHEMA_VERSION,
-)
 from omh.paths import OmhPaths, resolve_paths
 from omh.plugin_bundle.omh import runtime_reader
 from omh.plugin_bundle.omh.runtime_reader import read_omh_status
-from omh.runtime.artifacts import EXTERNAL_EFFECT_RECORD_SURFACES, external_effect_id
 from omh.runtime_artifacts import (
     create_prepared_coding_delegation_run,
     write_ci_record,
@@ -187,37 +184,6 @@ class VendoredReaderReceiptRuleTests(unittest.TestCase):
 
 
 class VendoredReaderParityTests(unittest.TestCase):
-    def test_vendored_constants_name_the_store_the_source_writes(self) -> None:
-        with TemporaryDirectory() as tmp:
-            paths = resolve_paths(Path(tmp) / ".omh", Path(tmp) / ".hermes")
-
-            self.assertEqual(
-                runtime_reader.EXTERNAL_EFFECT_RECEIPT_STORE_NAME,
-                paths.runtime_external_effect_receipts_path.name,
-            )
-            self.assertEqual(
-                paths.runtime_external_effect_receipts_path.parent.name,
-                "journal",
-                "the reader looks for the store under <runtime>/journal/",
-            )
-        self.assertEqual(
-            runtime_reader.EXTERNAL_EFFECT_RECEIPT_SCHEMA_VERSION,
-            EXTERNAL_EFFECT_RECEIPT_SCHEMA_VERSION,
-        )
-        self.assertEqual(runtime_reader.EXTERNAL_EFFECT_CLAIM_BOUNDARY, CLAIM_BOUNDARY)
-
-    def test_vendored_effect_kinds_match_the_source_record_surfaces(self) -> None:
-        self.assertEqual(
-            sorted(runtime_reader.RECEIPT_BACKED_RUN_CLAIMS.values()),
-            ["ci", "merge", "review"],
-        )
-        for kind in runtime_reader.RECEIPT_BACKED_RUN_CLAIMS.values():
-            with self.subTest(kind=kind):
-                self.assertIn(kind, EXTERNAL_EFFECT_RECORD_SURFACES)
-                # The reader splits an effect id on the first ":" and compares
-                # the tail to the run id, so this composition has to hold.
-                self.assertEqual(external_effect_id(kind, "run-1"), f"{kind}:run-1")
-
     def test_vendored_status_order_covers_every_claim_it_demotes(self) -> None:
         for status in runtime_reader.RECEIPT_BACKED_RUN_CLAIMS:
             with self.subTest(status=status):

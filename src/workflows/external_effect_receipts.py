@@ -68,21 +68,20 @@ from ..system.append_only_store import (
     store_errors,
 )
 from ..system.local_store import file_lock, read_jsonl_objects, utc_now
+from ..plugin_bundle.omh.run_records import (
+    EXTERNAL_EFFECT_CLAIM_BOUNDARY as CLAIM_BOUNDARY,
+    EXTERNAL_EFFECT_RECEIPT_SCHEMA_VERSION,
+    # Re-exported (`X as X`): the runtime store registry imports it from here.
+    EXTERNAL_EFFECT_RECEIPT_STORE_NAME as EXTERNAL_EFFECT_RECEIPT_STORE_NAME,
+)
 from ..system.paths import OmhPaths
 
 
-EXTERNAL_EFFECT_RECEIPT_SCHEMA_VERSION = "external_effect_receipt/v1"
 EXTERNAL_EFFECT_PROJECTION_SCHEMA_VERSION = "external_effect_projection/v1"
 EXTERNAL_EFFECT_RECEIPT_STORE_VALIDATION_SCHEMA_VERSION = "external_effect_receipt_store_validation/v1"
 EXTERNAL_EFFECT_MINT_RESULT_SCHEMA_VERSION = "external_effect_mint_result/v1"
 EXTERNAL_EFFECT_MINT_FAILURE_SCHEMA_VERSION = "external_effect_mint_failure/v1"
 RECEIPT_PRIVACY = "metadata_only"
-CLAIM_BOUNDARY = (
-    "An external effect receipt is one acting surface's observation of one external effect. "
-    "It is not execution, verification, review, CI, merge-readiness, or merge evidence for any other effect."
-)
-
-EXTERNAL_EFFECT_RECEIPT_STORE_NAME = "external_effect_receipts.jsonl"
 EXTERNAL_EFFECT_MINT_FAILURE_STORE_NAME = "external_effect_mint_failures.jsonl"
 
 # Only effects a surface in `ACTING_SURFACES` genuinely produces today. Adding

@@ -638,12 +638,6 @@ class UnmappedStatusPluginParityTests(unittest.TestCase):
                 }
                 self.assertEqual(status_text_for(unit), plugin_status_text(unit))
 
-    def test_the_two_status_vocabularies_are_the_same_closed_set(self) -> None:
-        from omh.coding.status_board import STATUS_VOCABULARY
-        from omh.plugin_bundle.omh.status_board_reader import _STATUS_VOCABULARY as plugin_vocabulary
-
-        self.assertEqual(STATUS_VOCABULARY, plugin_vocabulary)
-
     def test_neither_headline_folds_a_stuck_unit_into_the_running_count(self) -> None:
         from omh.coding.status_board import render_status_board_text
         from omh.plugin_bundle.omh.status_board_reader import (

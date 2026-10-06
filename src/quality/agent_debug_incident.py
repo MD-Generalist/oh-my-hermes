@@ -51,6 +51,7 @@ from pathlib import Path
 import re
 from typing import Any, Mapping, Sequence
 
+from ..plugin_bundle.omh.run_records import FANOUT_DISPATCH_SCHEMA_VERSION
 from ..system.metadata_safety import is_raw_pii_shaped, is_secret_value_shaped
 from .agent_debug_report import (
     BACKGROUND_WITHOUT_NOTIFY,
@@ -156,7 +157,7 @@ NOT_PERFORMED: tuple[str, ...] = (
     "comment",
 )
 
-RECEIPT_SCHEMA_FANOUT_DISPATCH = "fanout_dispatch_summary/v1"
+RECEIPT_SCHEMA_FANOUT_DISPATCH = FANOUT_DISPATCH_SCHEMA_VERSION
 RECEIPT_IDENTITIES: tuple[str, ...] = ("session", "run", "unit", "configuration", "freshness")
 RECEIPT_REJECTIONS: tuple[str, ...] = (
     "unreadable",

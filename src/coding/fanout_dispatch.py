@@ -208,8 +208,7 @@ from .fanout_unit_results import (
     read_unit_result_input,
 )
 from .unit_telemetry import native_unit_telemetry, parse_unit_telemetry
-
-FANOUT_DISPATCH_SCHEMA_VERSION = "fanout_dispatch_summary/v1"
+from ..plugin_bundle.omh.run_records import FANOUT_DISPATCH_SCHEMA_VERSION, RUN_FILE
 
 # Grace between SIGTERM and SIGKILL when a unit group must die — OMO's
 # launcher uses the same 10s window before re-raising on itself.
@@ -5946,7 +5945,7 @@ def _parse_numstat(numstat: str) -> tuple[list[str], int]:
 
 def _ensure_unit_run(paths: OmhPaths, unit: Mapping[str, Any], owner: str) -> None:
     run_ref = str(unit.get("run_ref", unit.get("unit_id", "")))
-    run_path = paths.runtime_runs_dir / run_ref / "run.json"
+    run_path = paths.runtime_runs_dir / run_ref / RUN_FILE
     if run_path.exists():
         return
     create_run(

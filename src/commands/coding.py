@@ -8,6 +8,7 @@ import re
 import sys
 from pathlib import Path
 
+from ..plugin_bundle.omh.run_records import FANOUT_CONTRACT_FILE, RUN_FILE
 from ..coding_delegation import CODING_EXECUTOR_TARGETS, build_coding_delegation_payload, coding_delegation_record_payload
 from ..coding.media_handoff_capabilities import input_representations_from_attachments, merged_input_representation
 from ..coding.hermes_model_recommendation import resolved_hermes_model_recommendation
@@ -1952,7 +1953,7 @@ def cmd_coding_fanout_show(args: argparse.Namespace) -> int:
         latest_event = ""
         history: dict[str, object] = {}
         diagnostic = None
-        if run_ref and (paths.runtime_runs_dir / run_ref / "run.json").exists():
+        if run_ref and (paths.runtime_runs_dir / run_ref / RUN_FILE).exists():
             try:
                 shown = show_run(paths, run_ref, history_limit=history_limit)
             except (OSError, ValueError, KeyError):
@@ -2186,7 +2187,7 @@ def cmd_coding_fanout_brief(args: argparse.Namespace) -> int:
         latest_summary = ""
         diagnostic = _fanout_summary_diagnostic(dispatch_summary, dispatched, run_ref)
         observed_status = "not_observed"
-        if run_ref and (paths.runtime_runs_dir / run_ref / "run.json").exists():
+        if run_ref and (paths.runtime_runs_dir / run_ref / RUN_FILE).exists():
             try:
                 shown = show_run(paths, run_ref, history_limit=1)
             except (OSError, ValueError, KeyError):
@@ -2429,7 +2430,7 @@ def _fanout_brief_listing(paths) -> dict[str, object]:
     contracts_dir = paths.fanout_contracts_dir
     if contracts_dir.is_dir():
         for child in sorted(contracts_dir.iterdir()):
-            contract_path = child / "fanout_contract.json"
+            contract_path = child / FANOUT_CONTRACT_FILE
             if not contract_path.is_file():
                 continue
             try:

@@ -4,6 +4,20 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **The run-record format has one owner.**
+  `src/plugin_bundle/omh/run_records.py` defines every run, dispatch and
+  receipt file name, every schema version, and the shared progress, profile,
+  binding-state, observed-result, receipt-claim and dispatch-status
+  vocabularies. The plugin bundle's readers and the control-plane writers
+  both import them; until now the bundle, which cannot import `omh.*`, kept
+  hand copies (13 constant sets, 12 schema literals in three files each) and
+  five parity tests caught drift after it happened — two copies had already
+  drifted and six had no test. The parity tests are replaced by
+  `tests/test_run_record_format_policy.py`, which fails on any second
+  spelling of an owned literal under `src/` and names the constant to
+  import. No on-disk format, value or verdict changes; CONTEXT.md gains
+  **Run record**.
+
 - **A local-source skill import no longer swallows a nested checkout or
   OMH's own install output.** `omh install --source local` discovers
   `SKILL.md` under the whole source root; a linked worktree left under it

@@ -71,6 +71,15 @@ try:
 except ImportError:  # pragma: no cover - present only on Windows.
     msvcrt = None
 
+from .run_records import (
+    CONTEXT_BUDGET_FILE as _CONTEXT_BUDGET_LEDGER_NAME,
+    DISPATCH_STATUS_VOCABULARY as _STATUS_VOCABULARY,
+    DISPATCH_SUMMARY_FILE as _DISPATCH_SUMMARY_NAME,
+    FANOUT_CONTRACT_FILE as _FANOUT_CONTRACT_NAME,
+    INFLIGHT_MARKER_SCHEMA_VERSION as _INFLIGHT_MARKER_SCHEMA_VERSION,
+    RUN_CONTEXT_BUDGET_SCHEMA_VERSION as _CONTEXT_BUDGET_SCHEMA_VERSION,
+)
+
 RUNNING_WORK_BOARD_SCHEMA_VERSION: Final[str] = "omh_running_work_board/v1"
 
 RUNNING_WORK_CLAIM_BOUNDARY: Final[str] = (
@@ -80,27 +89,10 @@ RUNNING_WORK_CLAIM_BOUNDARY: Final[str] = (
 
 DEFAULT_LIMIT: Final[int] = 6
 
-# Must match `omh.coding.inflight.INFLIGHT_MARKER_SCHEMA_VERSION`. Repeated
-# here rather than imported because the plugin bundle cannot import `omh.*`.
-_INFLIGHT_MARKER_SCHEMA_VERSION: Final[str] = "omh_inflight_marker/v1"
-
 _FANOUT_SUBDIR: Final[str] = "fanout"
 _INFLIGHT_DIR_NAME: Final[str] = "inflight"
-_DISPATCH_SUMMARY_NAME: Final[str] = "dispatch_summary.json"
-_FANOUT_CONTRACT_NAME: Final[str] = "fanout_contract.json"
 
-# Closed status vocabulary a dispatch-summary row can carry. Anything else
-# collapses to `prepared_not_observed`, mirroring
-# `omh.coding.status_board.normalize_status`.
-_STATUS_VOCABULARY: Final[tuple[str, ...]] = (
-    "running",
-    "completed",
-    "failed",
-    "worktree_failed",
-    "prepared_not_observed",
-)
-
-# Bound for a status word the vocabulary above refused. Mirrors
+# Bound for a status word `_STATUS_VOCABULARY` refused. Mirrors
 # `omh.coding.status_board._STATUS_SOURCE_LIMIT`; the word rides in the rendered
 # STATUS cell, so dropping it here would make this reader the one surface where
 # "an executor said something we do not know" still reads as "nobody watched".
@@ -108,13 +100,10 @@ _STATUS_SOURCE_LIMIT: Final[int] = 80
 
 _MODEL_DEFAULT_LABEL: Final[str] = "executor default"
 
-# `omh.runtime.context_budget` owns this ledger file and schema; repeated here
-# because the plugin bundle cannot import `runtime.*` either. Writing into the
-# same file under a dedicated bucket key means this hook's suppression
-# bookkeeping shares the ledger that module already owns instead of adding a
-# second one.
-_CONTEXT_BUDGET_LEDGER_NAME: Final[str] = "context_budget.json"
-_CONTEXT_BUDGET_SCHEMA_VERSION: Final[str] = "omh_run_context_budget/v1"
+# `omh.runtime.context_budget` owns this ledger (its file name and schema come
+# from `run_records`). Writing into the same file under a dedicated bucket key
+# means this hook's suppression bookkeeping shares the ledger that module
+# already owns instead of adding a second one.
 _CONTEXT_BUDGET_LOCK_TIMEOUT_SECONDS: Final[float] = 0.1
 _CONTEXT_BUDGET_LOCK_POLL_INTERVAL: Final[float] = 0.001
 _LOCK_BUSY_ERRNOS: Final[frozenset[int]] = frozenset(

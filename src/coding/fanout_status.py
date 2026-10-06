@@ -43,6 +43,7 @@ from datetime import datetime, timezone
 import re
 from typing import Any, Callable, Mapping
 
+from ..plugin_bundle.omh.run_records import FANOUT_CONTRACT_FILE
 from ..system.paths import OmhPaths
 from ..workflows.observation_journal import (
     canonical_observation_event,
@@ -135,7 +136,7 @@ def project_fanout_status(paths: OmhPaths, fanout_id: str, *, unit_id: str | Non
     _apply_merge_order_position(units)
     duplicates = duplicate_session_references(event.get('executor_session') for event in events)
     contract: object = None
-    contract_path = fanout_dispatch_summary_path(paths, validated_id).with_name('fanout_contract.json')
+    contract_path = fanout_dispatch_summary_path(paths, validated_id).with_name(FANOUT_CONTRACT_FILE)
     try:
         if not contract_path.is_symlink() and contract_path.stat().st_size <= 1024 * 1024:
             with contract_path.open('rb') as stream:

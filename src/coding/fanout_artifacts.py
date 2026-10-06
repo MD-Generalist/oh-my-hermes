@@ -7,6 +7,7 @@ from pathlib import Path
 import re
 from typing import Mapping
 
+from ..plugin_bundle.omh.run_records import CONTRACT_PROVENANCE_FILE, DISPATCH_SUMMARY_FILE, FANOUT_CONTRACT_FILE
 from ..system.local_store import atomic_write_json
 from ..system.local_store import ensure_dir
 from ..system.paths import OmhPaths
@@ -29,7 +30,7 @@ _PROVENANCE_KEYS = {
 def write_fanout_contract(paths: OmhPaths, contract: dict[str, object]) -> dict[str, object]:
     fanout_id = _validated_fanout_id(contract.get("fanout_id"))
     contract_dir = _managed_fanout_dir(paths, fanout_id)
-    contract_path = contract_dir / "fanout_contract.json"
+    contract_path = contract_dir / FANOUT_CONTRACT_FILE
     ensure_dir(paths.fanout_contracts_dir, private=True)
     ensure_dir(contract_dir, private=True)
 
@@ -37,7 +38,7 @@ def write_fanout_contract(paths: OmhPaths, contract: dict[str, object]) -> dict[
     payload["artifacts"] = {"contract_path": str(contract_path), "privacy": "metadata_only"}
     atomic_write_json(contract_path, payload, private=True)
     atomic_write_json(
-        contract_dir / "contract_provenance.json",
+        contract_dir / CONTRACT_PROVENANCE_FILE,
         {
             "schema_version": FANOUT_CONTRACT_PROVENANCE_SCHEMA_VERSION,
             "fanout_id": fanout_id,
@@ -52,7 +53,7 @@ def write_fanout_contract(paths: OmhPaths, contract: dict[str, object]) -> dict[
 
 def fanout_dispatch_summary_path(paths: OmhPaths, fanout_id: str) -> Path:
     """Validated dispatch-summary path for one fanout (id pattern + containment)."""
-    return _managed_fanout_dir(paths, _validated_fanout_id(fanout_id)) / "dispatch_summary.json"
+    return _managed_fanout_dir(paths, _validated_fanout_id(fanout_id)) / DISPATCH_SUMMARY_FILE
 
 
 def fanout_run_journal_path(paths: OmhPaths, fanout_id: str) -> Path:
@@ -69,7 +70,7 @@ def fanout_contract_provenance_path(paths: OmhPaths, fanout_id: str) -> Path:
     return _managed_fanout_dir(
         paths,
         _validated_fanout_id(fanout_id),
-    ) / "contract_provenance.json"
+    ) / CONTRACT_PROVENANCE_FILE
 
 
 def unit_result_path(paths: OmhPaths, fanout_id: str, unit_id: str) -> Path:
@@ -125,7 +126,7 @@ def clear_fanout_unit_recovery(paths: OmhPaths, fanout_id: str, unit_id: str) ->
 
 
 def read_fanout_contract(paths: OmhPaths, fanout_id: str) -> dict[str, object]:
-    contract_path = _managed_fanout_dir(paths, _validated_fanout_id(fanout_id)) / "fanout_contract.json"
+    contract_path = _managed_fanout_dir(paths, _validated_fanout_id(fanout_id)) / FANOUT_CONTRACT_FILE
     return json.loads(contract_path.read_text(encoding="utf-8"))
 
 
