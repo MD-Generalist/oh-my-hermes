@@ -5268,12 +5268,18 @@ def _suggested_prompt(skill: str, query: str) -> str:
 
 
 def _policy_for(definition: SkillDefinition) -> RecommendationPolicy:
-    return (
-        _SKILL_POLICIES.get(definition.name)
-        or _CATEGORY_POLICIES.get(definition.category)
-        or _HERMES_ROLE_POLICIES.get(definition.hermes_role)
-        or _DEFAULT_POLICY
-    )
+    return policy_with_source(definition)[0]
+
+
+def policy_with_source(definition: SkillDefinition) -> tuple[RecommendationPolicy, str]:
+    """The effective policy and which table supplied it: skill, category, role, or default."""
+    if definition.name in _SKILL_POLICIES:
+        return _SKILL_POLICIES[definition.name], "skill"
+    if definition.category in _CATEGORY_POLICIES:
+        return _CATEGORY_POLICIES[definition.category], "category"
+    if definition.hermes_role in _HERMES_ROLE_POLICIES:
+        return _HERMES_ROLE_POLICIES[definition.hermes_role], "role"
+    return _DEFAULT_POLICY, "default"
 
 
 def _next_action(definition: SkillDefinition) -> str:
