@@ -36,7 +36,7 @@ class CodeReviewReferenceTests(unittest.TestCase):
             self.assertEqual(template.skill_name, "code-review")
 
     def test_the_packaged_set_includes_them(self) -> None:
-        # packaging.py splices six producers by hand; a seventh is a one-line
+        # skill_record.REFERENCE_PRODUCERS lists producers by hand; a new one is a one-line
         # edit and an omitted one is silent until the byte gate runs.
         packaged = {(t.skill_name, t.relative_path) for t in builtin_skill_reference_templates()}
         self.assertIn(("code-review", "references/review-dispatch.md"), packaged)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass, replace
 from typing import Literal
 from functools import lru_cache
@@ -2739,23 +2740,44 @@ def agent_skill_templates() -> list[SkillTemplate]:
 
     names = frozenset(portable_skill_names())
     return [
-        SkillTemplate(omh_skill_display_name(definition.name), workflow_skill_from_definition(
-            definition, definition.name, target="agent-skills",
-        ).content)
+        agent_skill_template(definition)
         for definition in builtin_definitions()
         if omh_skill_display_name(definition.name) in names
     ]
 
 
+def agent_skill_template(definition: SkillDefinition) -> SkillTemplate:
+    """One skill's portable body under its installed display identifier.
+
+    The per-skill unit of `agent_skill_templates`; the caller decides
+    portability, so this renders whatever definition it is given.
+    """
+    return SkillTemplate(omh_skill_display_name(definition.name), workflow_skill_from_definition(
+        definition, definition.name, target="agent-skills",
+    ).content)
+
+
 def agent_skill_reference_templates() -> list[SkillReferenceTemplate]:
     """Only reviewed reference contracts; new references fail closed."""
-    from .catalog_portable import PORTABLE_REFERENCE_PATHS, portable_skill_names
     from .packaging import builtin_skill_reference_templates
+
+    return portable_reference_templates(builtin_skill_reference_templates())
+
+
+def portable_reference_templates(
+    templates: Iterable[SkillReferenceTemplate],
+) -> list[SkillReferenceTemplate]:
+    """Keep the reviewed portable references among `templates`, renamed for the projection.
+
+    The per-skill unit of `agent_skill_reference_templates`: a caller holding
+    one skill's references gets that skill's slice of the projection.
+    """
+    from .catalog_portable import PORTABLE_REFERENCE_PATHS, portable_skill_names
 
     names = frozenset(portable_skill_names())
     return [
         SkillReferenceTemplate(omh_skill_display_name(template.skill_name), template.relative_path, template.content)
-        for template in builtin_skill_reference_templates()
+        for template in templates
         if omh_skill_display_name(template.skill_name) in names
         and f"{template.skill_name}/{template.relative_path}" in PORTABLE_REFERENCE_PATHS
     ]
@@ -6846,6 +6868,124 @@ def builtin_skill_templates() -> list[SkillTemplate]:
     return packaged_templates()
 
 
+def workflow_reference_skill_lines(definition: SkillDefinition) -> list[str]:
+    """One skill's section of `docs/WORKFLOWS.md`, as the lines the document joins.
+
+    The per-skill unit of `workflow_reference_markdown`: the document is these
+    sections in `workflow_reference_definitions()` order, so a caller that
+    needs one skill's section reads the same lines the generator writes.
+    """
+    lines: list[str] = []
+    exposure = surface_exposure_for_skill(definition.name)
+    # A retired engine keeps a section marker for link stability but no
+    # workflow body: rendering its triggers, examples, and quality bar as
+    # if it were invocable is what made repo-readers and prompt-based
+    # installers treat retired engines as current (owner report,
+    # 2026-08-20). The stub carries only the migration copy.
+    if exposure.lifecycle_stage == "retired":
+        from .catalog import retired_skill_migration_error
+
+        migration = retired_skill_migration_error(definition.name)
+        lines.extend(
+            [
+                f"### {definition.name}",
+                "",
+                migration.get("message", f"`{definition.name}` is retired."),
+                "",
+                "- Lifecycle stage: `retired`",
+                *([f"- Target home: `{exposure.target_home}`"] if exposure.target_home else []),
+                *(
+                    [f"- Migration release: `{exposure.migration_release}`"]
+                    if exposure.migration_release
+                    else []
+                ),
+                *(
+                    [f"- Runs as `ulw-work` capability: `{migration['selected_capability']}`"]
+                    if migration.get("selected_capability")
+                    else []
+                ),
+                "",
+            ]
+        )
+        return lines
+    triggers = ", ".join(f"`{trigger}`" for trigger in definition.triggers)
+    lines.extend(
+        [
+            f"### {definition.name}",
+            "",
+            definition.description,
+            "",
+            f"- Category: `{definition.category}`",
+            f"- Phase: `{definition.phase}`",
+            f"- Hermes role: `{definition.hermes_role}`",
+            f"- Quality tier: `{definition.quality_tier}`",
+            f"- Reasoning demand: `{definition.reasoning_demand}`",
+            f"- Exposure: `{exposure.exposure}`",
+            f"- Install visibility: `{str(exposure.install_visibility).lower()}`",
+            f"- Docs visibility: `{exposure.docs_visibility}`",
+            f"- Compatibility alias: `{str(exposure.compatibility_alias).lower()}`",
+            f"- Lifecycle stage: `{exposure.lifecycle_stage}`",
+            *([f"- Target home: `{exposure.target_home}`"] if exposure.target_home else []),
+            *(
+                [f"- Migration release: `{exposure.migration_release}`"]
+                if exposure.migration_release
+                else []
+            ),
+            f"- Preferred usage: {exposure.preferred_usage}",
+            f"- Handoff policy: {definition.handoff_policy}",
+            f"- Why this exists: {definition.why_this_exists}",
+            *(
+                ["- First steps:", *[f"  - {item}" for item in definition.opening_steps]]
+                if definition.opening_steps
+                else []
+            ),
+            f"- Use when: {definition.use_when}",
+            "- Do not use when:",
+            *[f"  - {item}" for item in definition.do_not_use_when],
+            f"- Strong routing signals: {triggers}",
+            "- Good example:",
+            f"  - Prompt: {definition.good_example.prompt if definition.good_example else ''}",
+            f"  - Expected behavior: {definition.good_example.expected if definition.good_example else ''}",
+            f"  - Why: {definition.good_example.why if definition.good_example else ''}",
+            "- Bad example:",
+            f"  - Prompt: {definition.bad_example.prompt if definition.bad_example else ''}",
+            f"  - Expected behavior: {definition.bad_example.expected if definition.bad_example else ''}",
+            f"  - Why: {definition.bad_example.why if definition.bad_example else ''}",
+            "- Quality bar:",
+            *[f"  - {item}" for item in definition.quality_bar],
+            "- Completion checklist:",
+            *[f"  - {item}" for item in definition.final_checklist],
+            "- Recovery notes:",
+            *[f"  - {item}" for item in definition.recovery_notes],
+            "- Required inputs:",
+            *[f"  - {item}" for item in definition.required_inputs],
+            *expert_question_reference_lines(definition),
+            "- Expected outputs:",
+            *[f"  - {item}" for item in definition.expected_outputs],
+            "- Artifact expectations:",
+            *[f"  - {item}" for item in definition.artifact_expectations],
+            *(
+                [
+                    "- Artifact contract enforcement:",
+                    "  - This label denotes the machine-enforcement level, not a skill quality score and not an observed evidence state.",
+                    *[
+                        f"  - contract_id: `{ref.contract_id}`; enforcement_level: `{ref.enforcement_level}`; "
+                        f"consumer_id: `{ref.consumer_id or 'none'}`"
+                        for ref in definition.artifact_contracts
+                    ],
+                ]
+                if definition.artifact_contracts
+                else []
+            ),
+            "- Safety rules:",
+            *[f"  - {item}" for item in definition.safety_rules],
+            *procedure_reference_lines(definition),
+            "",
+        ]
+    )
+    return lines
+
+
 def workflow_reference_markdown() -> str:
     return _workflow_reference_markdown_cached()
 
@@ -6875,113 +7015,7 @@ def _workflow_reference_markdown_cached() -> str:
         "",
     ]
     for definition in definitions:
-        exposure = surface_exposure_for_skill(definition.name)
-        # A retired engine keeps a section marker for link stability but no
-        # workflow body: rendering its triggers, examples, and quality bar as
-        # if it were invocable is what made repo-readers and prompt-based
-        # installers treat retired engines as current (owner report,
-        # 2026-08-20). The stub carries only the migration copy.
-        if exposure.lifecycle_stage == "retired":
-            from .catalog import retired_skill_migration_error
-
-            migration = retired_skill_migration_error(definition.name)
-            lines.extend(
-                [
-                    f"### {definition.name}",
-                    "",
-                    migration.get("message", f"`{definition.name}` is retired."),
-                    "",
-                    "- Lifecycle stage: `retired`",
-                    *([f"- Target home: `{exposure.target_home}`"] if exposure.target_home else []),
-                    *(
-                        [f"- Migration release: `{exposure.migration_release}`"]
-                        if exposure.migration_release
-                        else []
-                    ),
-                    *(
-                        [f"- Runs as `ulw-work` capability: `{migration['selected_capability']}`"]
-                        if migration.get("selected_capability")
-                        else []
-                    ),
-                    "",
-                ]
-            )
-            continue
-        triggers = ", ".join(f"`{trigger}`" for trigger in definition.triggers)
-        lines.extend(
-            [
-                f"### {definition.name}",
-                "",
-                definition.description,
-                "",
-                f"- Category: `{definition.category}`",
-                f"- Phase: `{definition.phase}`",
-                f"- Hermes role: `{definition.hermes_role}`",
-                f"- Quality tier: `{definition.quality_tier}`",
-                f"- Reasoning demand: `{definition.reasoning_demand}`",
-                f"- Exposure: `{exposure.exposure}`",
-                f"- Install visibility: `{str(exposure.install_visibility).lower()}`",
-                f"- Docs visibility: `{exposure.docs_visibility}`",
-                f"- Compatibility alias: `{str(exposure.compatibility_alias).lower()}`",
-                f"- Lifecycle stage: `{exposure.lifecycle_stage}`",
-                *([f"- Target home: `{exposure.target_home}`"] if exposure.target_home else []),
-                *(
-                    [f"- Migration release: `{exposure.migration_release}`"]
-                    if exposure.migration_release
-                    else []
-                ),
-                f"- Preferred usage: {exposure.preferred_usage}",
-                f"- Handoff policy: {definition.handoff_policy}",
-                f"- Why this exists: {definition.why_this_exists}",
-                *(
-                    ["- First steps:", *[f"  - {item}" for item in definition.opening_steps]]
-                    if definition.opening_steps
-                    else []
-                ),
-                f"- Use when: {definition.use_when}",
-                "- Do not use when:",
-                *[f"  - {item}" for item in definition.do_not_use_when],
-                f"- Strong routing signals: {triggers}",
-                "- Good example:",
-                f"  - Prompt: {definition.good_example.prompt if definition.good_example else ''}",
-                f"  - Expected behavior: {definition.good_example.expected if definition.good_example else ''}",
-                f"  - Why: {definition.good_example.why if definition.good_example else ''}",
-                "- Bad example:",
-                f"  - Prompt: {definition.bad_example.prompt if definition.bad_example else ''}",
-                f"  - Expected behavior: {definition.bad_example.expected if definition.bad_example else ''}",
-                f"  - Why: {definition.bad_example.why if definition.bad_example else ''}",
-                "- Quality bar:",
-                *[f"  - {item}" for item in definition.quality_bar],
-                "- Completion checklist:",
-                *[f"  - {item}" for item in definition.final_checklist],
-                "- Recovery notes:",
-                *[f"  - {item}" for item in definition.recovery_notes],
-                "- Required inputs:",
-                *[f"  - {item}" for item in definition.required_inputs],
-                *expert_question_reference_lines(definition),
-                "- Expected outputs:",
-                *[f"  - {item}" for item in definition.expected_outputs],
-                "- Artifact expectations:",
-                *[f"  - {item}" for item in definition.artifact_expectations],
-                *(
-                    [
-                        "- Artifact contract enforcement:",
-                        "  - This label denotes the machine-enforcement level, not a skill quality score and not an observed evidence state.",
-                        *[
-                            f"  - contract_id: `{ref.contract_id}`; enforcement_level: `{ref.enforcement_level}`; "
-                            f"consumer_id: `{ref.consumer_id or 'none'}`"
-                            for ref in definition.artifact_contracts
-                        ],
-                    ]
-                    if definition.artifact_contracts
-                    else []
-                ),
-                "- Safety rules:",
-                *[f"  - {item}" for item in definition.safety_rules],
-                *procedure_reference_lines(definition),
-                "",
-            ]
-        )
+        lines.extend(workflow_reference_skill_lines(definition))
     lines.extend(["## Representative Harnesses", ""])
     for harness in harnesses:
         lines.extend(

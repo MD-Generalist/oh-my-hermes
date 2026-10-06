@@ -2,87 +2,9 @@ from __future__ import annotations
 
 from functools import lru_cache
 
-from .catalog import installable_skill_definitions, workflow_reference_definitions
-from .procedure_rendering import specialist_procedure_reference_markdown
-from .render import (
-    SkillReferenceTemplate,
-    SkillTemplate,
-    adversarial_consensus_reference_templates,
-    buzz_reference_templates,
-    buzz_skill,
-    code_review_reference_templates,
-    context_budget_reference_templates,
-    context_reference_templates,
-    context_skill,
-    deep_interview_skill,
-    docs_reference_templates,
-    docs_skill,
-    ai_slop_cleaner_reference_templates,
-    agent_ops_review_reference_templates,
-    apple_design_reference_templates,
-    application_threat_model_reference_templates,
-    automation_blueprint_reference_templates,
-    external_connector_reference_templates,
-    legal_compliance_reference_templates,
-    security_safety_review_reference_templates,
-    verification_gate_reference_templates,
-    award_bar_score_reference_templates,
-    design_reference_templates,
-    inference_serving_reference_templates,
-    tech_debt_audit_reference_templates,
-    frontend_performance_reference_templates,
-    scroll_motion_reference_templates,
-    accessibility_audit_reference_templates,
-    agent_evaluation_reference_templates,
-    strategy_brief_reference_templates,
-    refactor_plan_reference_templates,
-    frontend_refactor_reference_templates,
-    domain_engineering_reference_templates,
-    deep_interview_reference_templates,
-    file_ownership_reference_templates,
-    plan_constitution_reference_templates,
-    jev_preset_reference_templates,
-    prose_lexicon_reference_templates,
-    requirement_coverage_reference_templates,
-    requirements_quality_reference_templates,
-    review_lens_reference_templates,
-    idea_to_deploy_reference_templates,
-    jit_learn_skill,
-    llm_app_dev_reference_templates,
-    long_document_reading_skill,
-    live_incident_reference_templates,
-    app_debugging_reference_templates,
-    commit_pr_authoring_reference_templates,
-    git_workflow_reference_templates,
-    relational_db_reference_templates,
-    security_event_response_reference_templates,
-    agent_instructions_reference_templates,
-    iac_change_reference_templates,
-    data_pipelines_reference_templates,
-    model_finetuning_reference_templates,
-    mobile_release_reference_templates,
-    internal_audit_reference_templates,
-    release_cut_reference_templates,
-    todo_checklist_reference_templates,
-    long_document_reference_templates,
-    loop_reference_templates,
-    loop_skill,
-    maestro_reference_templates,
-    memory_new_skill,
-    memory_sync_reference_templates,
-    memory_sync_skill,
-    research_reference_templates,
-    router_reference_templates,
-    router_skill,
-    structural_search_skill,
-    ultraqa_reference_templates,
-    ultrawork_reference_templates,
-    ultrawork_skill,
-    wiki_reference_templates,
-    wiki_skill,
-    workflow_full_contract_reference,
-    workflow_skill,
-)
+from .catalog import installable_skill_definitions
+from .render import SkillReferenceTemplate, SkillTemplate, router_skill
+from .skill_record import reference_templates_in_producer_order, skill_record
 
 
 def builtin_skill_templates() -> list[SkillTemplate]:
@@ -90,118 +12,13 @@ def builtin_skill_templates() -> list[SkillTemplate]:
 
 
 def builtin_skill_reference_templates() -> list[SkillReferenceTemplate]:
-    return [
-        *router_reference_templates(),
-        *wiki_reference_templates(),
-        *code_review_reference_templates(),
-        *context_reference_templates(),
-        *docs_reference_templates(),
-        *context_budget_reference_templates(),
-        *buzz_reference_templates(),
-        *loop_reference_templates(),
-        *long_document_reference_templates(),
-        *application_threat_model_reference_templates(),
-        *live_incident_reference_templates(),
-        *app_debugging_reference_templates(),
-        *commit_pr_authoring_reference_templates(),
-        *git_workflow_reference_templates(),
-        *relational_db_reference_templates(),
-        *security_event_response_reference_templates(),
-        *agent_instructions_reference_templates(),
-        *iac_change_reference_templates(),
-        *data_pipelines_reference_templates(),
-        *model_finetuning_reference_templates(),
-        *mobile_release_reference_templates(),
-        *internal_audit_reference_templates(),
-        *release_cut_reference_templates(),
-        *automation_blueprint_reference_templates(),
-        *external_connector_reference_templates(),
-        *verification_gate_reference_templates(),
-        *security_safety_review_reference_templates(),
-        *legal_compliance_reference_templates(),
-        *todo_checklist_reference_templates(),
-        *memory_sync_reference_templates(),
-        *maestro_reference_templates(),
-        *adversarial_consensus_reference_templates(),
-        *ultraqa_reference_templates(),
-        *ultrawork_reference_templates(),
-        *idea_to_deploy_reference_templates(),
-        *llm_app_dev_reference_templates(),
-        *[
-            SkillReferenceTemplate(
-                definition.name,
-                "references/procedure.md",
-                specialist_procedure_reference_markdown(definition),
-            )
-            for definition in workflow_reference_definitions()
-            if definition.procedure_steps
-        ],
-        *[
-            SkillReferenceTemplate(
-                definition.name,
-                "references/full-contract.md",
-                workflow_full_contract_reference(definition, definition.name),
-            )
-            for definition in workflow_reference_definitions()
-            if definition.progressive_disclosure
-        ],
-        *research_reference_templates(),
-        *design_reference_templates(),
-        *apple_design_reference_templates(),
-        *award_bar_score_reference_templates(),
-        *agent_ops_review_reference_templates(),
-        *inference_serving_reference_templates(),
-        *tech_debt_audit_reference_templates(),
-        *frontend_performance_reference_templates(),
-        *scroll_motion_reference_templates(),
-        *accessibility_audit_reference_templates(),
-        *agent_evaluation_reference_templates(),
-        *strategy_brief_reference_templates(),
-        *refactor_plan_reference_templates(),
-        *frontend_refactor_reference_templates(),
-        *ai_slop_cleaner_reference_templates(),
-        *domain_engineering_reference_templates(),
-        # Issue #1714: one reference per skill carrying a mechanism the body
-        # only points at. Reference files are measured outside
-        # FULL_PROFILE_SKILL_BODY_CHAR_LIMIT, so each capability costs one
-        # pointer line in the always-loaded budget and nothing more.
-        *requirement_coverage_reference_templates(),
-        *deep_interview_reference_templates(),
-        *file_ownership_reference_templates(),
-        *review_lens_reference_templates(),
-        *requirements_quality_reference_templates(),
-        *prose_lexicon_reference_templates(),
-        *plan_constitution_reference_templates(),
-        *jev_preset_reference_templates(),
-    ]
+    # The producer list is data in `skill_record.REFERENCE_PRODUCERS`, where
+    # each record also reads its own references from it.
+    return reference_templates_in_producer_order()
 
 
 def _skill_template_for(name: str) -> SkillTemplate:
-    if name == "context":
-        return context_skill()
-    if name == "deep-interview":
-        return deep_interview_skill()
-    if name == "product-docs":
-        return docs_skill()
-    if name == "jit-learn":
-        return jit_learn_skill()
-    if name == "loop":
-        return loop_skill()
-    if name == "long-document-reading":
-        return long_document_reading_skill()
-    if name == "memory-new":
-        return memory_new_skill()
-    if name == "memory-sync":
-        return memory_sync_skill()
-    if name == "wiki":
-        return wiki_skill()
-    if name == "buzz":
-        return buzz_skill()
-    if name in ("codebase-onboarding", "codegraph-refresh"):
-        return structural_search_skill(name)
-    if name == "ultrawork":
-        return ultrawork_skill()
-    return workflow_skill(name)
+    return skill_record(name).body()
 
 
 @lru_cache(maxsize=1)

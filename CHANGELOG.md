@@ -4,6 +4,23 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **One record per skill.** `src/skills/skill_record.py` assembles each
+  skill's definition, exposure, harness, portability class and overrides,
+  effective routing policy (with the table it came from), next-action label,
+  and body/reference renderers into one `SkillRecord`, and
+  `project(skill, target)` returns that skill's slice of the managed skill
+  tree, the Agent Skills projection, `docs/WORKFLOWS.md`, `docs/ROLES.md`,
+  the shortlist sidecar and the capability-family sidecar. `packaging.py`
+  reads bodies and references through it — its 13-name if-chain and the
+  hand-listed reference producers are data on the record — and every
+  generator shares its per-skill unit with `project()`. The record moves no
+  data and derives no boundary field from another (the policy boundary, the
+  harness guard, the safety rules and the portable override are four
+  different fields); every generated artifact and both digest fixtures are
+  byte-identical, routing is unchanged at 428/627. CLAUDE.md names the
+  record as the source for the skill rows and CONTEXT.md gains **Skill
+  record**; data migration per skill follows behind this interface.
+
 - **The live plugin no longer reads `claude-code.md` as a mention of Claude
   Code.** The bundle's awareness route hints carried a vendored copy of
   `contains_boundary_phrase` for standalone hosts, and that copy lacked the

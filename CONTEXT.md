@@ -76,6 +76,15 @@ plus render code). Skills, `docs/WORKFLOWS.md`, `docs/ROLES.md`, and the demo
 cards are byte-exact projections of it.
 _Avoid_: editing any generated projection directly
 
+**Skill record**:
+One record per skill (`src/skills/skill_record.py`) assembling its definition,
+harness, routing policy, portability, body and reference renderers, and
+next-action label from the catalog tables, behind `project(skill, target)`. It
+reads the tables and moves no data; boundary fields stay as each table states
+them.
+_Avoid_: reading a skill's fields from the tables directly in a new writer;
+deriving one boundary field from another
+
 **Router**:
 OMH's deterministic chat-intake classifier that maps a natural-language
 request to a workflow, skill, or intervention using normalized phrase and

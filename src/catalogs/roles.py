@@ -347,24 +347,7 @@ def roles_reference_markdown() -> str:
         "",
     ]
     for role in _ROLES:
-        lines.extend(
-            [
-                f"### {role.title}",
-                "",
-                f"- ID: `{role.id}`",
-                f"- Display name: {role.title}",
-                f"- Legacy aliases: {', '.join(f'`{alias}`' for alias in role.legacy_ids) if role.legacy_ids else '`none`'}",
-                f"- Purpose: {role.purpose}",
-                "- Owns:",
-                *[f"  - {item}" for item in role.owns],
-                f"- Primary skills: {', '.join(f'`{skill}`' for skill in role.primary_skills)}",
-                f"- Primary harnesses: {', '.join(f'`{harness}`' for harness in role.primary_harnesses)}",
-                f"- Wrapper actions: {', '.join(f'`{action}`' for action in role.wrapper_actions)}",
-                f"- Evidence boundary: {role.evidence_boundary}",
-                *_hermes_coding_harness_role_note(role.id),
-                "",
-            ]
-        )
+        lines.extend(role_reference_lines(role))
     lines.extend(
         [
             "## Public Claim Rule",
@@ -374,6 +357,30 @@ def roles_reference_markdown() -> str:
         ]
     )
     return "\n".join(lines)
+
+
+def role_reference_lines(role: RoleDefinition) -> list[str]:
+    """One role's section of `docs/ROLES.md`, as the lines the document joins.
+
+    The document is per role, not per skill: a skill appears only inside the
+    sections of the roles that list it under primary skills.
+    """
+    return [
+        f"### {role.title}",
+        "",
+        f"- ID: `{role.id}`",
+        f"- Display name: {role.title}",
+        f"- Legacy aliases: {', '.join(f'`{alias}`' for alias in role.legacy_ids) if role.legacy_ids else '`none`'}",
+        f"- Purpose: {role.purpose}",
+        "- Owns:",
+        *[f"  - {item}" for item in role.owns],
+        f"- Primary skills: {', '.join(f'`{skill}`' for skill in role.primary_skills)}",
+        f"- Primary harnesses: {', '.join(f'`{harness}`' for harness in role.primary_harnesses)}",
+        f"- Wrapper actions: {', '.join(f'`{action}`' for action in role.wrapper_actions)}",
+        f"- Evidence boundary: {role.evidence_boundary}",
+        *_hermes_coding_harness_role_note(role.id),
+        "",
+    ]
 
 
 def _hermes_coding_harness_role_note(role_id: str) -> list[str]:
