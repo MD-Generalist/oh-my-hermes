@@ -27,9 +27,12 @@ from __future__ import annotations
 
 import re
 from collections.abc import Collection
-from typing import Final
+from typing import TYPE_CHECKING, Final
 
 from .localization import normalized_phrase, phrase_is_spoken
+
+if TYPE_CHECKING:
+    from .query import RoutingQuery
 
 JEV_ASK: Final = "jev-ask"
 JEV_ROUTE: Final = "jev-route"
@@ -228,8 +231,12 @@ def addresses_jev(message: str) -> bool:
     )
 
 
-def jev_addressed_skill(message: str, names: Collection[str]) -> str | None:
-    """The `jev-*` skill this message invokes, or None. See the module docstring."""
+def jev_addressed_skill(message: str, names: Collection[str], query: RoutingQuery | None = None) -> str | None:
+    """The `jev-*` skill this message invokes, or None. See the module docstring.
+
+    `query`, when given, is `message` already prepared (`query.raw == message`);
+    the partner scorer reads it instead of rebuilding the prep chain.
+    """
     if "jev" not in message.casefold():
         return None
     normalized = normalized_phrase(message)
@@ -250,7 +257,7 @@ def jev_addressed_skill(message: str, names: Collection[str]) -> str | None:
             return skill
     from .recommend import confident_scored_field_winner
 
-    partner = confident_scored_field_winner(message)
+    partner = confident_scored_field_winner(query or message)
     sibling = JEV_SIBLING_BY_PARTNER.get(partner)
     if sibling and sibling in names:
         return sibling

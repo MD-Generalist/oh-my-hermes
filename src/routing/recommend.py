@@ -2476,8 +2476,9 @@ def recommend_skills(
 
 
 class _RawMessageKey:
-    """Cache key for `_recommend_skills_cached`: equal and hashed on the raw text alone.
+    """Routing cache key: equal and hashed on the raw text alone.
 
+    Keys `_recommend_skills_cached` and `policy._bare_invocation_is_outscored_cached`.
     A `RoutingQuery` and its text share one cache entry, a hit builds no stage,
     and a miss reuses the caller's prepared query when it handed one in.
     """

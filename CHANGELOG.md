@@ -4,6 +4,16 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **The route's prepared query reaches the explicit-invocation checks.**
+  `policy.explicit_skill_invocation` and `jev_addressing.jev_addressed_skill`
+  accept the chat path's `RoutingQuery` and use it only when its raw text is
+  exactly what they would have scored, so a Jev-addressed message prepares its
+  text once instead of six times and the bare-first-word check once instead of
+  twice; prep-chain runs over the 1,051-message routing corpus fall from 1,365
+  to 1,315 with every verdict byte-identical. `tests/test_efficiency.py` reads
+  the awareness, capability and body-total limits from the drift ledger
+  instead of importing `release.py` constants.
+
 - **One record per skill.** `src/skills/skill_record.py` assembles each
   skill's definition, exposure, harness, portability class and overrides,
   effective routing policy (with the table it came from), next-action label,

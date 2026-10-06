@@ -10,6 +10,7 @@ from _module_patch import patch_modules
 
 from omh.mcp import bridge
 from omh.routing import chat as chat_module
+from omh.routing import policy as policy_module
 from omh.routing import recommend as recommend_module
 from omh.plugin_bundle.omh.tools import recommend_tool
 from omh.routing.chat import public_chat_route_payload
@@ -155,6 +156,65 @@ class ChatPathBuildsTheQueryOnceTests(unittest.TestCase):
             public_chat_route_payload(message)
         self.assertEqual(scorer.call_count, 1, "the message must reach recommend_skills")
         self.assertEqual(chain.call_count, 1)
+
+    def _chain_runs_and_route(self, message: str) -> tuple[int, dict[str, object]]:
+        for cached in (
+            chat_module._public_chat_route_payload_cached,
+            chat_module._route_chat_message_cached,
+            recommend_module._recommend_skills_cached,
+            policy_module._bare_invocation_is_outscored_cached,
+        ):
+            cached.cache_clear()
+        with mock.patch.object(
+            recommend_module,
+            "_strip_path_like_fragments",
+            wraps=recommend_module._strip_path_like_fragments,
+        ) as chain:
+            route = public_chat_route_payload(message)
+        return chain.call_count, route
+
+    def test_a_jev_addressed_message_scores_its_partner_on_the_route_query(self) -> None:
+        # The Jev partner scorer (`confident_scored_field_winner`) is reached
+        # from five explicit-invocation checks on the fast paths. Each one
+        # rebuilt the chain from the same text, so this message ran it six
+        # times before the route's query was threaded through.
+        with mock.patch.object(
+            recommend_module,
+            "confident_scored_field_winner",
+            wraps=recommend_module.confident_scored_field_winner,
+        ) as partner:
+            runs, route = self._chain_runs_and_route("jev, is this README clear?")
+        self.assertGreater(partner.call_count, 0, "the message must reach the partner scorer")
+        self.assertEqual(route["selected_skill"], "jev-ask")
+        self.assertEqual(runs, 1)
+
+    def test_a_bare_first_word_invocation_scores_its_field_on_the_route_query(self) -> None:
+        # The bare-first-word check (`_bare_invocation_is_outscored`) scored
+        # the unbiased field on a chain rebuilt from the same text: two runs
+        # before the route's query was threaded through.
+        with mock.patch.object(
+            recommend_module,
+            "scored_field_winner_without_explicit_invocation",
+            wraps=recommend_module.scored_field_winner_without_explicit_invocation,
+        ) as field:
+            runs, route = self._chain_runs_and_route("research kubernetes operator patterns for this design")
+        self.assertGreater(field.call_count, 0, "the message must reach the bare-invocation check")
+        self.assertEqual(route["selected_skill"], "research")
+        self.assertEqual(runs, 1)
+
+    def test_a_query_built_from_other_text_is_not_reused(self) -> None:
+        # The policy helper rebuilds from its own stripped text whenever the
+        # query it is handed was built from anything else.
+        names = {"research", "research-brief"}
+        message = "research kubernetes operator patterns for this design"
+        policy_module._bare_invocation_is_outscored_cached.cache_clear()
+        with mock.patch.object(
+            recommend_module,
+            "_strip_path_like_fragments",
+            wraps=recommend_module._strip_path_like_fragments,
+        ) as chain:
+            policy_module.explicit_skill_invocation(message, names, RoutingQuery.from_message("  " + message))
+        self.assertEqual(chain.call_count, 2, "one run for the foreign query, one for the helper's own text")
 
     def test_a_query_handed_to_recommend_skills_builds_no_stage(self) -> None:
         query = RoutingQuery.from_message("plan the zebra-stripe billing migration for the ledger team")
