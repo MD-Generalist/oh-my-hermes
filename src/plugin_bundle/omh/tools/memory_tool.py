@@ -22,6 +22,14 @@ scores -- the same boundary this file has always held.
 Read-only with respect to Hermes: nothing here opens a Hermes file for writing.
 Hermes owns ``~/.hermes/memories``, and the `memory` tool Hermes exposes to the
 model is what edits it.
+
+The one write is ``capture``, into OMH's own store. It is the model's path
+into that store with no operator step: the store held zero records after two
+months while capture and approve existed only as CLI verbs. The bundle cannot
+import ``omh`` (Hermes loads it with its own interpreter), and the capture and
+approval path is too large to vendor, so ``capture`` spawns the installed
+``omh`` console script and reports what that process observed -- never a
+receipt state the CLI did not print.
 """
 
 from __future__ import annotations
@@ -29,26 +37,50 @@ from __future__ import annotations
 from .. import runtime_paths
 
 import json
+import os
+from pathlib import Path
+import shutil
+import subprocess
+import sys
 
 from ..degradation import safe_error_type as _safe_error_type
 from ..hermes_memory import build_hermes_memory_bridge
 from ..host_observation import OBSERVATION_SCHEMA, attach_public_observation, observe_plugin_tool_call
 from ..memory_blocks import read_memory_block, read_memory_blocks, select_memory_blocks
 from ..memory_dreaming import read_dreaming_state, read_latest_consolidation
+from ..project_identity import resolve_project_identity
 
-MEMORY_ACTIONS = ("status", "blocks", "read", "consolidation")
+MEMORY_ACTIONS = ("status", "blocks", "read", "consolidation", "capture")
+CAPTURE_RECORD_TYPES = ("fact", "decision", "lesson", "procedure", "episode")
+CAPTURE_SCOPES = ("project", "user")
+CAPTURE_RETENTION_CLASSES = ("durable", "standard", "volatile")
+# The capture command stores at most this many summary characters.
+CAPTURE_SUMMARY_MAX_CHARS = 500
+CAPTURE_MAX_TAGS = 8
+CAPTURE_TIMEOUT_SECONDS = 30
+# Non-secret process basics the child needs to find its home, venv and temp
+# directory on every platform. Everything else in the Hermes process
+# environment -- provider keys among it -- stays out of the child.
+_CHILD_ENV_KEYS = (
+    "HOME", "USERPROFILE", "LOCALAPPDATA", "APPDATA", "SYSTEMROOT", "PATH", "PATHEXT",
+    "LANG", "LC_ALL", "TMPDIR", "TEMP", "TMP", "XDG_DATA_HOME", "XDG_CONFIG_HOME",
+    "OMH_VENV_DIR", "OMH_BIN_DIR",
+)
 
 OMH_MEMORY_SCHEMA = {
     "name": "omh_memory",
     "description": (
-        "Read OMH's durable memory and how it relates to Hermes' own. Actions: 'status' "
-        "compares Hermes' built-in memory (MEMORY.md, USER.md) against OMH's approved records "
-        "and reports what fits under Hermes' character cap; 'blocks' is a review-readable status "
-        "listing with admission and replay state; 'read' returns a value only for replay-eligible "
-        "OMH-reviewed blocks; 'consolidation' reads the latest recorded reminder and counters "
-        "without evaluating or consuming them (no 'due' field when no brief is recorded). Hermes "
-        "native, provider, and vector context is not_omh_reviewed and never grants OMH admission. "
-        "Hermes memory entries are never returned, only counted and hashed. OMH cannot change Hermes memory."
+        "Read and add to OMH's durable memory. Call action='capture' yourself, without asking, when "
+        "the user states something worth knowing in a later session: a lasting preference, a decision, "
+        "a fact about their setup or project, or a lesson learned. One fact per call, as one or two "
+        "sentences with absolute dates (never 'yesterday' or 'next week'). Never capture secrets, raw "
+        "logs, transcripts, or task progress. Safe captures are remembered at once; the result's status "
+        "says remembered, already_remembered, pending_review, or refused. Call 'status' first only when "
+        "unsure what is already held. 'status' compares Hermes' built-in memory (MEMORY.md, USER.md) "
+        "with OMH's approved records; 'blocks' lists blocks with admission and replay state; 'read' "
+        "returns a replay-eligible block's value; 'consolidation' reads the latest reminder without "
+        "evaluating it. Hermes memory entries are never returned, only counted and hashed. OMH cannot "
+        "change Hermes memory."
     ),
     "parameters": {
         "type": "object",
@@ -56,11 +88,35 @@ OMH_MEMORY_SCHEMA = {
             "action": {
                 "type": "string",
                 "enum": list(MEMORY_ACTIONS),
-                "description": "Which review/read view to return. Defaults to 'status'. Blocks are review-readable; only replay-eligible reviewed blocks are value-readable.",
+                "description": "Defaults to 'status'. 'capture' writes one memory; the others only read.",
             },
             "label": {
                 "type": "string",
                 "description": "Block label, required by the 'read' action.",
+            },
+            "summary": {
+                "type": "string",
+                "description": "capture: the fact itself, self-contained, at most 500 characters.",
+            },
+            "record_type": {
+                "type": "string",
+                "enum": list(CAPTURE_RECORD_TYPES),
+                "description": "capture: defaults to 'fact'.",
+            },
+            "tags": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "capture: up to 8 short topic tags.",
+            },
+            "scope": {
+                "type": "string",
+                "enum": list(CAPTURE_SCOPES),
+                "description": "capture: 'project' for this repository, 'user' for every session. Defaults to 'project' inside a repository, else 'user'.",
+            },
+            "retention_class": {
+                "type": "string",
+                "enum": list(CAPTURE_RETENTION_CLASSES),
+                "description": "capture: defaults to 'durable'; 'volatile' expires within a week.",
             },
             "observation": OBSERVATION_SCHEMA,
         },
@@ -79,6 +135,8 @@ def omh_memory_handler(args: dict, **kwargs) -> str:
         payload, backend = _read_block(str((args or {}).get("label", "") or "")), "bundle_memory"
     elif action == "consolidation":
         payload, backend = _consolidation()
+    elif action == "capture":
+        payload, backend = _capture(args or {}, kwargs), "omh_cli"
     else:
         payload, backend = _memory_bridge()
     payload["plugin_tool"] = "omh_memory"
@@ -199,6 +257,224 @@ def _consolidation() -> tuple[dict[str, object], str]:
         return payload, "bundle_memory"
     except Exception as exc:
         return _unavailable(_safe_error_type(type(exc).__name__)), "bundle_memory_error"
+
+
+def _capture(args: dict, kwargs: dict) -> dict[str, object]:
+    """Capture one memory through the installed `omh` CLI and map its answer."""
+    summary = " ".join(str(args.get("summary", "") or "").split())
+    record_type = str(args.get("record_type", "") or "fact").strip().lower()
+    retention = str(args.get("retention_class", "") or "durable").strip().lower()
+    tags = args.get("tags") or []
+    if not summary:
+        return _capture_result("refused", reason="summary_required", next_action="Retry with a one- or two-sentence summary.")
+    if len(summary) > CAPTURE_SUMMARY_MAX_CHARS:
+        return _capture_result("refused", reason="summary_too_long", next_action=f"Restate the fact in at most {CAPTURE_SUMMARY_MAX_CHARS} characters.")
+    if record_type not in CAPTURE_RECORD_TYPES:
+        return _capture_result("refused", reason="unsupported_record_type", next_action=f"Use one of: {', '.join(CAPTURE_RECORD_TYPES)}.")
+    if retention not in CAPTURE_RETENTION_CLASSES:
+        return _capture_result("refused", reason="unsupported_retention_class", next_action=f"Use one of: {', '.join(CAPTURE_RETENTION_CLASSES)}.")
+    if not isinstance(tags, list) or len(tags) > CAPTURE_MAX_TAGS or not all(isinstance(tag, str) for tag in tags):
+        return _capture_result("refused", reason="invalid_tags", next_action=f"Pass at most {CAPTURE_MAX_TAGS} tags as a list of strings.")
+    cwd = _session_cwd(kwargs)
+    in_project = cwd is not None and resolve_project_identity(cwd).state == "resolved"
+    scope = str(args.get("scope", "") or ("project" if in_project else "user")).strip().lower()
+    if scope not in CAPTURE_SCOPES:
+        return _capture_result("refused", reason="unsupported_scope", next_action="Use scope 'project' or 'user'.")
+    if scope == "project" and not in_project:
+        return _capture_result(
+            "refused",
+            reason="project_scope_unresolved",
+            next_action="This session is not inside a repository OMH can identify; retry with scope='user'.",
+        )
+    executable = _resolve_omh_executable()
+    if executable is None:
+        return _capture_result(
+            "omh_cli_unavailable",
+            reason="omh_cli_not_found",
+            next_action="Nothing was saved. Tell the user the `omh` command was not found; `omh doctor` checks the install.",
+        )
+    argv = [
+        executable,
+        "--omh-home", _home("OMH_HOME", "~/.omh"),
+        "--hermes-home", _home("HERMES_HOME", "~/.hermes"),
+        "memory", "capture",
+        "--type", record_type,
+        "--retention-class", retention,
+        # The model's own loop has no reviewer who would act on a duplicate
+        # candidate, so a duplicate names the existing record and writes nothing.
+        "--on-duplicate", "skip",
+        "--source", "hermes_model",
+        # `user` maps to the user-global scope: it needs no acting-principal
+        # context, and recall delivers it beside the project scope.
+        "--scope-kind", "project" if scope == "project" else "user-global",
+        # `--tag=` and `--` keep a value that starts with "-" from reading as a flag.
+        *[f"--tag={tag}" for tag in tags],
+        "--", summary,
+    ]
+    return _run_capture(argv, cwd=cwd or Path.home())
+
+
+def _run_capture(argv: list[str], *, cwd: Path) -> dict[str, object]:
+    try:
+        proc = subprocess.run(
+            argv,
+            cwd=str(cwd),
+            shell=False,
+            capture_output=True,
+            text=True,
+            timeout=CAPTURE_TIMEOUT_SECONDS,
+            check=False,
+            env=_child_environment(),
+        )
+    except FileNotFoundError:
+        return _capture_result("omh_cli_unavailable", reason="omh_cli_not_found", next_action="Nothing was saved. `omh doctor` checks the install.")
+    except subprocess.TimeoutExpired:
+        return _capture_result(
+            "error",
+            reason="timeout",
+            next_action=f"The CLI did not answer within {CAPTURE_TIMEOUT_SECONDS}s, so nothing is confirmed saved. Call action='status' before retrying.",
+        )
+    except OSError as exc:
+        return _capture_result("error", reason=_safe_error_type(type(exc).__name__), next_action="Nothing is confirmed saved. `omh doctor` checks the install.")
+    if proc.returncode != 0:
+        lines = (proc.stderr or "").strip().splitlines()
+        return _capture_result(
+            "error",
+            reason=f"cli_exit_{proc.returncode}",
+            detail=lines[-1][:200] if lines else "",
+            next_action="Nothing is confirmed saved. Tell the user the capture failed and what the detail says.",
+        )
+    try:
+        payload = json.loads(proc.stdout or "")
+    except ValueError:
+        payload = None
+    if not isinstance(payload, dict):
+        return _capture_result("error", reason="unparseable_cli_output", next_action="Nothing is confirmed saved. Call action='status' to see what is held.")
+    return _map_capture_payload(payload)
+
+
+def _map_capture_payload(payload: dict) -> dict[str, object]:
+    """Translate `omh memory capture` JSON into the tool's closed status set."""
+    candidate = payload.get("candidate") if isinstance(payload.get("candidate"), dict) else {}
+    record = payload.get("record") if isinstance(payload.get("record"), dict) else {}
+    receipt = payload.get("receipt_state")
+    fields: dict[str, object] = {
+        "receipt_state": str(receipt) if receipt else None,
+        "candidate_id": str(candidate.get("candidate_id", "") or "") or None,
+        "record_id": str(record.get("record_id", "") or "") or None,
+        "admission_state": _admission_state(record),
+    }
+    if not payload.get("captured"):
+        reason = str(payload.get("reason", "") or "not_captured")
+        if reason == "duplicate":
+            duplicate_of = str(payload.get("duplicate_of", "") or "")
+            return _capture_result(
+                "already_remembered",
+                **{**fields, "record_id": duplicate_of or None},
+                duplicate_of=duplicate_of,
+                next_action="Nothing new was saved; the same fact is already held.",
+            )
+        return _capture_result(
+            "refused",
+            **fields,
+            reason=reason,
+            next_action=(
+                "Memory is turned off in OMH settings; nothing was saved."
+                if reason == "project_memory_disabled"
+                else "Nothing was saved. Do not retry the same text."
+            ),
+        )
+    if payload.get("auto_approved"):
+        return _capture_result("remembered", **fields, next_action="Saved. Later sessions receive it when it fits their recall budget.")
+    return _capture_result(
+        "pending_review",
+        **{**fields, "admission_state": "pending_review"},
+        review_reason=str(payload.get("review_reason", "") or "unknown"),
+        next_action=(
+            "Saved as a candidate that waits for operator review (`omh memory review`). For "
+            "relative_time_phrase, capture the fact again with an absolute date instead."
+        ),
+    )
+
+
+def _admission_state(record: dict) -> str | None:
+    admission = record.get("admission")
+    state = admission.get("state") if isinstance(admission, dict) else None
+    return str(state) if state else None
+
+
+def _capture_result(status: str, **fields: object) -> dict[str, object]:
+    return {
+        "schema_version": "omh_memory_capture/v1",
+        "status": status,
+        "receipt_state": None,
+        "record_id": None,
+        "candidate_id": None,
+        "admission_state": None,
+        **fields,
+        "claim_boundary": (
+            "receipt_state is what the `omh memory capture` process observed on local disk; it is not "
+            "evidence that a later session recalled or used the memory, and Hermes memory is unchanged."
+        ),
+    }
+
+
+def _session_cwd(kwargs: dict) -> Path | None:
+    """A host-supplied cwd, else Hermes' logical working directory, else None."""
+    supplied = kwargs.get("cwd")
+    try:
+        if supplied:
+            return runtime_paths.expand_path(supplied)
+        return runtime_paths.runtime_cwd()
+    except (OSError, ValueError):
+        return None
+
+
+def _resolve_omh_executable() -> str | None:
+    """The installed `omh` console script, or None.
+
+    Order: PATH, then the installers' managed generation and legacy venv, then
+    the command bin directory. Hermes often runs without the user's shell PATH,
+    which is why the fixed locations follow. They mirror
+    `managed_command_venv_dir` / `managed_command_bin_dir` in
+    `omh.system.paths`, which this bundle cannot import. A Windows `.cmd` or
+    `.bat` shim is never used: cmd.exe re-parses its arguments, and the summary
+    is model-supplied text.
+    """
+    windows = sys.platform.startswith("win")
+    found = shutil.which("omh")
+    if found and not (windows and Path(found).suffix.lower() in {".cmd", ".bat"}):
+        return found
+    for candidate in _managed_omh_candidates(windows):
+        if candidate.is_file() and os.access(candidate, os.X_OK):
+            return str(candidate)
+    return None
+
+
+def _managed_omh_candidates(windows: bool) -> list[Path]:
+    home = Path(os.environ.get("USERPROFILE" if windows else "HOME") or Path.home())
+    local_app_data = os.environ.get("LOCALAPPDATA", "")
+    if os.environ.get("OMH_VENV_DIR"):
+        root = Path(os.environ["OMH_VENV_DIR"]).expanduser().parent
+    elif os.environ.get("XDG_DATA_HOME"):
+        root = Path(os.environ["XDG_DATA_HOME"]).expanduser() / "omh"
+    elif windows and local_app_data:
+        root = Path(local_app_data).expanduser() / "omh"
+    else:
+        root = home / ".local" / "share" / "omh"
+    script = Path("Scripts", "omh.exe") if windows else Path("bin", "omh")
+    candidates = [root / "current" / "venv" / script, root / "venv" / script]
+    if not windows:
+        bin_dir = Path(os.environ["OMH_BIN_DIR"]).expanduser() if os.environ.get("OMH_BIN_DIR") else home / ".local" / "bin"
+        candidates.append(bin_dir / "omh")
+    return candidates
+
+
+def _child_environment() -> dict[str, str]:
+    env = {key: os.environ[key] for key in _CHILD_ENV_KEYS if key in os.environ}
+    env.setdefault("PATH", os.defpath)
+    env["PYTHONNOUSERSITE"] = "1"
+    return env
 
 
 def _unknown_action(action: str) -> dict[str, object]:

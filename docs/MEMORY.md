@@ -388,14 +388,53 @@ an explicit block read. Unsupported schema, missing review linkage, safety
 failure, expiry, stale review, scope mismatch, conflict, supersession, or a
 legacy v1 artifact fails closed with a reason code.
 
+### The model-driven loop
+
+Hermes writes into this store itself, with no operator step in the normal
+loop. When the user states a lasting preference, a decision, a fact about
+their setup or project, or a lesson, the model calls
+`omh_memory(action="capture", summary=..., record_type=..., tags=...,
+scope=..., retention_class=...)`. The tool runs the installed `omh memory
+capture` command (the plugin bundle cannot import `omh`), passing
+`--on-duplicate skip`, and maps its JSON to one `status`:
+
+| `status` | Meaning |
+| --- | --- |
+| `remembered` | Auto-safe approval ran; `receipt_state` says how far the write was observed, `replay_ready` only when the CLI's own replay evaluation cleared it. |
+| `pending_review` | A candidate was persisted and held; `review_reason` is `unsafe_content`, `relative_time_phrase`, `duplicate`, `derived_content`, or `policy_review_first`. |
+| `already_remembered` | A live record has the same normalized summary; `duplicate_of` names it and nothing was written. |
+| `refused` | Nothing was written: invalid input, memory turned off, or a project scope this session cannot resolve. |
+| `omh_cli_unavailable` | No `omh` executable was found on `PATH`, in the managed generation or legacy venv, or in the command bin directory. |
+| `error` | The CLI failed, timed out (30 s), or printed something unparseable; nothing is confirmed saved. |
+
+`scope` defaults to `project` when the session's working directory resolves a
+project identity, and to `user` otherwise; `user` is stored as the
+`user-global` scope, which needs no acting-principal context and is delivered
+beside the project scope. The default policy is `auto-safe`, so a safe,
+absolute, non-duplicate capture goes straight to `approved_auto_safe` and then
+`replay_ready`. A tool result is what the capture operation observed on local
+disk; it is never evidence that a later session recalled or used the record.
+
+The policy payload discloses `mode_source`. Setup records `explicit` only when
+the operator passed `--memory-mode`; anything else is `default` and follows
+the current default. A profile written before `mode_source` existed that
+stored `review-first` (the old default) is read as defaulted, so it becomes
+`auto-safe` on the next read without re-running setup; any other stored mode
+could only have been chosen and is kept as `legacy_explicit`. `off` and an
+explicit `review-first` keep working.
+
 ## Admission: Remember, Refuse, or Defer
 
-For a new fact, Hermes asks for source class, target store, canonical scope,
-retention class, and an explicit decision:
+For a new fact, Hermes decides source class, target store, canonical scope,
+retention class, and one of these outcomes:
 
-- **Remember** creates only one bounded **durable** candidate. It remains
-  pending review until OMH-local approval and a target write are separately
-  observed.
+- **Remember** captures one bounded **durable** candidate through
+  `omh_memory(action="capture")`. Under the default `auto-safe` policy a safe
+  candidate is approved in the same operation (`approved_auto_safe`, a local
+  policy result, not a human review). It stays pending review only when the
+  content is unsafe, carries a relative-time phrase, duplicates a live record
+  outside the tool path, is derived content, or the operator chose
+  `review-first`.
 - **Refuse** covers secrets, raw logs, transcripts, prompt-injection-shaped
   instructions, and temporary task progress. This is lane guidance, not a
   pattern verdict: `classify_memory_admission` screens protected values, and
@@ -481,6 +520,13 @@ references were not refreshed is neither `indexes_refreshed` nor
 candidate that never clears review stops at `candidate_persisted`, and an
 approved record that is expired, stale, or out of scope stops short of
 `replay_ready`.
+
+`omh memory capture` prints the receipt it reached as `receipt_state`, each
+step re-read from disk: the record file, then the index entry that addresses
+it, then the same replay evaluator recall uses. A held candidate stops at
+`candidate_persisted`; `--on-duplicate skip` and refused captures print
+`null` because nothing was persisted. The `omh_memory` tool relays that value
+unchanged and never upgrades it.
 
 States are receipts, not record states. They describe what one operation
 observed about persistence, so they carry no lifecycle authority: they cannot

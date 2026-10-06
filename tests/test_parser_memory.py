@@ -10,6 +10,8 @@ from _local_package import load_local_package
 
 load_local_package()
 from omh.commands.main import build_parser
+from omh.paths import resolve_paths
+from project_identity_fixture import pin_review_first
 
 
 class MemoryParserTests(unittest.TestCase):
@@ -115,6 +117,7 @@ class MemoryReviewRevisionCliTests(unittest.TestCase):
 
     def _capture(self, tmp: Path) -> tuple[list[str], str]:
         homes = ["--omh-home", str(tmp / ".omh"), "--hermes-home", str(tmp / ".hermes")]
+        pin_review_first(resolve_paths(tmp / ".omh", tmp / ".hermes"))
         status, stdout, _stderr = run_cli(
             [*homes, "memory", "capture", "Deploys go through staging first"]
         )

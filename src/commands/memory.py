@@ -160,6 +160,7 @@ def cmd_memory_capture(args: argparse.Namespace) -> int:
             principal_context=_read_optional_json(args.principal_context),
             audience_principals=args.audience_principal or [],
             unresolved=bool(getattr(args, "unresolved", False)),
+            on_duplicate=str(getattr(args, "on_duplicate", "") or "candidate"),
         )
     except (OSError, ValueError) as exc:
         raise OmhError(str(exc)) from exc

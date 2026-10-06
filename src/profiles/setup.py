@@ -162,6 +162,9 @@ def build_project_memory_policy(mode: str | None = None) -> dict[str, object]:
     return {
         "schema_version": PROJECT_MEMORY_POLICY_SCHEMA_VERSION,
         "mode": normalized,
+        # Only a mode the operator named is pinned; a defaulted one follows
+        # the current default when the policy is read back.
+        "mode_source": "explicit" if str(mode or "").strip() else "default",
         "capture_enabled": normalized != "off",
         "recall_enabled": normalized != "off",
         "review_required": normalized == "review-first",
@@ -230,7 +233,7 @@ def _normalize_operating_model(value: str | None) -> str:
 
 
 def _normalize_memory_mode(value: str | None) -> str:
-    mode = str(value or "review-first").strip()
+    mode = str(value or "auto-safe").strip()
     if mode not in PROJECT_MEMORY_MODES:
         raise ValueError(f"unsupported memory mode: {mode}; expected one of {', '.join(PROJECT_MEMORY_MODES)}")
     return mode

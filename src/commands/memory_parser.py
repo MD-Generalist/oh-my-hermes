@@ -4,7 +4,7 @@ import argparse
 
 from ..plugin_bundle.omh.memory_blocks import DEFAULT_BLOCK_LIMIT_CHARS
 from ..plugin_bundle.omh.memory_governance import SCOPE_KINDS, SOURCE_CLASSES
-from ..workflows.memory import MEMORY_ATTENTION_TIERS
+from ..workflows.memory import CAPTURE_ON_DUPLICATE_CHOICES, MEMORY_ATTENTION_TIERS
 from . import memory
 from .domain_intelligence_parser import add_domain_intelligence_commands
 
@@ -93,6 +93,15 @@ def add_memory_commands(sub: argparse._SubParsersAction[argparse.ArgumentParser]
         help=(
             "Mark the record as an open question: past its review deadline it stays delivered as "
             "'open · N days unresolved' instead of going stale, until confirm, correct, or retire answers it."
+        ),
+    )
+    capture.add_argument(
+        "--on-duplicate",
+        choices=CAPTURE_ON_DUPLICATE_CHOICES,
+        default="candidate",
+        help=(
+            "What an exact-summary duplicate of a live record does: 'candidate' (default) keeps a pending "
+            "candidate stamped duplicate_of; 'skip' persists nothing and reports the existing record."
         ),
     )
     capture.set_defaults(func=memory.cmd_memory_capture)

@@ -29,6 +29,7 @@ from omh.config_adapter import (
 from omh.maintenance.doctor import _identity_conflicts_check
 from omh.maintenance.update_check import DEFAULT_UPDATE_CHECK_MODE
 from omh.paths import resolve_paths
+from project_identity_fixture import pin_review_first
 from omh.plugin_bundle.omh.memory_governance import canonical_payload_digest
 from omh.record_revision import MAX_MUTATION_ID_CHARS
 from omh.routing.intent import classify_omh_quality_intent
@@ -5323,6 +5324,8 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
             omh_home = root / ".omh"
             hermes_home = root / ".hermes"
             base = ["--omh-home", str(omh_home), "--hermes-home", str(hermes_home)]
+            # The manual review path is under test; auto-safe is the default.
+            pin_review_first(resolve_paths(omh_home, hermes_home))
 
             status, stdout, stderr = run_cli(
                 base

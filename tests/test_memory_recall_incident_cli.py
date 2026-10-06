@@ -8,7 +8,8 @@ from tempfile import TemporaryDirectory
 import unittest
 
 from _cli_harness import run_cli
-from project_identity_fixture import seed_project_identity
+from project_identity_fixture import pin_review_first, seed_project_identity
+from omh.paths import resolve_paths
 from omh.plugin_bundle.omh.memory_provider import OmhMemoryProvider
 
 
@@ -21,6 +22,7 @@ class MemoryRecallIncidentCliTests(unittest.TestCase):
                 seed_project_identity(root)
                 home = root / "omh"
                 prefix = ["--omh-home", str(home), "--hermes-home", str(root / "hermes")]
+                pin_review_first(resolve_paths(home, root / "hermes"))
                 summary = "PRIVATE_CLAIM_SENTINEL"
                 status, stdout, stderr = run_cli(prefix + ["memory", "capture", summary])
                 self.assertEqual(status, 0, stderr)

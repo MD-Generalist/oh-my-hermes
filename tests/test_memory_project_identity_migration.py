@@ -11,6 +11,7 @@ import unittest
 
 from _local_package import load_local_package
 from test_project_identity import repository
+from project_identity_fixture import pin_review_first
 
 load_local_package()
 
@@ -58,6 +59,10 @@ class ProjectIdentityMigrationTests(unittest.TestCase):
         temporary = Path(self.enterContext(TemporaryDirectory()))
         self.enterContext(patch.dict(os.environ, {"OMH_HOME": str(temporary / "user")}))
         self._root = repository(temporary / "repo")
+        # Both stores approve by hand below, so neither may default to auto-safe.
+        from omh.paths import resolve_paths
+        pin_review_first(self.paths)
+        pin_review_first(resolve_paths(temporary / "user", self.paths.hermes_home))
         candidate = self.memory.capture_project_memory_candidate(self.paths, "legacy sentinel fact", scope_ref="repo", retention_class="durable")["candidate"]
         assert isinstance(candidate, dict)
         record = self.memory.approve_project_memory_candidate(self.paths, candidate["candidate_id"])["record"]

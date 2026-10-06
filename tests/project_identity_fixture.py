@@ -8,6 +8,7 @@ from _local_package import load_local_package
 
 load_local_package()
 from omh.paths import resolve_paths as _resolve_paths
+from omh.profiles.setup import write_setup_profile
 from omh.plugin_bundle.omh.project_identity import resolve_project_identity
 
 PROJECT_IDENTITY = "prj:" + "a" * 64
@@ -31,11 +32,24 @@ def seed_repository_remote(root: Path) -> str:
 
 
 def memory_paths(omh_home, hermes_home=None, **kwargs):
-    """Give a memory test's named checkout explicit repository evidence."""
+    """Give a memory test's named checkout explicit repository evidence.
+
+    It also pins the review-first policy when no profile exists. These tests
+    exercise the capture -> review -> approve path, which stopped being the
+    default when auto-safe became it; a test of the default writes no profile
+    and resolves its paths without this fixture.
+    """
     paths = _resolve_paths(omh_home, hermes_home, **kwargs)
     if resolve_project_identity(paths.omh_home.parent).state != "resolved":
         seed_project_identity(paths.omh_home.parent)
+    pin_review_first(paths)
     return paths
+
+
+def pin_review_first(paths) -> None:
+    """Write an explicit review-first profile unless one is already there."""
+    if not paths.setup_profile_path.exists():
+        write_setup_profile(paths, [], memory_mode="review-first")
 
 
 def project_identity(root):
