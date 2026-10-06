@@ -158,32 +158,32 @@ specialist contracts are inlined, retaining their portable procedure references.
 
 ### When a replaced catalog section moves
 
-A `PORTABLE_OVERRIDES` entry **replaces** its catalog section; the catalog's own
-lines for that section are never consulted. That is deliberate — a Hermes-shaped
-line cannot be filtered down, it has to be rewritten by someone who knows what
-the host can do — and it means a line added to the catalog upstream is absent
-from the portable body with every drift gate still green. `docs agent-skills
---check` compares the shipped bytes against a projection that already applied
-the override, so it agrees with the override by construction.
+A definition's `portable_overrides` entry **replaces** that catalog section in
+the portable body; the catalog's own lines for that section are never
+consulted. That is deliberate — a Hermes-shaped line cannot be filtered down,
+it has to be rewritten by someone who knows what the host can do — and it means
+a line added to the section is absent from the portable body with every drift
+gate still green. `docs agent-skills --check` compares the shipped bytes
+against a projection that already applied the override, so it agrees with the
+override by construction.
 
-`tests/fixtures/portable_override_source_digests.json` pins a sha256 of each
-replaced catalog section as it read when the override was last reviewed. When
-the section moves, `tests/test_agent_skills_projection.py` fails naming the
-`<skill>::<section>` entries that moved, so the decision is re-read rather than
-28 hand-written tuples re-diffed. The fix is to re-read the new catalog line,
-edit the override if the line belongs in the portable body, and re-derive the
-fixture in the same commit:
+The override sits in the same `SkillDefinition` literal as the section it
+replaces (`src/skills/catalog_definitions.py`, or the
+`_feature_surface_skill(...)` call in `src/skills/catalog_feature_surfaces.py`),
+so the edit that moves a section is made beside the replacement that shadows
+it. Beside it, `portable_override_shadows` records the sha256 of the JSON form
+of each replaced section as it read when the override was last reviewed. When
+the section moves, `tests/test_agent_skills_projection.py` fails naming
+`<skill>::<section>: shadowed section changed` and prints the new digest. Re-read
+the override against the new section, edit it if the line belongs in the
+portable body, then update the digest in the same literal. Updating the digest
+without editing the override is a valid outcome and records the choice not to
+mirror the line.
 
-```py
-import json
-from omh.skills.catalog_portable import portable_override_source_digests
-print(json.dumps(portable_override_source_digests(), indent=2, sort_keys=True))
-```
-
-Re-pinning without editing the override is a valid outcome and is what records
-the deliberate choice not to mirror a line. The same test file fails separately
-when an override names a skill or a section the catalog no longer has, because
-a replacement for something that is gone is never applied.
+`tests/test_agent_skills_projection.py` fails, naming `<skill>::<section>`,
+when an override key is not a `SkillDefinition` field (a renamed section) or
+when a replacement line is absent from the rendered portable body (a section
+that body does not render), because either replacement is never applied.
 
 ### Loop boundary
 

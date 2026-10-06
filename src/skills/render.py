@@ -2567,9 +2567,7 @@ def _target_definition(
         return definition
     if target != "agent-skills":
         raise ValueError(f"Unsupported skill target: {target}")
-    from .catalog_portable import PORTABLE_OVERRIDES
-
-    overrides = PORTABLE_OVERRIDES.get(omh_skill_display_name(definition.name), {})
+    overrides = definition.portable_overrides
     return replace(definition, **{
         field: "\n".join(lines) if isinstance(getattr(definition, field), str) else lines
         for field, lines in overrides.items()

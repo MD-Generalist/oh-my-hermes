@@ -154,10 +154,12 @@ uv run python -m omh.cli cases demo --all --json > examples/use-cases/g1-g10-dem
 ```
 
 Editing an existing skill instead of adding one: if the section you touched is
-listed for that skill in `PORTABLE_OVERRIDES` (`src/skills/catalog_portable.py`),
-the portable projection replaces it and your line does not reach
-`agent-skills/<skill>/SKILL.md`. Decide what the portable body should say, then
-re-derive `tests/fixtures/portable_override_source_digests.json`. See "When a
+listed under the same definition's `portable_overrides`, the portable
+projection replaces it and your line does not reach
+`agent-skills/<skill>/SKILL.md`, and `tests/test_agent_skills_projection.py`
+fails naming the section. Decide what the portable body should say, edit the
+override in the same literal, then update that section's
+`portable_override_shadows` digest to the value the failure prints. See "When a
 replaced catalog section moves" in `docs/AGENT-SKILLS.md`.
 
 ## 5. Verify
