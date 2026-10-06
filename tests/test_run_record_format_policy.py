@@ -10,6 +10,14 @@ the format and the writers import it.
 This module re-derives the owned names from `run_records` itself and walks
 every module under `src/` with `ast`, so a second spelling fails here the day
 it is written instead of the day the two drift apart.
+
+Scope: it matches string constants (`ast.Constant`) equal to an owned value,
+including implicit concatenation. A spelling assembled at runtime --
+`"events" + ".jsonl"`, an f-string, a decoded bytes literal -- is not seen,
+and the vocabularies (`EXECUTOR_PROGRESS_PROFILES`, `OBSERVED_RESULTS`, ...)
+are not gated: a hand copy of a tuple is caught only when a reader imports
+the one definition, which every reader now does. This is a lint against the
+plain second spelling, not a proof that none exists.
 """
 
 from __future__ import annotations
@@ -27,13 +35,16 @@ from omh.plugin_bundle.omh import run_records
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SOURCE_ROOT = REPO_ROOT / "src"
 OWNER = "src/plugin_bundle/omh/run_records.py"
-# Not run-record owners, and deliberately so: `reply_lint` is a vocabulary
-# registry of words a reply must not leak, `system/paths` builds runtime
-# path accessors from bare file names, and `memory_evaluation` writes the
-# memory store's own `journal/events.jsonl` -- a basename it shares with the
-# run journal and nothing else. Importing the run-record name there would
-# couple the memory store to a format it does not read or write.
-ALLOWED_PATHS = frozenset({"src/quality/reply_lint.py", "src/system/paths.py", "src/workflows/memory_evaluation.py"})
+# The one module that spells every schema id on purpose: `reply_lint` is the
+# registry of words a reply must not leak, so a run-record schema version
+# belongs there as a word, not as a format. Allowlisted whole.
+ALLOWED_PATHS = frozenset({"src/quality/reply_lint.py"})
+# One (module, value) pair, not a module: `memory_evaluation` writes the memory
+# store's own `journal/events.jsonl`, a basename it shares with the run journal
+# and nothing else. Importing the run-record name there would couple the
+# memory store to a format it never reads or writes; exempting the whole file
+# would let a real run-record literal added there later pass unseen.
+ALLOWED_SPELLINGS = frozenset({("src/workflows/memory_evaluation.py", "events.jsonl")})
 _OWNED_SUFFIXES = ("_FILE", "_STORE_NAME", "_SCHEMA_VERSION")
 
 
@@ -50,6 +61,8 @@ def _second_spellings(source: str, relative: str, owned: dict[str, str]) -> list
     findings: list[str] = []
     for node in ast.walk(ast.parse(source)):
         if isinstance(node, ast.Constant) and isinstance(node.value, str) and node.value in owned:
+            if (relative, node.value) in ALLOWED_SPELLINGS:
+                continue
             findings.append(
                 f"{relative}:{node.lineno}: {node.value!r} -- import "
                 f"`{owned[node.value]}` from `omh.plugin_bundle.omh.run_records` "
@@ -83,9 +96,18 @@ class RunRecordFormatPolicyTests(unittest.TestCase):
         )
 
     def test_allowlist_names_files_that_exist(self) -> None:
-        for relative in sorted(ALLOWED_PATHS | {OWNER}):
+        for relative in sorted(ALLOWED_PATHS | {OWNER} | {path for path, _ in ALLOWED_SPELLINGS}):
             with self.subTest(path=relative):
                 self.assertTrue((REPO_ROOT / relative).is_file(), relative)
+
+    def test_a_pair_exemption_covers_one_value_in_one_module_only(self) -> None:
+        # The memory store may spell its own `events.jsonl`; a run-record name
+        # added to the same module later is still a second spelling.
+        owned = _owned_literals()
+        module, value = next(iter(sorted(ALLOWED_SPELLINGS)))
+        self.assertEqual(_second_spellings(f"p = d / {value!r}\n", module, owned), [])
+        self.assertEqual(len(_second_spellings("p = d / 'run.json'\n", module, owned)), 1)
+        self.assertEqual(len(_second_spellings(f"p = d / {value!r}\n", "src/runtime/other.py", owned)), 1)
 
     def test_scan_flags_a_literal_and_names_the_constant(self) -> None:
         # The derivation itself is a contract: a bare literal is found with its
