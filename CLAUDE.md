@@ -123,10 +123,10 @@ Rules:
   literals at the top of `tests/test_routing_precision.py`. Update both in the
   commit that adds a routing case — they are the point, not noise. Every other
   test compares its payload, and its rendered `NNN/NNN` string, against
-  `build_routing_precision_demo()`, so it needs no edit. Other counts (skills,
-  demo cards, chat cards) are still literal; `src/maintenance/drift.py` lists
-  every site that hardcodes each one. Never quote a count in prose: it drifts
-  and sends you looking for a string that no longer exists.
+  `build_routing_precision_demo()`, so it needs no edit. The counts that
+  `count_metrics()` in `src/maintenance/drift.py` registers are still literal,
+  and it lists every site that hardcodes each one. Never quote a count in
+  prose: it drifts and sends you looking for a string that no longer exists.
 - English for code, docs, commits, and PR text — and for all user-facing CLI
   output by default. Localized output (ko/ja/zh) is explicit opt-in via
   `--language` or `OMH_LANG` only; never auto-detect the OS locale. Korean-only
@@ -174,8 +174,9 @@ Rules:
   and check the named list is the set you meant to change.
 - Adding a routing fixture without moving the reviewed pins — breaks
   `tests/test_routing_precision.py` and `tests/test_drift_registry.py`. A new
-  case moves exactly the two `expected=` values in `src/maintenance/drift.py`
-  and the matching literal in `tests/test_routing_precision.py`;
+  case moves one `expected=` value in `src/maintenance/drift.py` (the
+  negative-control or the intervention one) and the matching literal in
+  `tests/test_routing_precision.py`;
   `omh release drift` names the ones that moved. A new skill still moves the
   literal counts the drift registry lists for it.
 - Resolving a routing-count rebase conflict by picking a side. Those two

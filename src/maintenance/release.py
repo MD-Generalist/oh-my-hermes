@@ -22,7 +22,7 @@ from ..command_path import (
 )
 from ..install.plugin_compat import compat_matrix_drift
 from ..local_store import atomic_write_json, read_json_object_result, utc_now
-from .drift import budget_metrics, drift_report
+from .drift import BudgetMetric, budget_metrics, drift_report
 from .changelog import ChangelogError, MAX_CHANGELOG_BYTES, bound_release_body, extract_notes
 from .release_notes import notes_metadata, read_bounded, read_notes
 from .documentation_claims import DocumentationClaimReport, documentation_claims_report
@@ -3115,6 +3115,16 @@ SKILL_CONTENT_SMOKE_BUDGET_NAMES = frozenset(
 )
 
 
+def _smoke_threshold(metric: BudgetMetric) -> int:
+    """The same bar the ledger applies: the limit plus any reviewed exception.
+
+    The `oversized_*` lists name the items behind a ledger finding; comparing
+    them against the bare limit would list items the ledger itself accepted
+    the day one of these budgets carries an exception.
+    """
+    return metric.limit + metric.reviewed_exception
+
+
 def skill_content_smoke() -> dict[str, object]:
     templates = {template.name: template.content for template in builtin_skill_templates()}
     workflow_skill_names = set(templates) - {DEFAULT_HERMES_SKILL}
@@ -3265,7 +3275,7 @@ def skill_content_smoke() -> dict[str, object]:
         [
             name
             for name, char_count in workflow_context_chars.items()
-            if char_count > smoke_budgets["awareness_workflow_context_chars_max"].limit
+            if char_count > _smoke_threshold(smoke_budgets["awareness_workflow_context_chars_max"])
         ]
         if "awareness_workflow_context_chars_max" in over_budget
         else []
@@ -3274,7 +3284,7 @@ def skill_content_smoke() -> dict[str, object]:
         [
             name
             for name, char_count in role_context_chars.items()
-            if char_count > smoke_budgets["role_context_chars_max"].limit
+            if char_count > _smoke_threshold(smoke_budgets["role_context_chars_max"])
         ]
         if "role_context_chars_max" in over_budget
         else []

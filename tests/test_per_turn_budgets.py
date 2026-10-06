@@ -72,7 +72,10 @@ class PerRequestBudgetRegistryTests(unittest.TestCase):
                     self.assertIsNone(limit.step)
                     self.assertEqual(limit.measured, limit.value)
                     self.assertEqual(metric.reviewed_exception, 0)
-                    self.assertLessEqual(metric.live(), limit.value)
+                    # Zero-slack means the ratchet sits exactly at its producer
+                    # reading; `<=` would also pass a budget wired to the wrong
+                    # constant, since `measured == value` holds for every ratchet.
+                    self.assertEqual(metric.live(), limit.value)
 
     def test_the_body_total_is_labelled_as_install_footprint(self) -> None:
         body = next(metric for metric in budget_metrics() if metric.name == "full_profile_skill_body_chars")

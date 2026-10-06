@@ -131,9 +131,10 @@ class BudgetMetric:
 class Limit:
     """A budget's limit as `limits()` reports it.
 
-    `measured` is the producer reading the limit was set from: the limit
-    itself for a ratchet, the recorded measurement for a derived ceiling, and
-    None for a ceiling whose headroom was set by hand without one.
+    `measured` is the producer reading the limit was derived from: the limit
+    itself for a ratchet, the recorded measurement for a ceiling the headroom
+    rule produced, and None for a ceiling set by hand -- its comment history
+    may still record a reading, but no rule turned that reading into the value.
     """
 
     kind: Literal["ratchet", "ceiling"]
