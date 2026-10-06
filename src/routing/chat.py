@@ -2014,6 +2014,7 @@ def _route_chat_message_cached(
     query = RoutingQuery.from_message(routing_message)
     trivial_decision = _trivial_message_fast_path_decision(
         routing_message,
+        query=query,
         source=source,
         min_confidence=min_confidence,
     )
@@ -2027,6 +2028,7 @@ def _route_chat_message_cached(
     fast_omh_help_decision = _omh_help_fast_path_decision(
         message,
         routing_message=routing_message,
+        query=query,
         source=source,
         min_confidence=min_confidence,
     )
@@ -2038,6 +2040,7 @@ def _route_chat_message_cached(
     fast_capability_toggle_decision = _capability_toggle_fast_path_decision(
         message,
         routing_message=routing_message,
+        query=query,
         source=source,
         min_confidence=min_confidence,
     )
@@ -2067,6 +2070,7 @@ def _route_chat_message_cached(
     bounded_direct_decision = _bounded_direct_task_fast_path_decision(
         message,
         routing_message=routing_message,
+        query=query,
         source=source,
         min_confidence=min_confidence,
     )
@@ -2100,6 +2104,7 @@ def _route_chat_message_cached(
     fast_explicit_skill_decision = _explicit_skill_fast_path_decision(
         message,
         routing_message=routing_message,
+        query=query,
         source=source,
         min_confidence=min_confidence,
     )
@@ -2295,7 +2300,7 @@ def _route_chat_message_cached(
     definitions = routable_definitions()
     full_recommendations = recommend_skills(query, limit=len(definitions))
     explicit_prefix = _has_explicit_invocation_prefix(routing_message)
-    explicit_skill = explicit_skill_invocation(routing_message, definitions)
+    explicit_skill = explicit_skill_invocation(routing_message, definitions, query)
     if explicit_skill and not explicit_prefix and is_missed_route_feedback(routing_message):
         explicit_skill = None
     task_card = classify_task(message)
@@ -2641,12 +2646,13 @@ def _omh_help_fast_path_decision(
     message: str,
     *,
     routing_message: str,
+    query: RoutingQuery,
     source: str,
     min_confidence: str,
 ) -> ChatRouteDecision | None:
     if _has_explicit_invocation_prefix(routing_message):
         return None
-    if explicit_skill_invocation(routing_message):
+    if explicit_skill_invocation(routing_message, query=query):
         return None
     if is_omh_quickstart_question(routing_message):
         return _router_help_decision(
@@ -2915,11 +2921,12 @@ def _explicit_skill_fast_path_decision(
     message: str,
     *,
     routing_message: str,
+    query: RoutingQuery,
     source: str,
     min_confidence: str,
 ) -> ChatRouteDecision | None:
     definitions = routable_definitions()
-    selected_skill = explicit_skill_invocation(routing_message, definitions)
+    selected_skill = explicit_skill_invocation(routing_message, definitions, query)
     if not selected_skill or selected_skill == _ROUTER_SKILL:
         return None
     if selected_skill == "meta-router" and _meta_router_remainder_is_catalog_question(routing_message):
@@ -5945,6 +5952,7 @@ def _capability_toggle_fast_path_decision(
     message: str,
     *,
     routing_message: str,
+    query: RoutingQuery,
     source: str,
     min_confidence: str,
 ) -> ChatRouteDecision | None:
@@ -5954,7 +5962,7 @@ def _capability_toggle_fast_path_decision(
     so it stays out of the coding lane. An explicitly invoked workflow always
     wins, matching the guard `_operator_surface_fast_path_decision` uses.
     """
-    if _has_explicit_invocation_prefix(routing_message) or explicit_skill_invocation(routing_message):
+    if _has_explicit_invocation_prefix(routing_message) or explicit_skill_invocation(routing_message, query=query):
         return None
     if contains_cue_phrase(routing_message, _CAPABILITY_TOGGLE_BLOCKERS):
         return None
@@ -6479,6 +6487,7 @@ def _fast_path_compact(value: str) -> str:
 def _trivial_message_fast_path_decision(
     routing_message: str,
     *,
+    query: RoutingQuery,
     source: str,
     min_confidence: str,
 ) -> ChatRouteDecision | None:
@@ -6499,7 +6508,7 @@ def _trivial_message_fast_path_decision(
     text = routing_message.strip()
     if not text:
         return None
-    if explicit_skill_invocation(text) is not None:
+    if explicit_skill_invocation(text, query=query) is not None:
         return None
     # A leading @mention is addressing, not content: on Slack the observed bug
     # message was literally "@mikument-harness?".
@@ -6622,10 +6631,11 @@ def _bounded_direct_task_fast_path_decision(
     message: str,
     *,
     routing_message: str,
+    query: RoutingQuery,
     source: str,
     min_confidence: str,
 ) -> ChatRouteDecision | None:
-    scoped = _bounded_direct_blocker_scope(routing_message)
+    scoped = _bounded_direct_blocker_scope(routing_message, query)
     if not contains_cue_phrase(scoped, _BOUNDED_DIRECT_TASK_TERMS):
         return None
     if contains_cue_phrase(scoped, _BOUNDED_DIRECT_TASK_BLOCKERS):
@@ -6638,12 +6648,12 @@ def _bounded_direct_task_fast_path_decision(
     return _direct_answer_decision(message, source=source, min_confidence=min_confidence)
 
 
-def _bounded_direct_blocker_scope(routing_message: str) -> str:
+def _bounded_direct_blocker_scope(routing_message: str, query: RoutingQuery) -> str:
     """Blocker matching must ignore an explicitly invoked workflow name.
 
     Workflow names such as `idea-to-deploy` contain blocker tokens
     (`deploy`); the guard should judge the requested task, not the name."""
-    invoked = explicit_skill_invocation(routing_message, routable_definitions())
+    invoked = explicit_skill_invocation(routing_message, routable_definitions(), query)
     if not invoked:
         return routing_message
     scoped = normalized_phrase(routing_message).replace(normalized_phrase(invoked), " ")
@@ -6941,12 +6951,16 @@ def route_explanation_payload(route: dict[str, object]) -> dict[str, object]:
     }
 
 
-def explicit_skill_invocation(message: str, definitions: list[SkillDefinition] | None = None) -> str | None:
+def explicit_skill_invocation(
+    message: str,
+    definitions: list[SkillDefinition] | None = None,
+    query: RoutingQuery | None = None,
+) -> str | None:
     message = executable_routing_text(message)
     definitions = definitions or routable_definitions()
     names = {definition.name for definition in definitions}
     return (
-        explicit_skill_name(message, names)
+        explicit_skill_name(message, names, query)
         or _verb_invoked_skill_name(message, names)
         or _verb_invoked_public_display_name(message, names)
     )

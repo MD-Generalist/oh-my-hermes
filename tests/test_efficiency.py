@@ -25,21 +25,10 @@ from omh.workflows import hermes_planning as hermes_planning_module
 from omh.workflows import learning_candidate as learning_candidate_module
 from omh.wrapper import contract as contract_module
 from omh.wrapper.route_hints import build_chat_route_hint_payload
-from omh.maintenance.drift import derive_ceiling, limits
+from omh.maintenance.drift import budget_metrics, derive_ceiling, limits
 from omh.paths import OmhPaths
-from omh.release import (
-    AWARENESS_PRIMER_CONTEXT_CHAR_LIMIT,
-    AWARENESS_PRIMER_MARKDOWN_CHAR_LIMIT,
-    AWARENESS_WORKFLOW_CONTEXT_CHAR_LIMIT,
-    FULL_CAPABILITY_SKILL_ITEM_CHAR_LIMIT,
-    FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT,
-    FULL_PROFILE_SKILL_BODY_CEILING_STEP_CHARS,
-    FULL_PROFILE_SKILL_BODY_CHAR_LIMIT,
-    FULL_PROFILE_SKILL_BODY_HEADROOM_PERCENT,
-    FULL_PROFILE_SKILL_BODY_MEASURED_CHARS,
-    STANDALONE_CAPABILITY_SKILL_ITEM_CHAR_LIMIT,
-    STANDALONE_CAPABILITY_SKILL_SECTION_CHAR_LIMIT,
-)
+# The one input of the headroom rule the ledger does not carry.
+from omh.release import FULL_PROFILE_SKILL_BODY_HEADROOM_PERCENT
 from omh.capabilities import families as families_module
 from omh.capabilities.skills import skill_capabilities
 from omh.coding import executor_readiness as executor_readiness_module
@@ -80,6 +69,12 @@ from omh.quality import routing_precision as routing_precision_module
 from omh.quality import route_hint_alignment as route_hint_alignment_module
 from omh.quality.grounded_score import GroundedScenario
 from omh.quality.route_hint_alignment import RouteHintAlignmentCase, route_hint_alignment_cases
+
+
+def _ledger_limit(name: str) -> int:
+    """`name`'s limit as `omh release drift` enforces it: the ledger value plus any reviewed exception."""
+    metric = next(metric for metric in budget_metrics() if metric.name == name)
+    return limits()[name].value + metric.reviewed_exception
 
 
 class EfficiencyContractTests(unittest.TestCase):
@@ -305,7 +300,7 @@ class EfficiencyContractTests(unittest.TestCase):
         # became one. Every line above records a raise of this literal that an
         # ordinary new skill forced; the ceiling's headroom policy is pinned in
         # `test_full_profile_body_ceiling_is_the_documented_headroom_policy`.
-        self.assertLessEqual(full["skill_body"]["bytes"], FULL_PROFILE_SKILL_BODY_CHAR_LIMIT)
+        self.assertLessEqual(full["skill_body"]["bytes"], _ledger_limit("full_profile_skill_body_chars"))
         self.assertLess(full["repeated"]["share_percent"], 38.0)
 
         # References are progressive disclosure, counted outside the always-loaded body.
@@ -326,23 +321,13 @@ class EfficiencyContractTests(unittest.TestCase):
         # next step (policy and reason in src/maintenance/release.py). The
         # literal must stay a literal for `tests/test_drift_registry.py`, so
         # this is what keeps it equal to the derivation.
-        self.assertEqual(
-            FULL_PROFILE_SKILL_BODY_CHAR_LIMIT,
-            derive_ceiling(
-                FULL_PROFILE_SKILL_BODY_MEASURED_CHARS,
-                FULL_PROFILE_SKILL_BODY_HEADROOM_PERCENT,
-                FULL_PROFILE_SKILL_BODY_CEILING_STEP_CHARS,
-            ),
-        )
         body = limits()["full_profile_skill_body_chars"]
+        self.assertEqual(body.kind, "ceiling")
+        self.assertIsNotNone(body.measured)
+        self.assertIsNotNone(body.step)
         self.assertEqual(
-            (body.kind, body.value, body.measured, body.step),
-            (
-                "ceiling",
-                FULL_PROFILE_SKILL_BODY_CHAR_LIMIT,
-                FULL_PROFILE_SKILL_BODY_MEASURED_CHARS,
-                FULL_PROFILE_SKILL_BODY_CEILING_STEP_CHARS,
-            ),
+            body.value,
+            derive_ceiling(body.measured, FULL_PROFILE_SKILL_BODY_HEADROOM_PERCENT, body.step),
         )
         self.assertGreater(FULL_PROFILE_SKILL_BODY_HEADROOM_PERCENT, 0)
         # The headroom must hold at least one average body at the measurement,
@@ -353,17 +338,15 @@ class EfficiencyContractTests(unittest.TestCase):
         full = next(
             profile for profile in skill_context_cost_payload()["profiles"] if profile["profile"] == "full"
         )
-        average_body = FULL_PROFILE_SKILL_BODY_MEASURED_CHARS // full["skill_count"]
-        self.assertGreaterEqual(
-            FULL_PROFILE_SKILL_BODY_CHAR_LIMIT - FULL_PROFILE_SKILL_BODY_MEASURED_CHARS, average_body
-        )
+        average_body = body.measured // full["skill_count"]
+        self.assertGreaterEqual(body.value - body.measured, average_body)
         # The measurement is the producer's reading on the commit that set it,
         # so it is also a floor: an inflated measurement fails here, and a
         # change that shrinks the pack re-measures and re-derives in the same
         # commit instead of leaving the freed slack to be spent unreviewed.
         self.assertGreaterEqual(
             full["skill_body"]["bytes"],
-            FULL_PROFILE_SKILL_BODY_MEASURED_CHARS,
+            body.measured,
             "skill bodies fell below the recorded measurement: set "
             "FULL_PROFILE_SKILL_BODY_MEASURED_CHARS to the producer value and re-derive the ceiling",
         )
@@ -424,7 +407,7 @@ class EfficiencyContractTests(unittest.TestCase):
 
         primer_context = awareness_primer_context()
 
-        self.assertLessEqual(len(primer_context), AWARENESS_PRIMER_CONTEXT_CHAR_LIMIT)
+        self.assertLessEqual(len(primer_context), _ledger_limit("awareness_primer_context_chars"))
         # 900 -> 1050: one line about the reply itself (the user's words, the
         # host's voice, these lines never quoted); the rail sat at 897.
         # 1050 -> 1260: one line scoping OMH skills to requested work; the
@@ -433,8 +416,10 @@ class EfficiencyContractTests(unittest.TestCase):
         # speech level and endings, and progress updates, with the user's
         # language as the fallback; the rail measured 1434.
         self.assertLessEqual(len(primer_context), 1440)
-        self.assertLessEqual(len(awareness_primer_markdown()), AWARENESS_PRIMER_MARKDOWN_CHAR_LIMIT)
-        self.assertLessEqual(max(workflow_context_lengths.values()), AWARENESS_WORKFLOW_CONTEXT_CHAR_LIMIT)
+        self.assertLessEqual(len(awareness_primer_markdown()), _ledger_limit("awareness_primer_markdown_chars"))
+        self.assertLessEqual(
+            max(workflow_context_lengths.values()), _ledger_limit("awareness_workflow_context_chars_max")
+        )
         self.assertIn("Hermes-native workflow", primer_context)
         # The rail states a lane, not a claim on every category. It used to say
         # "consider OMH before generic tools" across planning/research/files/
@@ -1187,10 +1172,10 @@ class EfficiencyContractTests(unittest.TestCase):
             len(json.dumps(item, sort_keys=True, ensure_ascii=False)) for item in standalone_items
         )
 
-        self.assertLessEqual(full_section_chars, FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT)
-        self.assertLessEqual(standalone_section_chars, STANDALONE_CAPABILITY_SKILL_SECTION_CHAR_LIMIT)
-        self.assertLessEqual(max_full_item_chars, FULL_CAPABILITY_SKILL_ITEM_CHAR_LIMIT)
-        self.assertLessEqual(max_standalone_item_chars, STANDALONE_CAPABILITY_SKILL_ITEM_CHAR_LIMIT)
+        self.assertLessEqual(full_section_chars, _ledger_limit("full_capability_skill_section_chars"))
+        self.assertLessEqual(standalone_section_chars, _ledger_limit("standalone_capability_skill_section_chars"))
+        self.assertLessEqual(max_full_item_chars, _ledger_limit("full_capability_skill_item_chars_max"))
+        self.assertLessEqual(max_standalone_item_chars, _ledger_limit("standalone_capability_skill_item_chars_max"))
         self.assertLessEqual(len(next(item for item in full_items if item["id"] == "img-summary")["triggers"]), 8)
         self.assertIn(
             "ambitious goal -> loopability check",

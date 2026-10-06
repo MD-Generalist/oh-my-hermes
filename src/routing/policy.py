@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from functools import lru_cache
 from collections.abc import Mapping
 from types import MappingProxyType
+from typing import TYPE_CHECKING
 
 from .executor_cues import (
     CODING_DELIVERY_REQUEST_PHRASES,
@@ -22,6 +23,10 @@ from .materials_cues import OFFICE_FILE_MATERIAL_PHRASES
 from .missed_route import has_normalized_missed_omh_workflow_context
 from .omh_help import is_omh_docs_question
 from .visual_qa_cues import BROWSER_VISUAL_QA_PHRASES, CUSTOMER_SYMPTOM_REPORT_PHRASES
+
+if TYPE_CHECKING:
+    from .query import RoutingQuery
+    from .recommend import _RawMessageKey
 
 
 ROUTE_ACTIONS = ("dispatch", "clarify", "fallback")
@@ -6075,25 +6080,32 @@ def context_query_is_budget_sense(normalized_query: str) -> bool:
     return _contains_phrase(normalized_query, CONTEXT_BUDGET_SENSE_PHRASES)
 
 
-def explicit_skill_invocation(message: str, names: set[str]) -> str | None:
+def explicit_skill_invocation(message: str, names: set[str], query: RoutingQuery | None = None) -> str | None:
     stripped = executable_routing_text(message).strip()
     if not stripped:
         return None
+    # The scorers below rebuild the prep chain from `stripped`. A caller's
+    # prepared query stands in only when it was built from that same text, so
+    # what they score never changes.
+    if query is not None and query.raw != stripped:
+        query = None
     # An explicit invocation of a named non-Jev skill wins: "/omh-code-review
     # this PR; we can ask jev later" names its owner. A message that addresses
     # Jev displaces only the generic `ask` opening -- "ask jev ..." starts with
     # the `ask` skill's name, and the Jev skill is the more specific owner
     # (`routing/jev_addressing.py`) -- or a message with no explicit form.
-    ordinary = _ordinary_explicit_skill_invocation(stripped, names)
+    ordinary = _ordinary_explicit_skill_invocation(stripped, names, query)
     if ordinary is not None and ordinary != "ask" and not ordinary.startswith("jev-"):
         return ordinary
-    jev_skill = jev_addressed_skill(stripped, names)
+    jev_skill = jev_addressed_skill(stripped, names, query)
     if jev_skill is not None:
         return jev_skill
     return ordinary
 
 
-def _ordinary_explicit_skill_invocation(stripped: str, names: set[str]) -> str | None:
+def _ordinary_explicit_skill_invocation(
+    stripped: str, names: set[str], query: RoutingQuery | None = None
+) -> str | None:
     words = [word.strip(":,").lower() for word in stripped.split()]
     if len(words) >= 3 and words[0] == "use" and words[1] in {
         "omh",
@@ -6121,7 +6133,7 @@ def _ordinary_explicit_skill_invocation(stripped: str, names: set[str]) -> str |
             and len(words) > 1
             and words[1] in CONTEXT_BUDGET_SENSE_WORDS
         )
-        and not _bare_first_word_reads_as_a_verb(stripped, first, used_prefix)
+        and not _bare_first_word_reads_as_a_verb(stripped, first, used_prefix, query)
         and not _bare_verb_name_takes_a_plain_object(stripped, first, used_prefix)
         and not _bare_first_word_names_a_longer_skill(stripped, first, names, used_prefix)
     ):
@@ -6170,7 +6182,9 @@ def _bare_verb_name_takes_a_plain_object(stripped: str, candidate: str, used_pre
     return parts[1].strip(":,.!?").lower() not in _BARE_INVOCATION_TARGET_WORDS
 
 
-def _bare_first_word_reads_as_a_verb(stripped: str, candidate: str, used_prefix: bool) -> bool:
+def _bare_first_word_reads_as_a_verb(
+    stripped: str, candidate: str, used_prefix: bool, query: RoutingQuery | None = None
+) -> bool:
     """Return True when an unprefixed first word is the verb, not an invocation.
 
     Only the verb-shaped names are checked, and only without a sigil:
@@ -6189,14 +6203,20 @@ def _bare_first_word_reads_as_a_verb(stripped: str, candidate: str, used_prefix:
         return True
     if candidate not in _VERB_SHAPED_BARE_INVOCATION_NAMES:
         return False
-    return _bare_invocation_is_outscored(stripped, candidate)
+    return _bare_invocation_is_outscored(stripped, candidate, query)
+
+
+def _bare_invocation_is_outscored(message: str, candidate: str, query: RoutingQuery | None = None) -> bool:
+    from .recommend import _RawMessageKey
+
+    return _bare_invocation_is_outscored_cached(_RawMessageKey(message, query), candidate)
 
 
 @lru_cache(maxsize=512)
-def _bare_invocation_is_outscored(message: str, candidate: str) -> bool:
+def _bare_invocation_is_outscored_cached(key: _RawMessageKey, candidate: str) -> bool:
     from .recommend import scored_field_winner_without_explicit_invocation
 
-    winner = scored_field_winner_without_explicit_invocation(message, candidate)
+    winner = scored_field_winner_without_explicit_invocation(key.query or key.raw, candidate)
     return bool(winner) and winner != candidate
 
 
