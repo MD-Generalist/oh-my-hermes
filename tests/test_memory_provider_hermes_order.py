@@ -21,8 +21,10 @@ from _local_package import load_local_package
 
 load_local_package()
 
+from project_identity_fixture import memory_paths as resolve_paths  # noqa: E402
 from test_memory_prefetch_canonical import approve, provider, rendered_ids  # noqa: E402
 from omh.plugin_bundle.omh.memory_provider import RecallStatus  # noqa: E402
+from omh.workflows.memory import build_project_memory_status  # noqa: E402
 
 
 def hermes_turn(live, turn: int, message: str, **kwargs) -> str:
@@ -107,6 +109,30 @@ class HermesHookOrderTests(unittest.TestCase):
             pack = live.prefetch("how does omh recall memory packs", principal_context=other)
             self.assertEqual(rendered_ids(pack), [record["record_id"]], "an unscoped record is visible to the arriving lens")
             self.assertEqual(live.recall_status(), RecallStatus(provider_label="OMH", count=1))
+
+    def test_status_says_whether_a_pack_was_ever_served(self) -> None:
+        # The store counts say what could be recalled; `last_prefetch` says
+        # what the provider actually handed the host. For a month the two
+        # read identically ("nothing") while the defect above blanked every
+        # pack, so `never_served` has to be a distinct, loud state.
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / ".hermes").mkdir()
+            approve(root, "OMH uses deterministic token recall for memory packs")
+            paths = resolve_paths(root / ".omh", root / ".hermes")
+            before = build_project_memory_status(paths)["last_prefetch"]
+            self.assertEqual(before["state"], "never_served")
+            self.assertIsNone(before["served_at"])
+            self.assertEqual(Path(before["receipt_path"]).resolve(), (root / ".omh" / "memory" / "prefetch_receipt.json").resolve())
+            live = provider(root)
+            hermes_turn(live, 1, "how does omh recall memory packs")
+            after = build_project_memory_status(paths)["last_prefetch"]
+            self.assertEqual(after["state"], "returned_to_host")
+            self.assertEqual(after["rendered_record_count"], 1)
+            self.assertEqual(after["rendered_block_count"], 0)
+            self.assertEqual(after["session_id"], "session-a")
+            self.assertTrue(str(after["served_at"]).endswith("Z"))
+            self.assertLess(float(after["age_hours"]), 1.0)
 
     def test_an_empty_store_still_serves_nothing(self) -> None:
         with TemporaryDirectory() as tmp:

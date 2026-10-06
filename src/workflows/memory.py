@@ -24,6 +24,8 @@ from ..plugin_bundle.omh.hermes_memory import build_hermes_memory_bridge as _bun
 from ..plugin_bundle.omh.hermes_memory import build_memory_demotion_plan as _bundle_demotion_plan
 from ..plugin_bundle.omh.hermes_memory import classify_record_expiry as _classify_record_expiry
 from ..plugin_bundle.omh.memory_dreaming import consolidation_path as _consolidation_path
+from ..plugin_bundle.omh.memory_prefetch_receipt import prefetch_receipt_path as _prefetch_receipt_path
+from ..plugin_bundle.omh.memory_prefetch_receipt import read_prefetch_receipt as _read_prefetch_receipt
 from ..plugin_bundle.omh.memory_open_reminders import (
     mark_open_reminder_asked as _mark_open_reminder_asked,
     read_open_reminders as _read_open_reminders,
@@ -808,6 +810,50 @@ def _open_record_rows(paths: OmhPaths, records: list[dict[str, Any]], *, now: da
     return [row for _since, _record_id, row in rows]
 
 
+def _last_prefetch_status(paths: OmhPaths, *, now: datetime) -> dict[str, object]:
+    """Whether the provider has ever handed a pack to Hermes from this home.
+
+    The store counts above say what COULD be recalled; this says what the
+    last prefetch actually returned, read off the receipt the provider writes
+    only when it serves a pack. For a month the store was empty and every
+    prefetch returned "" (the hook-order defect), and no status surface could
+    tell the two apart: both read as "nothing recalled". `never_served` is
+    the state that must be loud -- an installed provider that has not served
+    once is either unused or broken, never fine.
+    """
+    receipt = _read_prefetch_receipt(paths.omh_home)
+    if receipt is None:
+        return {
+            "state": "never_served",
+            "served_at": None,
+            "age_hours": None,
+            "session_id": None,
+            "rendered_record_count": None,
+            "rendered_block_count": None,
+            "receipt_path": str(_prefetch_receipt_path(paths.omh_home)),
+            "claim_boundary": "No receipt means no served pack was recorded from this home; it is not evidence that nothing was served elsewhere.",
+        }
+    served_at = str(receipt.get("served_at", "") or "")
+    age_hours: float | None = None
+    try:
+        served_moment = datetime.fromisoformat(served_at.replace("Z", "+00:00")) if served_at else None
+    except ValueError:
+        served_moment = None
+    if served_moment is not None:
+        age_hours = round(max((now - served_moment).total_seconds(), 0.0) / 3600, 1)
+    rendering = receipt.get("rendering") if isinstance(receipt.get("rendering"), dict) else {}
+    return {
+        "state": str(receipt.get("state", "") or "prepared"),
+        "served_at": served_at or None,
+        "age_hours": age_hours,
+        "session_id": str(receipt.get("session_id", "") or "") or None,
+        "rendered_record_count": int(rendering.get("rendered_count", 0) or 0),
+        "rendered_block_count": int(rendering.get("rendered_block_count", 0) or 0),
+        "receipt_path": str(_prefetch_receipt_path(paths.omh_home)),
+        "claim_boundary": "A receipt records what the provider handed the host; it is not evidence that the model read or used it.",
+    }
+
+
 def build_project_memory_status(paths: OmhPaths) -> dict[str, object]:
     candidates = _read_project_memory_candidates(paths)
     records, unreadable_records = scan_project_memory_records(paths)
@@ -862,6 +908,7 @@ def build_project_memory_status(paths: OmhPaths) -> dict[str, object]:
         # Oldest first, bounded: the list a curation pass reads to ask the
         # three questions (resolved / still open / drop it) per record.
         "open_records": open_records[:_OPEN_RECORDS_STATUS_LIMIT],
+        "last_prefetch": _last_prefetch_status(paths, now=now),
         "hermes_memory": build_hermes_memory_bridge(paths),
         "redaction_policy": "metadata_only",
         "claim_boundary": "Project memory status is prepared local context only; it is not execution, review, CI, merge, or Hermes internal-memory evidence.",
