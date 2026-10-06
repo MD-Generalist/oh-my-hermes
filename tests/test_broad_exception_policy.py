@@ -351,6 +351,14 @@ CLASSIFIED_SITES: tuple[ClassifiedSite, ...] = (
     ),
     ClassifiedSite(
         "src/plugin_bundle/omh/tools/memory_tool.py",
+        "_capture",
+        INTENTIONAL,
+        "Memory admission runs in-process inside Hermes' tool dispatch; a fault becomes status "
+        "`error` with the sanitized exception class as `reason` and `receipt_state` null, never a "
+        "status that says something was saved, and never a raise into the host.",
+    ),
+    ClassifiedSite(
+        "src/plugin_bundle/omh/tools/memory_tool.py",
         "_consolidation",
         INTENTIONAL,
         "Returns the distinct `bundle_memory_error` source plus a sanitized error type. Reporting "
@@ -491,8 +499,8 @@ CLASSIFIED_SITES: tuple[ClassifiedSite, ...] = (
 # 45 -> 46 / 50 -> 51: `recommend_tool._route_summary`, the additive route beside
 # the ranking (#2005 review: a route failure must not empty the ranking or
 # relabel the source).
-EXPECTED_HANDLER_COUNT = 51
-EXPECTED_ANCHOR_COUNT = 46
+EXPECTED_HANDLER_COUNT = 52
+EXPECTED_ANCHOR_COUNT = 47
 
 
 class DerivedSite(NamedTuple):

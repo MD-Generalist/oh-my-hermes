@@ -1756,7 +1756,7 @@ When the user states a durable preference, decision, fact, or lesson, remember i
 - **Retrieve instead** - Past-session history is not a memory candidate: what happened in an earlier conversation stays in Hermes' own session store and is recalled on demand through its native session-search tool when that tool is available. Memory carries only what is worth re-reading every turn - stable preferences, environment facts, long-lived instructions - because every retained record is context each later turn pays for.
 - **Defer** - Material whose source you cannot name, and any external provider/vector material, goes to review rather than capture.
 - **Target** - The capture writes OMH-local memory only. Hermes-native memory is a separate store with separate evidence: keep at most a short pointer line there, never a second copy, and never turn one store's result into the other's.
-- **Reply** - Tell the user in one short line what was remembered. On `pending_review`, say it was staged for review and why (an unsafe or relative-time phrase, or a review-first policy); on `already_remembered`, say it was already kept; on `refused`, say why. On `omh_cli_unavailable`, say the tool could not reach OMH; the operator fallback is `omh memory capture` in a terminal.
+- **Reply** - Tell the user in one short line what was remembered. On `pending_review`, say it was staged for review and why (an unsafe or relative-time phrase, or a review-first policy); on `already_remembered`, say it was already kept; on `refused`, say why. On `error`, say nothing is confirmed saved; the operator fallback is `omh memory capture` in a terminal.
 
 ## Memory Boundaries
 

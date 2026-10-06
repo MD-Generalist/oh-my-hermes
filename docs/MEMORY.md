@@ -394,18 +394,18 @@ Hermes writes into this store itself, with no operator step in the normal
 loop. When the user states a lasting preference, a decision, a fact about
 their setup or project, or a lesson, the model calls
 `omh_memory(action="capture", summary=..., record_type=..., tags=...,
-scope=..., retention_class=...)`. The tool runs the installed `omh memory
-capture` command (the plugin bundle cannot import `omh`), passing
-`--on-duplicate skip`, and maps its JSON to one `status`:
+scope=..., retention_class=...)`. The tool calls memory admission in-process
+(`memory_admission` in the plugin bundle, the same path `omh memory capture`
+reaches through its adapters), with duplicates skipped, and maps the result to
+one `status`:
 
 | `status` | Meaning |
 | --- | --- |
-| `remembered` | Auto-safe approval ran; `receipt_state` says how far the write was observed, `replay_ready` only when the CLI's own replay evaluation cleared it. |
+| `remembered` | Auto-safe approval ran; `receipt_state` says how far the write was observed, `replay_ready` only when admission's own replay evaluation cleared it. |
 | `pending_review` | A candidate was persisted and held; `review_reason` is `unsafe_content`, `relative_time_phrase`, `duplicate`, `derived_content`, or `policy_review_first`. |
 | `already_remembered` | A live record has the same normalized summary; `duplicate_of` names it and nothing was written. |
 | `refused` | Nothing was written: invalid input, memory turned off, or a project scope this session cannot resolve. |
-| `omh_cli_unavailable` | No `omh` executable was found on `PATH`, in the managed generation or legacy venv, or in the command bin directory. |
-| `error` | The CLI failed, timed out (30 s), or printed something unparseable; nothing is confirmed saved. |
+| `error` | Admission raised (an unreadable store, a lock held past its 10 s wait); `reason` names the exception class and nothing is confirmed saved. |
 
 `scope` defaults to `project` when the session's working directory resolves a
 project identity, and to `user` otherwise; `user` is stored as the
