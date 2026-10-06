@@ -159,7 +159,7 @@ class CodingRouteActionVocabularyTests(unittest.TestCase):
     def test_vendored_awareness_delivery_signal_applies_the_boundary_rule(self) -> None:
         # The vendored delivery signal must reject the same embedded-substring
         # shapes the source surfaces reject, and keep the pi-family positives,
-        # in both the standalone (ImportError fallback) and in-repo modules.
+        # in both the standalone bundle load and in-repo modules.
         from omh.plugin_bundle.omh import awareness as bundled
 
         for awareness in (_load_standalone_bundle_awareness(), bundled):
