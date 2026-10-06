@@ -120,24 +120,27 @@ def discover_skill_files(source_dir: Path) -> list[Path]:
         path for path in source_dir.rglob("SKILL.md")
         if ".git" not in path.parts and not excluded.intersection(path.relative_to(source_dir).parts)
         and path not in owned_paths
-        and not _inside_nested_repository(path, source_dir, nested)
+        and not _inside_nested_repository(path, source_dir, nested, exempt=claude_mirror)
     )
 
 
-def _inside_nested_repository(path: Path, source_dir: Path, memo: dict[Path, bool]) -> bool:
+def _inside_nested_repository(path: Path, source_dir: Path, memo: dict[Path, bool], *, exempt: Path) -> bool:
     """True when another checkout sits between ``source_dir`` and ``path``.
 
     A linked worktree, a submodule, or a clone left under the source root is a
     different revision of the same skills; importing it beside the source's own
     copy made two templates claim one install path and the second write refuse
     as a local modification. A linked worktree marks its root with a ``.git``
-    FILE, so the ``".git" in parts`` test above never sees it.
+    FILE, so the ``".git" in parts`` test above never sees it. The one
+    repository root that is NOT another revision of this source is the host's
+    own ``.claude/skills`` mirror: people keep their custom skills there under
+    version control, and those are a deliberate import source.
     """
     for parent in path.parents:
         if parent == source_dir:
             return False
         if parent not in memo:
-            memo[parent] = (parent / ".git").exists()
+            memo[parent] = parent != exempt and (parent / ".git").exists()
         if memo[parent]:
             return True
     return False

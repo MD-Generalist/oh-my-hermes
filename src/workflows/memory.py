@@ -1730,7 +1730,8 @@ def record_attached_recall_usage(paths: OmhPaths, payload: dict[str, object]) ->
 
 
 def _memory_capture_lock_path(paths: OmhPaths) -> Path:
-    return paths.memory_dir / ".capture.lock"
+    # `file_lock` locks the sidecar `.<name>.lock`, so this is `memory/.capture.lock`.
+    return paths.memory_dir / "capture"
 
 
 def _memory_usage_path(paths: OmhPaths) -> Path:

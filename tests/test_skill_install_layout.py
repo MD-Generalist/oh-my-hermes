@@ -197,12 +197,19 @@ class InstalledLayoutTests(unittest.TestCase):
                     (nested_root / ".git").mkdir()
                 else:
                     (nested_root / ".git").write_text(marker, encoding="utf-8")
+            # The host's own `.claude/skills` mirror is the one repository root
+            # that is not another revision of this source: custom skills kept
+            # there under version control stay importable.
+            mine = source / ".claude/skills/mine/SKILL.md"
+            mine.parent.mkdir(parents=True)
+            mine.write_text("---\nname: mine\n---\nmy own skill\n", encoding="utf-8")
+            (source / ".claude/skills/.git").mkdir()
             # OMH's own project state root under the source is its managed
             # install OUTPUT in another layout, never an input.
             own_output = source / ".omh/skills/guide/omh-browser/SKILL.md"
             own_output.parent.mkdir(parents=True)
             own_output.write_text(raw + "installed-layout\n", encoding="utf-8")
-            self.assertEqual(discover_skill_files(source), [skill])
+            self.assertEqual(discover_skill_files(source), [mine, skill])
             paths = resolve_paths(root / ".omh", root / ".hermes")
             install_skill_pack(paths, source="local", source_dir=source, profile="full")
             template = convert_skill(raw, skill.parent.name)
