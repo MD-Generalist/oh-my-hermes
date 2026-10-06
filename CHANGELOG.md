@@ -21,6 +21,56 @@ All notable changes will be documented here.
   host's order and nothing else; five of its six cases are red on the
   previous code.
 
+- **Long-term memory works without an operator.** The store filled only
+  when someone typed `omh memory capture` and then `omh memory approve`; on
+  the owner machine that was never, across 552 Hermes sessions. Owner
+  decision 2026-10-06: the model remembers durable facts itself and nobody
+  runs an approval command.
+  - `omh_memory(action="capture", summary, record_type, tags, scope,
+    retention_class)` is the model's write path. It runs the installed
+    `omh memory capture` (console script, `shell=False`, allowlisted child
+    environment, 30s timeout) and reports a closed status set:
+    `remembered`, `pending_review` with `review_reason`,
+    `already_remembered`, `refused`, `omh_cli_unavailable`, `error`, plus
+    the durability `receipt_state` the CLI observed on disk and never
+    upgrades. `omh memory capture --on-duplicate skip` names the existing
+    record and persists nothing; capture output now carries `receipt_state`
+    and `review_reason`.
+  - The default memory policy is `auto-safe`; `project_memory_policy/v1`
+    discloses `mode_source`. A profile that stored the earlier `review-first`
+    default without choosing it follows the new default on its next read; a
+    mode passed with `--memory-mode` is kept.
+  - The `omh-memory-new` and `omh-memory-sync` skills, the always-on
+    awareness rail, the dreaming brief, the recommend guidance and the
+    wrapper cards tell the model to capture directly, ask one question only
+    when scope or durability is ambiguous, and tell the user in one line what
+    was remembered, staged, or already kept. Hermes memory keeps short
+    pointers and is trimmed only through Hermes' own tool; a brief stays a
+    request, never evidence of consolidation.
+  - Recall is never silent while active memory exists: when the message
+    shares no token with any record, the approved active-tier records are
+    served as an unqueried pack would serve them and the pack says so in
+    `query_fallback` (mirrored on the prefetch receipt). Reference records
+    still need a keyword, archived ones an explicit request, and a partial
+    match never falls back. Coding handoff packs follow the same rule. Two
+    approved records with the same normalized summary no longer both take a
+    slot: the pinned, else newest, else smaller-id record is kept and the
+    other is excluded as `duplicate_record` with `duplicate_of`. Retrieval
+    corpus `omh-memory-retrieval-fixtures/v3`.
+  - Provider state (`dreaming.json`, the brief, the receipt, both journals)
+    is written under a lock with an atomic replace, so a CLI and a gateway
+    session on one home no longer erase each other's counters (measured
+    without the lock: 29–39 of 200 concurrent increments survived). A corrupt
+    record or review file, or a directory that cannot be listed, is named on
+    the receipt (`store.unreadable_count`, `store.unreadable`,
+    `store.store_read_error`) instead of reading as an empty store, and
+    every write the provider swallows to protect the turn is counted
+    (`write_failures_count`, `last_write_failure`).
+  - `omh memory status` carries `last_prefetch`: `never_served` when no
+    receipt exists, otherwise when the provider last handed Hermes a pack,
+    for which session, and how many records and blocks it rendered — the
+    signal that would have shown the month of empty prefetches.
+
 - **The plugin bundle passes Hermes's install scanner again.** The generated
   skill-shortlist sidecar carried the standalone token `monero` from the
   `external-connector-readiness` triggers, and Hermes scans bundled JSON
