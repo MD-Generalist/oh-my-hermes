@@ -4,6 +4,15 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **The executor-name and coding-delivery phrase groups are defined once.**
+  `src/plugin_bundle/omh/executor_cues.py` owns
+  `SUBSTRING_NAMED_CODING_AGENT_PHRASES`, `OMO_RUNTIME_CODING_AGENT_PHRASES`,
+  `NAMED_CODING_AGENT_PHRASES`, `CODING_DELIVERY_REQUEST_PHRASES` and
+  `CODING_DELIVERY_REQUEST_TOKENS` with their reasoning comments;
+  `omh.routing.executor_cues` re-exports them and awareness imports them
+  unconditionally. The vendored `ImportError` mirror that the live plugin
+  always ran is gone; the parity test is now an identity test plus the
+  documented members and absences. Routing is unchanged (428/627).
 - **The awareness hint asks the router for its guards per call.** The plugin
   bundle's `awareness.py` bound the router's jit-learn guard, long-document
   guard and the two intent classifiers at import time behind the

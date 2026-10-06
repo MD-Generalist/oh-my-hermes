@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from tempfile import TemporaryDirectory
+import unicodedata
 import unittest
 
 from _local_package import load_local_package
@@ -14,6 +15,7 @@ from omh.plugin_bundle.omh.awareness import awareness_route_hint
 from omh.profiles.setup import write_setup_profile
 from omh.routing.action_copy import NEXT_ACTION_LABELS
 from omh.routing.executor_cues import (
+    CODING_DELIVERY_REQUEST_PHRASES,
     NAMED_CODING_AGENT_PHRASES,
     OMO_RUNTIME_CODING_AGENT_PHRASES,
     SUBSTRING_NAMED_CODING_AGENT_PHRASES,
@@ -105,21 +107,53 @@ class CodingRouteActionVocabularyTests(unittest.TestCase):
     def test_owner_phrase_groups_still_cover_the_policy_executor_names(self) -> None:
         self.assertTrue(named_coding_agent_phrase_parity())
 
-    def test_vendored_awareness_fallback_matches_the_executor_name_policy(self) -> None:
-        # The bundle's ImportError fallback is a copy, not a re-export, so it
-        # drifts silently when `NAMED_CODING_AGENT_PHRASES` gains a phrase.
-        # Tuple equality (order included) keeps the standalone plugin host and
-        # the source routing policy recognising exactly the same names.
-        awareness = _load_standalone_bundle_awareness()
+    def test_control_plane_and_bundle_read_one_definition_of_the_phrase_groups(self) -> None:
+        # The groups are defined once in the bundle; the control plane
+        # re-exports them and awareness imports them unconditionally, so there
+        # is no copy left to drift -- the names are the same objects.
+        from omh.plugin_bundle.omh import awareness
+        from omh.plugin_bundle.omh import executor_cues as bundle_cues
+        from omh.routing import executor_cues as routing_cues
 
-        self.assertEqual(awareness._NAMED_CODING_AGENT_PHRASES, NAMED_CODING_AGENT_PHRASES)
+        for name in (
+            "SUBSTRING_NAMED_CODING_AGENT_PHRASES",
+            "OMO_RUNTIME_CODING_AGENT_PHRASES",
+            "NAMED_CODING_AGENT_PHRASES",
+            "CODING_DELIVERY_REQUEST_PHRASES",
+            "CODING_DELIVERY_REQUEST_TOKENS",
+        ):
+            with self.subTest(name=name):
+                self.assertIs(getattr(routing_cues, name), getattr(bundle_cues, name))
+                if hasattr(awareness, f"_{name}"):
+                    self.assertIs(getattr(awareness, f"_{name}"), getattr(bundle_cues, name))
+        awareness_source = Path(awareness.__file__).read_text(encoding="utf-8")
+        for name in ("_SUBSTRING_NAMED_CODING_AGENT_PHRASES", "_CODING_DELIVERY_REQUEST_PHRASES"):
+            with self.subTest(no_copy=name):
+                self.assertNotIn(f"{name} = ", awareness_source)
+
+    def test_phrase_groups_keep_their_documented_members_and_absences(self) -> None:
+        # Bare "claude" and "gemini" are advisor names as often as executor
+        # names; bare "pi" (and "with pi" / "pi로") hides inside "api", "pip",
+        # "pipeline"; bare "클로드" stays out the same way bare "claude" does.
+        for absent in ("claude", "gemini", "pi", "with pi", "pi로", "클로드"):
+            with self.subTest(absent=absent):
+                self.assertNotIn(absent, NAMED_CODING_AGENT_PHRASES)
+        for present in ("pi한테", "pi에게", "클로드 코드", "헤르메스 코딩"):
+            with self.subTest(present=present):
+                self.assertIn(present, NAMED_CODING_AGENT_PHRASES)
+        for present in ("해줘", "맡겨", "実装", "直して", "修复"):
+            with self.subTest(present=present):
+                self.assertIn(present, CODING_DELIVERY_REQUEST_PHRASES)
+        # Japanese entries avoid dakuten/handakuten because `normalized_phrase`
+        # strips combining marks.
+        for phrase in CODING_DELIVERY_REQUEST_PHRASES:
+            with self.subTest(phrase=phrase):
+                decomposed = unicodedata.normalize("NFKD", phrase)
+                self.assertNotIn("゙", decomposed)
+                self.assertNotIn("゚", decomposed)
         self.assertEqual(
-            awareness._SUBSTRING_NAMED_CODING_AGENT_PHRASES,
-            SUBSTRING_NAMED_CODING_AGENT_PHRASES,
-        )
-        self.assertEqual(
-            awareness._OMO_RUNTIME_CODING_AGENT_PHRASES,
-            OMO_RUNTIME_CODING_AGENT_PHRASES,
+            NAMED_CODING_AGENT_PHRASES,
+            (*SUBSTRING_NAMED_CODING_AGENT_PHRASES, *OMO_RUNTIME_CODING_AGENT_PHRASES),
         )
 
     def test_vendored_awareness_delivery_signal_applies_the_boundary_rule(self) -> None:
