@@ -858,17 +858,26 @@ def _last_prefetch_status(paths: OmhPaths, *, now: datetime) -> dict[str, object
     the state that must be loud -- an installed provider that has not served
     once is either unused or broken, never fine.
     """
+    receipt_path = _prefetch_receipt_path(paths.omh_home)
     receipt = _read_prefetch_receipt(paths.omh_home)
     if receipt is None:
+        # The reader returns None for a missing file and for one it refuses
+        # (malformed, foreign schema, inconsistent). Only the first means
+        # nothing was recorded; a refused receipt was written by a serve.
+        present = receipt_path.is_file() and not receipt_path.is_symlink()
         return {
-            "state": "never_served",
+            "state": "unreadable" if present else "never_served",
             "served_at": None,
             "age_hours": None,
             "session_id": None,
             "rendered_record_count": None,
             "rendered_block_count": None,
-            "receipt_path": str(_prefetch_receipt_path(paths.omh_home)),
-            "claim_boundary": "No receipt means no served pack was recorded from this home; it is not evidence that nothing was served elsewhere.",
+            "receipt_path": str(receipt_path),
+            "claim_boundary": (
+                "A receipt file exists but does not validate; a pack was served and the record of it cannot be read."
+                if present
+                else "No receipt means no served pack was recorded from this home; it is not evidence that nothing was served elsewhere."
+            ),
         }
     served_at = str(receipt.get("served_at", "") or "")
     age_hours: float | None = None
@@ -886,7 +895,7 @@ def _last_prefetch_status(paths: OmhPaths, *, now: datetime) -> dict[str, object
         "session_id": str(receipt.get("session_id", "") or "") or None,
         "rendered_record_count": int(rendering.get("rendered_count", 0) or 0),
         "rendered_block_count": int(rendering.get("rendered_block_count", 0) or 0),
-        "receipt_path": str(_prefetch_receipt_path(paths.omh_home)),
+        "receipt_path": str(receipt_path),
         "claim_boundary": "A receipt records what the provider handed the host; it is not evidence that the model read or used it.",
     }
 
@@ -1102,11 +1111,19 @@ def capture_project_memory_candidate(
     # comparison uses the candidate's own summary, which already went through
     # the same redaction/truncation pipeline as every stored summary; the raw
     # input would miss any match past the redaction cap.
-    duplicate_of = _find_duplicate_record(paths, str(candidate.get("summary", "")))
-    if duplicate_of and on_duplicate == "skip":
+    if on_duplicate == "skip":
         # The model-driven capture path: a candidate stamped duplicate_of
         # would wait for a reviewer who is not in that loop, so it names the
-        # record already held and persists nothing.
+        # record already held and persists nothing -- but only a record held
+        # under the SAME confinement counts as held. The review-first stamp
+        # below may point across scopes because a reviewer sees it; here
+        # nothing is persisted, and a match in another project or for another
+        # principal would never be recalled under this lens, so it is not
+        # "already remembered" and the capture goes through.
+        duplicate_of = _duplicate_held_in_confinement(paths, candidate)
+    else:
+        duplicate_of = _find_duplicate_record(paths, str(candidate.get("summary", "")))
+    if duplicate_of and on_duplicate == "skip":
         return {
             "schema_version": PROJECT_MEMORY_CAPTURE_SCHEMA_VERSION,
             "captured": False,
@@ -1801,6 +1818,41 @@ def _find_duplicate_record(paths: OmhPaths, summary: str, *, now: datetime | Non
         if _normalized_summary_key(str(record.get("summary", ""))) == key:
             return str(record.get("record_id", ""))
     return ""
+
+
+def _duplicate_held_in_confinement(paths: OmhPaths, candidate: dict[str, object], *, now: datetime | None = None) -> str:
+    """Record id of a non-expired same-summary record in the candidate's own scope and principal.
+
+    The cross-scope match `_find_duplicate_record` returns is a reviewer's
+    hint; it is the wrong answer for a path that persists nothing on a match,
+    because a record confined to another project or another principal is
+    never recalled under this candidate's lens. Same scope (kind and ref) and
+    same subject principal (both absent, or equal) is what "held" means here.
+    """
+    key = _normalized_summary_key(str(candidate.get("summary", "")))
+    if not key:
+        return ""
+    now = now if now is not None else datetime.now(timezone.utc)
+    scope = candidate.get("scope") if isinstance(candidate.get("scope"), dict) else {}
+    principal = _subject_principal(candidate)
+    for record in _read_project_memory_records(paths):
+        if _classify_record_expiry(record, now=now) == "expired":
+            continue
+        if _normalized_summary_key(str(record.get("summary", ""))) != key:
+            continue
+        record_scope = record.get("scope") if isinstance(record.get("scope"), dict) else {}
+        if record_scope != scope or _subject_principal(record) != principal:
+            continue
+        return str(record.get("record_id", ""))
+    return ""
+
+
+def _subject_principal(artifact: dict[str, object]) -> str | None:
+    identity = artifact.get("identity")
+    if not isinstance(identity, dict):
+        return None
+    value = identity.get("subject_principal")
+    return str(value) if value else None
 
 
 def build_memory_rollup(

@@ -221,6 +221,44 @@ class ExecutableResolutionTests(unittest.TestCase):
                 script.unlink()
                 self.assertIsNone(memory_tool._resolve_omh_executable())
 
+    @requires_posix
+    def test_the_managed_generation_wins_over_an_older_omh_on_path(self) -> None:
+        # The `current` generation installed this bundle, so its CLI speaks
+        # this bundle's flags; a checkout or pip `omh` earlier on PATH may not.
+        with TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            managed = home / ".local" / "share" / "omh" / "current" / "venv" / "bin" / "omh"
+            on_path = home / "elsewhere" / "omh"
+            for script in (managed, on_path):
+                script.parent.mkdir(parents=True)
+                script.write_text("#!/bin/sh\n", encoding="utf-8")
+                script.chmod(0o755)
+            env = {"HOME": str(home), "PATH": str(on_path.parent)}
+            with patch.dict(os.environ, env, clear=True):
+                self.assertEqual(memory_tool._resolve_omh_executable(), str(managed))
+                managed.unlink()
+                self.assertEqual(memory_tool._resolve_omh_executable(), str(on_path), "PATH is the second choice")
+
+
+class CaptureInputRefusalTests(unittest.TestCase):
+    def test_a_nul_byte_is_refused_before_anything_is_spawned(self) -> None:
+        # A NUL cannot travel in an argv: subprocess raises ValueError past
+        # every handler, so the tool raised instead of answering.
+        with patch.object(memory_tool, "_run_capture", side_effect=AssertionError("must not spawn")):
+            for args in (
+                {"action": "capture", "summary": "Use pnpm\x00 for installs."},
+                {"action": "capture", "summary": "Use pnpm for installs.", "tags": ["tool\x00ing"]},
+            ):
+                result = json.loads(omh_memory_handler(args))
+                self.assertEqual((result["status"], result["reason"]), ("refused", "control_character"), result)
+
+    def test_an_unbound_home_is_an_error_result_not_a_raise(self) -> None:
+        with patch.object(memory_tool, "_resolve_omh_executable", return_value="/usr/bin/true"), patch.object(
+            memory_tool, "_home", side_effect=memory_tool.runtime_paths.RuntimeBindingError("no profile")
+        ), patch.object(memory_tool, "_session_cwd", return_value=None):
+            result = json.loads(omh_memory_handler({"action": "capture", "summary": "Use pnpm for installs.", "scope": "user"}))
+            self.assertEqual((result["status"], result["reason"]), ("error", "RuntimeBindingError"), result)
+
 
 class DefaultPolicyTests(unittest.TestCase):
     def _paths(self, root: Path):
@@ -244,6 +282,23 @@ class DefaultPolicyTests(unittest.TestCase):
             write_setup_profile(paths, [], memory_mode="off")
             policy = read_project_memory_policy(paths)
             self.assertEqual((policy["mode"], policy["capture_enabled"]), ("off", False))
+
+    def test_a_rerun_without_a_mode_keeps_the_mode_the_operator_chose(self) -> None:
+        # Setup rewrites the whole profile. A rerun that does not mention
+        # memory must not turn an explicit review-first into the default and
+        # relabel it `default`, which the legacy rule would then flip.
+        with TemporaryDirectory() as tmp:
+            paths = self._paths(Path(tmp))
+            write_setup_profile(paths, [], memory_mode="review-first")
+            profile = write_setup_profile(paths, [])
+            self.assertEqual((profile["memory_policy"]["mode"], profile["memory_policy"]["mode_source"]), ("review-first", "explicit"))
+            self.assertEqual(read_project_memory_policy(paths)["mode"], "review-first")
+            # A new explicit choice still replaces it; a defaulted profile stays defaulted.
+            write_setup_profile(paths, [], memory_mode="auto-safe")
+            self.assertEqual(read_project_memory_policy(paths)["mode_source"], "explicit")
+            paths.setup_profile_path.unlink()
+            write_setup_profile(paths, [])
+            self.assertEqual(write_setup_profile(paths, [])["memory_policy"]["mode_source"], "default")
 
     def test_a_profile_written_by_the_old_default_follows_the_new_one(self) -> None:
         # The owner machine's profile: review-first stored by the old default,
@@ -295,6 +350,40 @@ class OnDuplicateSkipTests(unittest.TestCase):
             self.assertEqual(kept["review_reason"], "duplicate")
             self.assertEqual(kept["receipt_state"], "candidate_persisted")
             self.assertEqual(len(list(candidates.iterdir())), len(before) + 1)
+
+    def test_skip_only_counts_a_record_held_under_the_same_scope(self) -> None:
+        # The same fact stated in another project is a different memory: a
+        # record confined to project A is never recalled in project B, so
+        # "already remembered" would drop it there for good. The reviewer
+        # stamp (default mode) may still point across scopes.
+        with TemporaryDirectory() as tmp, chdir(tmp):
+            root = Path(tmp)
+            seed_project_identity(root)
+            homes = ["--omh-home", str(root / "store"), "--hermes-home", str(root / "hermes")]
+            scope_a = ["--scope-kind", "project", "--scope-ref", "acme-project-a"]
+            scope_b = ["--scope-kind", "project", "--scope-ref", "acme-project-b"]
+            status, stdout, stderr = run_cli([*homes, "memory", "capture", *scope_a, "Use pnpm, not npm, for installs."])
+            self.assertEqual(status, 0, stderr)
+            held_in_a = json.loads(stdout)["record"]["record_id"]
+
+            status, stdout, stderr = run_cli([*homes, "memory", "capture", "--on-duplicate", "skip", *scope_b, "Use pnpm, not npm, for installs."])
+            self.assertEqual(status, 0, stderr)
+            in_b = json.loads(stdout)
+            self.assertTrue(in_b["captured"], in_b)
+            self.assertTrue(in_b["auto_approved"], "a cross-scope match is not a duplicate here and must not block auto-safe")
+            self.assertNotEqual(in_b["record"]["record_id"], held_in_a)
+            self.assertNotIn("duplicate_of", in_b["candidate"])
+
+            status, stdout, stderr = run_cli([*homes, "memory", "capture", "--on-duplicate", "skip", *scope_a, "Use pnpm, not npm, for installs."])
+            self.assertEqual(status, 0, stderr)
+            again_in_a = json.loads(stdout)
+            self.assertFalse(again_in_a["captured"])
+            self.assertEqual(again_in_a["duplicate_of"], held_in_a)
+
+            # Default mode keeps the reviewer-facing cross-scope hint.
+            status, stdout, stderr = run_cli([*homes, "memory", "capture", "--scope-kind", "project", "--scope-ref", "acme-project-c", "Use pnpm, not npm, for installs."])
+            self.assertEqual(status, 0, stderr)
+            self.assertIn(json.loads(stdout)["candidate"]["duplicate_of"], {held_in_a, in_b["record"]["record_id"]})
 
 
 @requires_posix

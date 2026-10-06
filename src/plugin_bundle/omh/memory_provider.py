@@ -34,6 +34,7 @@ from . import runtime_paths
 
 import hashlib
 import json
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -196,6 +197,11 @@ class OmhMemoryProvider(_MemoryProviderBase):
         # failure during one session's shutdown still reaches the next receipt.
         self._write_failures: list[dict[str, str]] = []
         self._write_failure_count = 0
+        # One render at a time, and a serve reads one render whole: Hermes
+        # queues the finished turn's render on a worker thread while the
+        # next turn's hooks run on the main thread. Re-entrant because a
+        # serve may itself render.
+        self._render_lock = threading.RLock()
 
     @property
     def name(self) -> str:
@@ -256,63 +262,64 @@ class OmhMemoryProvider(_MemoryProviderBase):
         session_id: str = "",
         principal_context: dict[str, object] | None = None,
     ) -> str:
-        if principal_context is not None:
-            supplied = parse_principal_context(
-                principal_context,
-                expected_profile=self._profile_ref,
-                expected_session=self._session_id,
-                expected_turn=self._turn_ref,
-            )
-            if supplied != self._principal_context:
-                # The pack and its reminder were chosen under the lens they
-                # were rendered for. A different principal gets its own
-                # render, never the previous lens's pack -- and never an empty
-                # one either, which would make memory vanish for whoever
-                # arrived second.
-                self._principal_context = supplied
+        with self._render_lock:
+            if principal_context is not None:
+                supplied = parse_principal_context(
+                    principal_context,
+                    expected_profile=self._profile_ref,
+                    expected_session=self._session_id,
+                    expected_turn=self._turn_ref,
+                )
+                if supplied != self._principal_context:
+                    # The pack and its reminder were chosen under the lens they
+                    # were rendered for. A different principal gets its own
+                    # render, never the previous lens's pack -- and never an empty
+                    # one either, which would make memory vanish for whoever
+                    # arrived second.
+                    self._principal_context = supplied
+                    self._pack = self.render_pack()
+            if query and str(query) != self._query:
+                # A host that hands prefetch a query it never gave on_turn_start
+                # still gets a pack ranked for what the user just said.
+                self._query = str(query)
                 self._pack = self.render_pack()
-        if query and str(query) != self._query:
-            # A host that hands prefetch a query it never gave on_turn_start
-            # still gets a pack ranked for what the user just said.
-            self._query = str(query)
-            self._pack = self.render_pack()
-        self._served_pack, self._served_count = self._pack, self._pack_count
-        self._served_has_memory = self._pack_has_memory
-        # The failures carried are the ones swallowed BEFORE this serve; a
-        # failure writing this very receipt shows on the next one.
-        self._served_receipt = (
-            mark_prefetch_receipt_returned(
-                self._prepared_receipt,
-                write_failures_count=self._write_failure_count,
-                last_write_failure=self._write_failures[-1] if self._write_failures else None,
+            self._served_pack, self._served_count = self._pack, self._pack_count
+            self._served_has_memory = self._pack_has_memory
+            # The failures carried are the ones swallowed BEFORE this serve; a
+            # failure writing this very receipt shows on the next one.
+            self._served_receipt = (
+                mark_prefetch_receipt_returned(
+                    self._prepared_receipt,
+                    write_failures_count=self._write_failure_count,
+                    last_write_failure=self._write_failures[-1] if self._write_failures else None,
+                )
+                if self._prepared_receipt is not None
+                else None
             )
-            if self._prepared_receipt is not None
-            else None
-        )
-        if self._served_receipt is not None:
-            payload = json.dumps(self._served_receipt, ensure_ascii=False, sort_keys=True)
-            receipt_path = prefetch_receipt_path(self._omh_home)
-            self._safely("prefetch_receipt", receipt_path, lambda: _write_text(receipt_path, payload))
-        # Serving the pack is what makes the reminder an ask -- and only a pack
-        # that actually carries the line counts, never a prepared reminder
-        # whose pack was blanked. The ledger line goes through `_safely` like
-        # the receipt: a home that cannot be written costs the cadence, never
-        # the turn. It writes the ledger and nothing else -- no record is
-        # touched by a reminder.
-        self._served_reminder = (
-            self._prepared_reminder
-            if self._prepared_reminder is not None and render_open_reminder(self._prepared_reminder) in self._served_pack
-            else None
-        )
-        if self._served_reminder is not None and not self._reminder_recorded:
-            self._reminder_recorded = True
-            record_id = str(self._served_reminder.get("record_id", ""))
-            self._safely(
-                "open_reminder",
-                open_reminders_path(self._omh_home),
-                lambda: mark_open_reminder_asked(self._omh_home, record_id, asked_at=_utc_now()),
+            if self._served_receipt is not None:
+                payload = json.dumps(self._served_receipt, ensure_ascii=False, sort_keys=True)
+                receipt_path = prefetch_receipt_path(self._omh_home)
+                self._safely("prefetch_receipt", receipt_path, lambda: _write_text(receipt_path, payload))
+            # Serving the pack is what makes the reminder an ask -- and only a pack
+            # that actually carries the line counts, never a prepared reminder
+            # whose pack was blanked. The ledger line goes through `_safely` like
+            # the receipt: a home that cannot be written costs the cadence, never
+            # the turn. It writes the ledger and nothing else -- no record is
+            # touched by a reminder.
+            self._served_reminder = (
+                self._prepared_reminder
+                if self._prepared_reminder is not None and render_open_reminder(self._prepared_reminder) in self._served_pack
+                else None
             )
-        return self._pack
+            if self._served_reminder is not None and not self._reminder_recorded:
+                self._reminder_recorded = True
+                record_id = str(self._served_reminder.get("record_id", ""))
+                self._safely(
+                    "open_reminder",
+                    open_reminders_path(self._omh_home),
+                    lambda: mark_open_reminder_asked(self._omh_home, record_id, asked_at=_utc_now()),
+                )
+            return self._pack
 
     def queue_prefetch(
         self,
@@ -327,15 +334,20 @@ class OmhMemoryProvider(_MemoryProviderBase):
         Hermes queues with the turn that just finished, so the records are
         ranked for the conversation as it stands, not for the next message.
         """
-        if principal_context is not None:
-            self._principal_context = parse_principal_context(
-                principal_context,
-                expected_profile=self._profile_ref,
-                expected_session=self._session_id,
-                expected_turn=self._turn_ref,
-            )
-        self._query = str(query or "")
-        self._pack = self.render_pack(now=now)
+        # Hermes runs this on its memory-sync worker thread while the next
+        # turn's `on_turn_start`/`prefetch` run on the main thread; the lock
+        # keeps one render's text from being served with another's count and
+        # receipt.
+        with self._render_lock:
+            if principal_context is not None:
+                self._principal_context = parse_principal_context(
+                    principal_context,
+                    expected_profile=self._profile_ref,
+                    expected_session=self._session_id,
+                    expected_turn=self._turn_ref,
+                )
+            self._query = str(query or "")
+            self._pack = self.render_pack(now=now)
 
     def recall_status(self) -> RecallStatus | None:
         """What the last prefetch put into the turn, for Hermes' recall line.
@@ -402,16 +414,25 @@ class OmhMemoryProvider(_MemoryProviderBase):
         # turn, from 2026-09-12 until the hook order was checked. Re-rendering
         # keeps the isolation (a new lens never sees the old pack) and makes
         # the current message, not the previous turn's, the recall query.
-        self._served_pack, self._served_count, self._served_has_memory = "", 0, False
-        self._served_receipt = None
-        self._served_reminder = None
-        if message:
-            self._query = str(message)
-        self._pack = self.render_pack()
-        if not self._writes_enabled:
-            return
-        self._mutate_state(record_turn)
-        self._evaluate_if_due("turn")
+        with self._render_lock:
+            # Blank first, render last: if the render raises (the host
+            # suppresses it), prefetch finds nothing to serve rather than the
+            # previous turn's pack under this turn's query and receipt.
+            self._served_pack, self._served_count, self._served_has_memory = "", 0, False
+            self._served_receipt = None
+            self._served_reminder = None
+            self._pack, self._pack_count, self._pack_has_memory = "", 0, False
+            self._prepared_receipt = None
+            self._prepared_reminder, self._reminder_recorded = None, False
+            if message:
+                self._query = str(message)
+            if self._writes_enabled:
+                # The counters move before the render so a turn is counted
+                # whatever the render does, and a brief that falls due on this
+                # turn rides in this turn's pack rather than the next one's.
+                self._mutate_state(record_turn)
+                self._evaluate_if_due("turn")
+            self._pack = self.render_pack()
 
     def on_pre_compress(
         self,

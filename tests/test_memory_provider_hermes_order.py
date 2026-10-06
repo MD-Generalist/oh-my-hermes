@@ -15,7 +15,9 @@ from __future__ import annotations
 
 from pathlib import Path
 from tempfile import TemporaryDirectory
+import threading
 import unittest
+from unittest.mock import patch
 
 from _local_package import load_local_package
 
@@ -23,6 +25,7 @@ load_local_package()
 
 from project_identity_fixture import memory_paths as resolve_paths  # noqa: E402
 from test_memory_prefetch_canonical import approve, provider, rendered_ids  # noqa: E402
+from omh.plugin_bundle.omh.memory_dreaming import read_dreaming_state  # noqa: E402
 from omh.plugin_bundle.omh.memory_provider import RecallStatus  # noqa: E402
 from omh.workflows.memory import build_project_memory_status  # noqa: E402
 
@@ -133,6 +136,62 @@ class HermesHookOrderTests(unittest.TestCase):
             self.assertEqual(after["session_id"], "session-a")
             self.assertTrue(str(after["served_at"]).endswith("Z"))
             self.assertLess(float(after["age_hours"]), 1.0)
+            # A receipt that exists but does not validate was still written by
+            # a serve; it must not read as "never served".
+            Path(after["receipt_path"]).write_text("{not json", encoding="utf-8")
+            self.assertEqual(build_project_memory_status(paths)["last_prefetch"]["state"], "unreadable")
+
+    def test_a_render_that_raises_serves_nothing_not_the_previous_turn(self) -> None:
+        # Hermes suppresses an exception from on_turn_start. The query was
+        # already set to this turn's message, so a prefetch that found the
+        # previous pack still in place would serve it as if it were ranked for
+        # this turn, under a receipt from the other one. Blank first, render
+        # last. The turn is still counted.
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / ".hermes").mkdir()
+            approve(root, "OMH uses deterministic token recall for memory packs")
+            live = provider(root)
+            self.assertNotEqual(hermes_turn(live, 1, "how does omh recall memory packs"), "")
+            turns_before = read_dreaming_state(root / ".omh")["turns_since_consolidation"]
+            with patch.object(live, "render_pack", side_effect=RuntimeError("store exploded")):
+                with self.assertRaises(RuntimeError):
+                    live.on_turn_start(2, "memory packs once more")
+            self.assertEqual(live.prefetch("memory packs once more"), "")
+            self.assertIsNone(live.recall_status())
+            self.assertIsNone(live.latest_prefetch_receipt())
+            self.assertEqual(read_dreaming_state(root / ".omh")["turns_since_consolidation"], turns_before + 1)
+            # The next turn renders again and recovers on its own.
+            self.assertNotEqual(hermes_turn(live, 3, "how does omh recall memory packs"), "")
+
+    def test_served_text_and_count_come_from_one_render(self) -> None:
+        # Hermes queues the finished turn's render on a worker thread while the
+        # next turn's hooks run on the main thread. Whatever interleaving
+        # happens, a serve must hand back one render whole: the count Hermes
+        # prints has to be the number of records in the text it injects.
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / ".hermes").mkdir()
+            approve(root, "OMH uses deterministic token recall for memory packs")
+            approve(root, "Production deploys run from the release branch only")
+            live = provider(root)
+
+            def hammer() -> None:
+                for _ in range(24):
+                    live.queue_prefetch("production deploys release branch")
+
+            worker = threading.Thread(target=hammer, daemon=True)
+            worker.start()
+            turn = 0
+            try:
+                while worker.is_alive() or turn < 4:
+                    turn += 1
+                    pack = hermes_turn(live, turn, "how does omh recall memory packs")
+                    status = live.recall_status()
+                    self.assertEqual(len(rendered_ids(pack)), status.count if status else 0, pack)
+            finally:
+                worker.join(timeout=10)
+            self.assertFalse(worker.is_alive())
 
     def test_an_empty_store_still_serves_nothing(self) -> None:
         with TemporaryDirectory() as tmp:

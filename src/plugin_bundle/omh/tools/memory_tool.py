@@ -267,6 +267,10 @@ def _capture(args: dict, kwargs: dict) -> dict[str, object]:
     tags = args.get("tags") or []
     if not summary:
         return _capture_result("refused", reason="summary_required", next_action="Retry with a one- or two-sentence summary.")
+    if "\x00" in summary or any(isinstance(tag, str) and "\x00" in tag for tag in (tags if isinstance(tags, list) else [])):
+        # A NUL cannot travel in an argv; subprocess would raise ValueError
+        # past every handler below.
+        return _capture_result("refused", reason="control_character", next_action="Remove the NUL character and retry.")
     if len(summary) > CAPTURE_SUMMARY_MAX_CHARS:
         return _capture_result("refused", reason="summary_too_long", next_action=f"Restate the fact in at most {CAPTURE_SUMMARY_MAX_CHARS} characters.")
     if record_type not in CAPTURE_RECORD_TYPES:
@@ -293,10 +297,15 @@ def _capture(args: dict, kwargs: dict) -> dict[str, object]:
             reason="omh_cli_not_found",
             next_action="Nothing was saved. Tell the user the `omh` command was not found; `omh doctor` checks the install.",
         )
+    try:
+        omh_home = _home("OMH_HOME", "~/.omh")
+        hermes_home = _home("HERMES_HOME", "~/.hermes")
+    except ValueError as exc:  # RuntimeBindingError is a ValueError
+        return _capture_result("error", reason=_safe_error_type(type(exc).__name__), next_action="Nothing was saved; this session's OMH home could not be resolved.")
     argv = [
         executable,
-        "--omh-home", _home("OMH_HOME", "~/.omh"),
-        "--hermes-home", _home("HERMES_HOME", "~/.hermes"),
+        "--omh-home", omh_home,
+        "--hermes-home", hermes_home,
         "memory", "capture",
         "--type", record_type,
         "--retention-class", retention,
@@ -334,7 +343,7 @@ def _run_capture(argv: list[str], *, cwd: Path) -> dict[str, object]:
             reason="timeout",
             next_action=f"The CLI did not answer within {CAPTURE_TIMEOUT_SECONDS}s, so nothing is confirmed saved. Call action='status' before retrying.",
         )
-    except OSError as exc:
+    except (OSError, ValueError) as exc:
         return _capture_result("error", reason=_safe_error_type(type(exc).__name__), next_action="Nothing is confirmed saved. `omh doctor` checks the install.")
     if proc.returncode != 0:
         lines = (proc.stderr or "").strip().splitlines()
@@ -433,19 +442,25 @@ def _session_cwd(kwargs: dict) -> Path | None:
 def _resolve_omh_executable() -> str | None:
     """The installed `omh` console script, or None.
 
-    Order: PATH, then the installers' managed generation and legacy venv, then
-    the command bin directory. Hermes often runs without the user's shell PATH,
-    which is why the fixed locations follow. They mirror
-    `managed_command_venv_dir` / `managed_command_bin_dir` in
+    Order: the installers' managed `current` generation first -- it is the
+    generation that installed this bundle, so its CLI speaks this bundle's
+    flags -- then PATH, then the legacy venv and the command bin directory.
+    An older pip or checkout `omh` earlier on PATH would otherwise refuse
+    `--on-duplicate` and fail every capture. Hermes often runs without the
+    user's shell PATH, which is why the fixed locations exist at all. They
+    mirror `managed_command_venv_dir` / `managed_command_bin_dir` in
     `omh.system.paths`, which this bundle cannot import. A Windows `.cmd` or
     `.bat` shim is never used: cmd.exe re-parses its arguments, and the summary
     is model-supplied text.
     """
     windows = sys.platform.startswith("win")
+    current, *others = _managed_omh_candidates(windows)
+    if current.is_file() and os.access(current, os.X_OK):
+        return str(current)
     found = shutil.which("omh")
     if found and not (windows and Path(found).suffix.lower() in {".cmd", ".bat"}):
         return found
-    for candidate in _managed_omh_candidates(windows):
+    for candidate in others:
         if candidate.is_file() and os.access(candidate, os.X_OK):
             return str(candidate)
     return None
