@@ -101,23 +101,49 @@ def _replace_frontmatter_description(raw: str, *, name: str, description: str) -
 def discover_skill_files(source_dir: Path) -> list[Path]:
     if not source_dir.exists():
         raise FileNotFoundError(f"source does not exist: {source_dir}")
-    # Agent artifacts and the separate Agent Skills projection are not Hermes
-    # source inputs. Check relative components so an explicitly selected pack
-    # root still works, without mixing sibling projections during repo import.
+    # Agent artifacts, the separate Agent Skills projection and OMH's own
+    # project state root (`.omh/skills` is the managed install OUTPUT, another
+    # layout of these same skills) are not Hermes source inputs. Check relative
+    # components so an explicitly selected pack root still works, without
+    # mixing sibling projections during repo import.
     from .install.agent_skills_projection import MANIFEST_NAME, _read_manifest
 
-    excluded = {".omc", "agent-skills", ".agents"}
+    excluded = {".omc", ".omh", "agent-skills", ".agents"}
     claude_mirror = source_dir / ".claude/skills"
     manifest = _read_manifest(claude_mirror.absolute())
     # A shared host directory is not wholly ours. Use validated manifest paths,
     # never a directory-prefix exclusion that hides neighboring custom skills.
     owned_paths = {claude_mirror / relative for relative in (manifest or {}).get("files", {})}
     owned_paths.add(claude_mirror / MANIFEST_NAME)
+    nested: dict[Path, bool] = {}
     return sorted(
         path for path in source_dir.rglob("SKILL.md")
         if ".git" not in path.parts and not excluded.intersection(path.relative_to(source_dir).parts)
         and path not in owned_paths
+        and not _inside_nested_repository(path, source_dir, nested, exempt=claude_mirror)
     )
+
+
+def _inside_nested_repository(path: Path, source_dir: Path, memo: dict[Path, bool], *, exempt: Path) -> bool:
+    """True when another checkout sits between ``source_dir`` and ``path``.
+
+    A linked worktree, a submodule, or a clone left under the source root is a
+    different revision of the same skills; importing it beside the source's own
+    copy made two templates claim one install path and the second write refuse
+    as a local modification. A linked worktree marks its root with a ``.git``
+    FILE, so the ``".git" in parts`` test above never sees it. The one
+    repository root that is NOT another revision of this source is the host's
+    own ``.claude/skills`` mirror: people keep their custom skills there under
+    version control, and those are a deliberate import source.
+    """
+    for parent in path.parents:
+        if parent == source_dir:
+            return False
+        if parent not in memo:
+            memo[parent] = parent != exempt and (parent / ".git").exists()
+        if memo[parent]:
+            return True
+    return False
 
 
 def convert_from_dir(source_dir: Path) -> list[SkillTemplate]:

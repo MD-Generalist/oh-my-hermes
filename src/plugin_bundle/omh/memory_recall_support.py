@@ -623,9 +623,8 @@ def _retention_class(artifact: dict[str, Any]) -> str:
 def normalized_summary_key(summary: str) -> str:
     """NFC, lowercase, collapsed-whitespace summary: the exact-duplicate identity.
 
-    A copy of capture's `_normalized_summary_key` in `omh.workflows.memory`,
-    because this bundle cannot import `omh`; a test pins the two together so
-    capture's `duplicate_of` and recall's `duplicate_record` never disagree.
+    The one definition: capture (`omh.workflows.memory`) imports it from here,
+    so its `duplicate_of` and recall's `duplicate_record` cannot disagree.
     """
     return " ".join(unicodedata.normalize("NFC", str(summary or "")).lower().split())
 
