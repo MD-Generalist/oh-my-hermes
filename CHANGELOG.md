@@ -4,6 +4,23 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **The memory provider serves its pack in the order Hermes calls its
+  hooks.** Hermes runs `on_turn_start` and then `prefetch` inside the same
+  turn, and queues the next render only after the turn ends. Since 2026-09-12
+  (`2ab7da2ef`) `on_turn_start` blanked the pack to isolate the previous
+  principal's lens, so every live `prefetch` returned an empty string: no
+  record, no `<memory_consolidation>` brief, no recall line, no prefetch
+  receipt — on the owner machine 32 due briefs accumulated with zero
+  consolidations observed. The suite stayed green because every provider
+  test inserted `queue_prefetch` between the two hooks, an order the host
+  never uses. `on_turn_start` now re-renders the pack under the arriving
+  turn's principal and for the arriving message (the previous turn's text
+  used to be the recall query), and a `prefetch` whose query or principal
+  differs from the render re-renders instead of blanking.
+  `tests/test_memory_provider_hermes_order.py` drives the provider in the
+  host's order and nothing else; five of its six cases are red on the
+  previous code.
+
 - **The plugin bundle passes Hermes's install scanner again.** The generated
   skill-shortlist sidecar carried the standalone token `monero` from the
   `external-connector-readiness` triggers, and Hermes scans bundled JSON

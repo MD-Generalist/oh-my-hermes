@@ -2578,7 +2578,9 @@ class RecallIndicatorTests(unittest.TestCase):
             _approve_record(root, "Tests need PYTHONPATH=tests.")
             provider = self._provider(root)
             self.assertIsNone(provider.recall_status(), "the pack is rendered but not yet served")
-            provider.prefetch("hello")
+            # The query is what Hermes passes for the CURRENT message; the
+            # record is counted when that message reaches it.
+            provider.prefetch("why do tests need PYTHONPATH")
             self.assertEqual(provider.recall_status(), RecallStatus(provider_label="OMH", count=2))
 
             # A reference block reaches the pack as a label only, which is

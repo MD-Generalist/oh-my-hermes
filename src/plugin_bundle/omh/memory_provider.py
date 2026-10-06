@@ -255,15 +255,18 @@ class OmhMemoryProvider(_MemoryProviderBase):
                 expected_turn=self._turn_ref,
             )
             if supplied != self._principal_context:
-                self._pack, self._pack_count, self._pack_has_memory = "", 0, False
-                self._prepared_receipt = None
-                # The reminder was chosen under the lens this pack was rendered
-                # for. A different principal gets an empty pack, so it gets no
-                # ask either -- otherwise the ledger would say the question was
-                # asked while nobody saw it, and the record would go silent for
-                # open_ask_days.
-                self._prepared_reminder, self._reminder_recorded = None, False
+                # The pack and its reminder were chosen under the lens they
+                # were rendered for. A different principal gets its own
+                # render, never the previous lens's pack -- and never an empty
+                # one either, which would make memory vanish for whoever
+                # arrived second.
                 self._principal_context = supplied
+                self._pack = self.render_pack()
+        if query and str(query) != self._query:
+            # A host that hands prefetch a query it never gave on_turn_start
+            # still gets a pack ranked for what the user just said.
+            self._query = str(query)
+            self._pack = self.render_pack()
         self._served_pack, self._served_count = self._pack, self._pack_count
         self._served_has_memory = self._pack_has_memory
         self._served_receipt = (
@@ -369,10 +372,20 @@ class OmhMemoryProvider(_MemoryProviderBase):
             expected_session=self._session_id,
             expected_turn=self._turn_ref,
         )
-        self._pack, self._pack_count, self._pack_has_memory = "", 0, False
+        # Hermes calls this hook and then `prefetch` inside the SAME turn;
+        # `queue_prefetch` only runs after the turn ends. The pack is therefore
+        # re-rendered here, under this turn's principal and for this turn's
+        # message, rather than blanked: blanking it isolated the previous
+        # principal's pack correctly and then served nothing at all, every
+        # turn, from 2026-09-12 until the hook order was checked. Re-rendering
+        # keeps the isolation (a new lens never sees the old pack) and makes
+        # the current message, not the previous turn's, the recall query.
         self._served_pack, self._served_count, self._served_has_memory = "", 0, False
-        self._prepared_receipt, self._served_receipt = None, None
-        self._prepared_reminder, self._served_reminder, self._reminder_recorded = None, None, False
+        self._served_receipt = None
+        self._served_reminder = None
+        if message:
+            self._query = str(message)
+        self._pack = self.render_pack()
         if not self._writes_enabled:
             return
         self._mutate_state(record_turn)
