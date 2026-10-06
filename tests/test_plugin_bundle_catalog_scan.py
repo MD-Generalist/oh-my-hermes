@@ -16,7 +16,9 @@ test trees) to a reviewer-read warning; this guard applies none of those
 exemptions, because a warning is still something a catalog reviewer must read
 past. The `crypto_mining` pattern is pinned for the same reason: it treats a
 cryptocurrency name as critical even when that word appears only in generated
-lexical-index data. Read at hermes-agent 577990c3a0 (2026-09-19).
+lexical-index data. Read at hermes-agent 577990c3a0 (2026-09-19); both patterns
+re-read unchanged at 39faafb616 (2026-09-28), where `hermes plugins validate`
+on the pre-fix bundle reported `dangerous: crypto_mining (skill_shortlist.json)`.
 """
 
 from __future__ import annotations
