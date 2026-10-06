@@ -217,7 +217,6 @@ SOURCE_PRECEDENCE = {
     "catalog_hint": 40,
     "wrapper_snapshot": 30,
 }
-ALLOWED_UPDATE_OPS = {"keep", "forget", "update", "change_scope", "dismiss_conflict"}
 MEMORY_ACTION_IDS = (
     "keep_memory",
     "forget_memory",
@@ -3142,6 +3141,11 @@ def _runtime_state_snapshot(state: dict[str, Any]) -> dict[str, object]:
 def _memory_snapshots(paths: OmhPaths, *, now: datetime | None = None) -> list[dict[str, object]]:
     """Return review-visible OMH items with evaluator evidence before packing.
 
+    This is a read-only projection: reviewed records plus the scope items that
+    ``batch-apply`` and ``reactivate`` write. The snapshot surfaces have no
+    write path of their own; legacy v1 scope items appear here as
+    ``review_required_legacy`` until ``omh memory reactivate`` migrates them.
+
     Ineligible artifacts deliberately remain inspectable here, but no value or
     summary can reach ``build_handoff_context_pack`` without a second final
     evaluator decision.
@@ -3577,129 +3581,6 @@ def _handoff_preview(snapshots: list[dict[str, object]], conflicts: list[dict[st
         "blocked_by_conflict_count": len(conflicts),
         "claim_boundary": "Preview only; use handoff_context_pack/v1 before embedding context in a handoff.",
     }
-
-
-def _prepare_update(paths: OmhPaths, update: Any, touched: dict[Path, dict[str, Any]]) -> dict[str, object]:
-    if not isinstance(update, dict):
-        raise ValueError("memory update must be an object")
-    op = str(update.get("op", ""))
-    if op not in ALLOWED_UPDATE_OPS:
-        raise ValueError(f"unsupported memory update op: {op}")
-    item_id = str(update.get("item_id", ""))
-    if not _SAFE_REF.match(item_id):
-        raise ValueError(f"unsafe memory item id: {item_id!r}")
-    scope = _scope_for_update(update, "scope")
-    path = _scope_path(paths, scope)
-    data = touched.setdefault(path, _read_scope_file(path, scope))
-    status = "prepared"
-    if op in {"keep", "update", "dismiss_conflict"}:
-        status = _upsert_item(data, item_id, update, op=op)
-    elif op == "forget":
-        status = _forget_item(data, item_id, update)
-    elif op == "change_scope":
-        from_scope = _scope_for_update(update, "from_scope")
-        to_scope = _scope_for_update(update, "to_scope")
-        from_path = _scope_path(paths, from_scope)
-        to_path = _scope_path(paths, to_scope)
-        from_data = touched.setdefault(from_path, _read_scope_file(from_path, from_scope))
-        to_data = touched.setdefault(to_path, _read_scope_file(to_path, to_scope))
-        status = _move_item(from_data, to_data, item_id, update)
-        path = to_path
-    return {"item_id": item_id, "op": op, "scope": scope, "status": status, "path": str(path)}
-
-
-def _upsert_item(data: dict[str, Any], item_id: str, update: dict[str, Any], *, op: str) -> str:
-    items = data.setdefault("items", {})
-    existing = items.get(item_id)
-    value = str(update.get("value", existing.get("value", "") if isinstance(existing, dict) else ""))
-    key = str(update.get("key", item_id))
-    item = {
-        "item_id": item_id,
-        "key": key,
-        "summary": _safe_summary(update),
-        "reason": str(update.get("reason", "")),
-        "operation": op,
-        "updated_at": utc_now(),
-    }
-    if _safe_to_expose_value(key, value, update):
-        item["value"] = value
-    if op == "keep":
-        item["confirmed_at"] = item["updated_at"]
-    if op == "dismiss_conflict":
-        item["dismissed_at"] = item["updated_at"]
-    if isinstance(existing, dict) and existing.get("value", "") == item.get("value", "") and existing.get("summary") == item["summary"]:
-        items[item_id] = {**existing, **item}
-        return "noop"
-    items[item_id] = item
-    return "prepared"
-
-
-def _forget_item(data: dict[str, Any], item_id: str, update: dict[str, Any]) -> str:
-    items = data.setdefault("items", {})
-    tombstones = data.setdefault("tombstones", {})
-    existed = item_id in items
-    if existed:
-        items.pop(item_id)
-    tombstones[item_id] = {
-        "item_id": item_id,
-        "reason": str(update.get("reason", "")),
-        "tombstoned_at": utc_now(),
-    }
-    return "prepared" if existed else "noop"
-
-
-def _move_item(from_data: dict[str, Any], to_data: dict[str, Any], item_id: str, update: dict[str, Any]) -> str:
-    from_items = from_data.setdefault("items", {})
-    to_items = to_data.setdefault("items", {})
-    item = from_items.pop(item_id, None)
-    if not isinstance(item, dict):
-        value = str(update.get("value", ""))
-        key = str(update.get("key", item_id))
-        item = {
-            "item_id": item_id,
-            "key": key,
-            "summary": _safe_summary(update),
-        }
-        if _safe_to_expose_value(key, value, update):
-            item["value"] = value
-    if to_items.get(item_id) == item:
-        return "noop"
-    to_items[item_id] = {**item, "moved_at": utc_now(), "reason": str(update.get("reason", ""))}
-    return "prepared"
-
-
-def _scope_for_update(update: dict[str, Any], key: str) -> dict[str, str]:
-    scope = _normalize_scope(update.get(key, update.get("scope", _scope("project", "default"))))
-    if scope["kind"] not in ALLOWED_SCOPE_KINDS:
-        raise ValueError(f"unsupported memory scope kind: {scope['kind']}")
-    if not _SAFE_REF.match(scope["ref"]):
-        raise ValueError(f"unsafe memory scope ref: {scope['ref']!r}")
-    return scope
-
-
-def _read_scope_file(path: Path, scope: dict[str, str]) -> dict[str, Any]:
-    data = read_json_object(path)
-    if isinstance(data, dict):
-        return data
-    return {
-        "schema_version": MEMORY_SCOPE_SCHEMA_VERSION,
-        "scope": scope,
-        "items": {},
-        "tombstones": {},
-        "updated_at": utc_now(),
-    }
-
-
-def _scope_path(paths: OmhPaths, scope: dict[str, str]) -> Path:
-    kind = scope["kind"]
-    ref = scope["ref"]
-    if kind == "project":
-        relative = Path("scopes/project.json")
-    else:
-        relative = Path("scopes") / f"{kind}s" / f"{ref}.json"
-    path = paths.memory_dir / relative
-    _assert_under_memory_root(paths, path)
-    return path
 
 
 def _handoff_pack_scope(paths: OmhPaths, *, scope_kind: str | None, scope_ref: str | None) -> dict[str, str]:
