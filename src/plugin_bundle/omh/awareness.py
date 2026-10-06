@@ -6,6 +6,12 @@ import re
 import unicodedata
 
 from .boundary_phrase import contains_boundary_phrase as _contains_boundary_phrase
+from .executor_cues import (
+    CODING_DELIVERY_REQUEST_PHRASES as _CODING_DELIVERY_REQUEST_PHRASES,
+    CODING_DELIVERY_REQUEST_TOKENS as _CODING_DELIVERY_REQUEST_TOKENS,
+    OMO_RUNTIME_CODING_AGENT_PHRASES as _OMO_RUNTIME_CODING_AGENT_PHRASES,
+    SUBSTRING_NAMED_CODING_AGENT_PHRASES as _SUBSTRING_NAMED_CODING_AGENT_PHRASES,
+)
 from .installed_skills import skill_not_installed
 from .reference_regions import executable_routing_text
 from .degradation import (
@@ -126,96 +132,6 @@ except ImportError:  # pragma: no cover - exercised by standalone plugin hosts.
             phrase in message or "".join(character for character in phrase if character.isalnum()) in compact
             for phrase in phrases
         )
-
-try:
-    from ...routing.executor_cues import (
-        CODING_DELIVERY_REQUEST_PHRASES as _CODING_DELIVERY_REQUEST_PHRASES,
-        CODING_DELIVERY_REQUEST_TOKENS as _CODING_DELIVERY_REQUEST_TOKENS,
-        NAMED_CODING_AGENT_PHRASES as _NAMED_CODING_AGENT_PHRASES,
-        OMO_RUNTIME_CODING_AGENT_PHRASES as _OMO_RUNTIME_CODING_AGENT_PHRASES,
-        SUBSTRING_NAMED_CODING_AGENT_PHRASES as _SUBSTRING_NAMED_CODING_AGENT_PHRASES,
-    )
-except ImportError:  # pragma: no cover - exercised by standalone plugin hosts.
-    # Mirrors the split phrase groups in `routing/executor_cues.py` exactly; the
-    # parity test in
-    # tests/test_coding_route_actions.py fails on any drift.
-    _SUBSTRING_NAMED_CODING_AGENT_PHRASES = (
-        "codex",
-        "코덱스",
-        "claude code",
-        "claude-code",
-        "claudecode",
-        "클로드 코드",
-        "클로드코드",
-        "hermes coding",
-        "헤르메스 코딩",
-        "헤르메스가 코딩",
-        "헤르메스한테 코딩",
-    )
-    _OMO_RUNTIME_CODING_AGENT_PHRASES = (
-        "senpi",
-        "opencode",
-        "omo runtime",
-        "have pi implement",
-        "ask pi to",
-        "tell pi to",
-        "delegate to pi",
-        "pi한테",
-        "pi에게",
-    )
-    _NAMED_CODING_AGENT_PHRASES = (
-        *_SUBSTRING_NAMED_CODING_AGENT_PHRASES,
-        *_OMO_RUNTIME_CODING_AGENT_PHRASES,
-    )
-
-    _CODING_DELIVERY_REQUEST_PHRASES = (
-        "open a pr",
-        "open the pr",
-        "raise a pr",
-        "send a pr",
-        "write the code",
-        "until tests pass",
-        "해결",
-        "고쳐",
-        "고치",
-        "구현",
-        "수정",
-        "만들어",
-        "작성",
-        "추가",
-        "개선",
-        "테스트",
-        "짜줘",
-        "짜 줘",
-        "처리해",
-        "작업해",
-        "맡겨",
-        "해줘",
-        "実装",
-        "修正",
-        "解決",
-        "対応",
-        "直して",
-        "テスト",
-        "实现",
-        "修复",
-        "解决",
-        "测试",
-    )
-    _CODING_DELIVERY_REQUEST_TOKENS = frozenset(
-        {
-            "fix",
-            "fixes",
-            "implement",
-            "implementation",
-            "patch",
-            "pr",
-            "resolve",
-            "solve",
-            "test",
-            "tests",
-        }
-    )
 
 try:
     from ...routing.coding_route_actions import (
