@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import sys
 import unittest
+from unittest.mock import patch
 from unittest import mock
 
 from _cli_harness import run_cli
@@ -19,8 +21,6 @@ from omh.routing.recommend import (
     _SKILL_OFFERS_ITSELF,
     _strip_path_like_fragments,
     _tokens,
-    everyday_sense_withheld,
-    offers_itself_withheld,
     recommend_skills,
 )
 from omh.routing.reference_regions import executable_routing_text
@@ -103,8 +103,6 @@ class RoutingQueryPredicateTests(unittest.TestCase):
                 with self.subTest(message=message, skill=skill):
                     expected = not offers_itself(expected_chain["normalized"], expected_chain["tokens"])
                     self.assertEqual(query.offers_itself_withheld(skill), expected)
-                    self.assertEqual(offers_itself_withheld(message, skill), expected)
-                    self.assertEqual(offers_itself_withheld(query, skill), expected)
         self.assertFalse(RoutingQuery.from_message(MESSAGES[0]).offers_itself_withheld("no-such-skill"))
 
     def test_everyday_sense_withheld_matches_the_original_body(self) -> None:
@@ -115,8 +113,6 @@ class RoutingQueryPredicateTests(unittest.TestCase):
                 with self.subTest(message=message, skill=skill):
                     expected = everyday_sense_phrase_unanchored(skill, normalized)
                     self.assertEqual(query.everyday_sense_withheld(skill), expected)
-                    self.assertEqual(everyday_sense_withheld(message, skill), expected)
-                    self.assertEqual(everyday_sense_withheld(query, skill), expected)
 
 
 class RecommendSkillsAcceptsQueryTests(unittest.TestCase):
@@ -231,3 +227,22 @@ class RecommendSurfacesCarryRouteTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RouteKeyIsAdditiveTests(unittest.TestCase):
+    def test_a_route_failure_keeps_the_ranking_and_the_package_source(self) -> None:
+        message = "review the code-review skill for the auth module"
+        with patch("omh.routing.chat.recommend_route_summary", side_effect=RuntimeError("chat exploded")):
+            payload = json.loads(recommend_tool.omh_recommend_handler({"message": message, "limit": 3}))
+        self.assertEqual(payload["source"], "package_recommend")
+        self.assertIsNone(payload["route"])
+        self.assertEqual([item["skill"] for item in payload["recommendations"]], [item["skill"] for item in recommend_skills(message, limit=3)])
+        self.assertNotIn("error", payload)
+
+    def test_a_chat_import_failure_is_not_the_standalone_fallback(self) -> None:
+        message = "review the code-review skill for the auth module"
+        with patch.dict(sys.modules, {"omh.routing.chat": None}):
+            payload = json.loads(recommend_tool.omh_recommend_handler({"message": message, "limit": 3}))
+        self.assertEqual(payload["source"], "package_recommend", "the ranking imported; only the route is missing")
+        self.assertIsNone(payload["route"])
+        self.assertEqual([item["skill"] for item in payload["recommendations"]], [item["skill"] for item in recommend_skills(message, limit=3)])

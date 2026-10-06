@@ -2495,16 +2495,6 @@ class _RawMessageKey:
         return isinstance(other, _RawMessageKey) and other.raw == self.raw
 
 
-def offers_itself_withheld(query: str | RoutingQuery, skill: str) -> bool:
-    """See `RoutingQuery.offers_itself_withheld`."""
-    return RoutingQuery.coerce(query).offers_itself_withheld(skill)
-
-
-def everyday_sense_withheld(query: str | RoutingQuery, skill: str) -> bool:
-    """See `RoutingQuery.everyday_sense_withheld`."""
-    return RoutingQuery.coerce(query).everyday_sense_withheld(skill)
-
-
 def held_back_trigger_tokens(skill: str) -> frozenset[str]:
     """Words the router credits to `skill` only inside a whole trigger phrase."""
     return _trigger_token_holdback_for(skill)

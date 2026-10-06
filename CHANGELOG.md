@@ -12,8 +12,9 @@ All notable changes will be documented here.
   builds nothing, a miss reuses a passed query), and the router helpers that
   used to spell the four-step prep chain by hand take the value instead. The
   chat path builds the query once per message and threads it through the
-  operator fast paths and the lexical shortlist; prep-chain runs over the
-  routing corpora fall from 1,815 to 1,365. Every verdict is unchanged:
+  operator fast paths, and the lexical shortlist builds one query instead of
+  one per shortlisted skill; prep-chain runs over the routing corpora fall
+  from 1,815 to 1,365. Every verdict is unchanged:
   428/428 negative-control and 627/627 interventions, byte-identical.
   `omh recommend`, the `omh_recommend` plugin tool and the MCP bridge now also
   return `route` (`action`, `selected_skill`, `candidate_skill`, `confidence`),

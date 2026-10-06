@@ -111,21 +111,37 @@ def omh_recommend_handler(args: dict, **kwargs) -> str:
 def _recommendations(
     message: str, limit: int
 ) -> tuple[list[dict[str, Any]], dict[str, Any] | None, str, str | None]:
-    # The route is the chat decision on top of the ranking; the standalone
-    # fallback has no router to ask, so it reports `None` rather than a guess.
     try:
-        from omh.routing.chat import recommend_route_summary
         from omh.routing.recommend import recommend_skills
     except (ImportError, ModuleNotFoundError):
+        # No router at all: the standalone fallback has nothing to ask for a
+        # route either, so it reports `None` rather than a guess.
         return _fallback_recommendations(message, limit), None, "standalone_plugin_bundle_fallback", None
     try:
         recommendations = [_redacted_recommendation(item) for item in recommend_skills(message, limit=limit)]
-        return recommendations, recommend_route_summary(message), "package_recommend", None
     except Exception as exc:
         # The package imported successfully but the delegated call raised. This is a
         # package runtime failure, not a genuine missing-package fallback, so it must
         # not be mislabeled as `standalone_plugin_bundle_fallback`.
         return [], None, "package_recommend_error", _safe_error_type(type(exc).__name__)
+    return recommendations, _route_summary(message), "package_recommend", None
+
+
+def _route_summary(message: str) -> dict[str, Any] | None:
+    """The chat decision beside the ranking, or None when it cannot be read.
+
+    The route is additive: a ranking that computed fine must reach the caller
+    whatever happens here, and a chat module that fails to import while the
+    ranking imported is not the standalone case, so neither failure is
+    allowed to relabel the source. Both fall to `None`, the same value the
+    standalone fallback reports.
+    """
+    try:
+        from omh.routing.chat import recommend_route_summary
+
+        return recommend_route_summary(message)
+    except Exception:
+        return None
 
 
 def _redacted_recommendation(item: dict[str, Any]) -> dict[str, Any]:
