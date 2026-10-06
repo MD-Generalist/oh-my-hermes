@@ -372,6 +372,8 @@ def headroom(slot: str) -> int:
     """Characters left under one slot's limit, measured by that slot's producer alone."""
     from .drift import budget_metrics
 
+    if slot not in _SLOT_METRICS:
+        raise KeyError(f"no per-turn slot {slot!r}; slots: {', '.join(sorted(_SLOT_METRICS))}")
     metric = next(metric for metric in budget_metrics() if metric.name == _SLOT_METRICS[slot])
     return int(_slot_report(slot, metric)["headroom"])
 

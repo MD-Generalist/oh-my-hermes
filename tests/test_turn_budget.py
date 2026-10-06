@@ -37,9 +37,15 @@ SLOTS = {
 # Every `# A -> B:` history entry the moved limits carried in release.py
 # before the move: three for the primer pair, four for each pre_llm_call limit.
 MOVED_HISTORY = (
+    # Every `A -> B` pair in the moved blocks, in file order -- including the
+    # primer-markdown pair that shares entries with the primer, and the one
+    # that sits inside an explanatory sentence. A pair is a pair wherever the
+    # history wrote it.
     "900 -> 1050",
+    "3210 -> 3400",
     "1050 -> 1260",
     "1260 -> 1440",
+    "3400 -> 3520",
     "6260 -> 5214",
     "5214 -> 5544",
     "5544 -> 5647",
@@ -48,8 +54,9 @@ MOVED_HISTORY = (
     "6799 -> 6902",
     "6902 -> 6917",
     "6917 -> 7098",
+    "6905 -> 7098",
 )
-_HISTORY_LINE = re.compile(r"^# (\d+ -> \d+)\b", re.MULTILINE)
+_HISTORY_LINE = re.compile(r"\b(\d+ -> \d+)\b")
 
 
 class TurnBudgetTests(unittest.TestCase):

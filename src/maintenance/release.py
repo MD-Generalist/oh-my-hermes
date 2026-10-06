@@ -32,12 +32,11 @@ from .release_identity import (
     probe_source_identity,
 )
 from ..plugin_bundle.omh.awareness import (
-    awareness_primer_context,
-    awareness_primer_markdown,
     awareness_primer_payload,
     awareness_workflow_context_markdown,
 )
 # Re-exported under their old names; each limit and its history live in the bundle.
+from ..plugin_bundle.omh import turn_budget
 from ..plugin_bundle.omh.turn_budget import (
     AWARENESS_PRIMER_CONTEXT_CHAR_LIMIT as AWARENESS_PRIMER_CONTEXT_CHAR_LIMIT,
     AWARENESS_PRIMER_MARKDOWN_CHAR_LIMIT as AWARENESS_PRIMER_MARKDOWN_CHAR_LIMIT,
@@ -129,7 +128,9 @@ CONCEPTUAL_AWARENESS_SURFACES = ("request-to-handoff", "executor selection", "co
 # installed (the tool schemas only with tool_search off; see below), unlike the
 # skill-body total further down, which is paid per `skill_view` load. Each
 # limit is the value its producer measured when the budget landed
-# (2026-09-23); raise one only with the reason written here.
+# (2026-09-23); raise one only with the reason written beside it -- here for
+# the skill index and tool schemas, in src/plugin_bundle/omh/turn_budget.py
+# for the two pre_llm_call limits.
 #
 # The full-profile `<available_skills>` lines, rendered with Hermes's 60-char
 # description rule (`src/skills/skill_index.py`): 124 skill lines and 9
@@ -3156,8 +3157,8 @@ def skill_content_smoke() -> dict[str, object]:
         (len(json.dumps(item, sort_keys=True, ensure_ascii=False)) for item in standalone_capability_items),
         default=0,
     )
-    primer_context_chars = len(awareness_primer_context())
-    primer_markdown_chars = len(awareness_primer_markdown())
+    primer_context_chars = len(turn_budget.render("primer"))
+    primer_markdown_chars = len(turn_budget.render("primer_markdown"))
     workflow_context_chars = {
         name: len(awareness_workflow_context_markdown(name))
         for name in sorted(workflow_skill_names)
