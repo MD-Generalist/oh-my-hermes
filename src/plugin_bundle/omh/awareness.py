@@ -5,6 +5,7 @@ import hashlib
 import re
 import unicodedata
 
+from .boundary_phrase import contains_boundary_phrase as _contains_boundary_phrase
 from .installed_skills import skill_not_installed
 from .reference_regions import executable_routing_text
 from .degradation import (
@@ -133,11 +134,10 @@ try:
         NAMED_CODING_AGENT_PHRASES as _NAMED_CODING_AGENT_PHRASES,
         OMO_RUNTIME_CODING_AGENT_PHRASES as _OMO_RUNTIME_CODING_AGENT_PHRASES,
         SUBSTRING_NAMED_CODING_AGENT_PHRASES as _SUBSTRING_NAMED_CODING_AGENT_PHRASES,
-        contains_boundary_phrase as _contains_boundary_phrase,
     )
 except ImportError:  # pragma: no cover - exercised by standalone plugin hosts.
-    # Mirrors the split phrase groups and boundary matcher in
-    # `routing/executor_cues.py` exactly; the parity test in
+    # Mirrors the split phrase groups in `routing/executor_cues.py` exactly; the
+    # parity test in
     # tests/test_coding_route_actions.py fails on any drift.
     _SUBSTRING_NAMED_CODING_AGENT_PHRASES = (
         "codex",
@@ -168,25 +168,6 @@ except ImportError:  # pragma: no cover - exercised by standalone plugin hosts.
         *_OMO_RUNTIME_CODING_AGENT_PHRASES,
     )
 
-    def _contains_boundary_phrase(text: str, phrases: tuple[str, ...]) -> bool:
-        # Vendored copy of `contains_boundary_phrase`: the omo-runtime phrases
-        # hide inside ordinary words as raw substrings ("api한테" contains
-        # "pi한테", "promo runtime" contains "omo runtime"). Before-char must be
-        # absent or non-alphanumeric (isalnum() is True for Hangul, rejecting
-        # "라즈베리pi한테"); after-char must be absent or not ASCII alphanumeric,
-        # so Korean particles attached to a Latin name ("opencode로") still count.
-        for phrase in phrases:
-            if not phrase:
-                continue
-            start = text.find(phrase)
-            while start != -1:
-                end = start + len(phrase)
-                before_is_boundary = start == 0 or not text[start - 1].isalnum()
-                after = text[end] if end < len(text) else ""
-                if before_is_boundary and not (after.isascii() and after.isalnum()):
-                    return True
-                start = text.find(phrase, start + 1)
-        return False
     _CODING_DELIVERY_REQUEST_PHRASES = (
         "open a pr",
         "open the pr",
