@@ -14,6 +14,7 @@ from _platform_support import requires_posix
 
 import omh.maintenance.release as release_module
 from omh.paths import OmhPaths
+from omh.quality.routing_precision import build_routing_precision_demo
 from omh.release import (
     hermes_release_smoke_plan,
     product_readiness_report,
@@ -365,8 +366,10 @@ class ReleaseSmokeTests(unittest.TestCase):
             self.assertEqual(gates["context_brief_coverage"]["command"], "omh demo context-brief-coverage --json")
             self.assertIn("deterministic local OMH mental-model", gates["context_brief_coverage"]["proof_boundary"])
             self.assertEqual(gates["routing_precision"]["status"], "passed")
-            self.assertIn("428/428 negative-control cases", gates["routing_precision"]["summary"])
-            self.assertIn("627/627 interventions", gates["routing_precision"]["summary"])
+            routing = build_routing_precision_demo(source="discord")["summary"]
+            negatives, interventions = routing["case_count"], routing["intervention_case_count"]
+            self.assertIn(f"{negatives}/{negatives} negative-control cases", gates["routing_precision"]["summary"])
+            self.assertIn(f"{interventions}/{interventions} interventions", gates["routing_precision"]["summary"])
             self.assertIn("overroutes 0", gates["routing_precision"]["summary"])
             self.assertIn("catalog pickers 0", gates["routing_precision"]["summary"])
             self.assertIn("missed interventions 0", gates["routing_precision"]["summary"])
@@ -461,14 +464,20 @@ class ReleaseSmokeTests(unittest.TestCase):
             self.assertEqual(payload["summary"]["context_brief_coverage_total"], 12)
             self.assertEqual(payload["summary"]["context_brief_route_hint_count"], 11)
             self.assertEqual(payload["summary"]["context_brief_catalog_question_count"], 1)
-            # Includes the measured omh-docs negative/intervention cases.
-            self.assertEqual(payload["summary"]["routing_precision_passing"], 428)
-            self.assertEqual(payload["summary"]["routing_precision_total"], 428)
+            # Routing totals agree with their producer; the reviewed pins are in
+            # tests/test_routing_precision.py and src/maintenance/drift.py.
+            routing = build_routing_precision_demo(source="discord")["summary"]
+            self.assertEqual(payload["summary"]["routing_precision_passing"], routing["case_count"])
+            self.assertEqual(payload["summary"]["routing_precision_total"], routing["case_count"])
             self.assertEqual(payload["summary"]["routing_precision_overroute_count"], 0)
             self.assertEqual(payload["summary"]["routing_precision_catalog_picker_count"], 0)
             self.assertEqual(payload["summary"]["routing_precision_generic_ack_count"], 0)
-            self.assertEqual(payload["summary"]["routing_precision_intervention_passing"], 627)
-            self.assertEqual(payload["summary"]["routing_precision_intervention_total"], 627)
+            self.assertEqual(
+                payload["summary"]["routing_precision_intervention_passing"], routing["intervention_case_count"]
+            )
+            self.assertEqual(
+                payload["summary"]["routing_precision_intervention_total"], routing["intervention_case_count"]
+            )
             self.assertEqual(payload["summary"]["routing_precision_missed_intervention_count"], 0)
             self.assertEqual(payload["summary"]["native_competition_passing_cases"], 13)
             self.assertEqual(payload["summary"]["native_competition_total_cases"], 13)

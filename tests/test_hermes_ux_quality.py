@@ -5,6 +5,7 @@ import unittest
 
 from _cli_harness import run_cli
 from omh.quality.hermes_ux_quality import build_hermes_ux_quality_demo, hermes_ux_quality_errors
+from omh.quality.routing_precision import build_routing_precision_demo
 
 
 class HermesUxQualityTests(unittest.TestCase):
@@ -27,14 +28,18 @@ class HermesUxQualityTests(unittest.TestCase):
         self.assertEqual(payload["summary"]["route_hint_mismatch_count"], 0)
         self.assertEqual(payload["summary"]["context_brief_cases"], 12)
         self.assertEqual(payload["summary"]["context_brief_passing_count"], 12)
-        # Includes the measured omh-docs and github-issue-intake cases.
-        self.assertEqual(payload["summary"]["routing_precision_cases"], 428)
-        self.assertEqual(payload["summary"]["routing_precision_passing_count"], 428)
+        # Routing totals agree with their producer; the reviewed pins are in
+        # tests/test_routing_precision.py and src/maintenance/drift.py.
+        routing = build_routing_precision_demo(source="discord")["summary"]
+        self.assertEqual(payload["summary"]["routing_precision_cases"], routing["case_count"])
+        self.assertEqual(payload["summary"]["routing_precision_passing_count"], routing["case_count"])
         self.assertEqual(payload["summary"]["routing_precision_overroute_count"], 0)
         self.assertEqual(payload["summary"]["routing_precision_catalog_picker_count"], 0)
         self.assertEqual(payload["summary"]["routing_precision_generic_ack_count"], 0)
-        self.assertEqual(payload["summary"]["routing_precision_intervention_cases"], 627)
-        self.assertEqual(payload["summary"]["routing_precision_intervention_passing_count"], 627)
+        self.assertEqual(payload["summary"]["routing_precision_intervention_cases"], routing["intervention_case_count"])
+        self.assertEqual(
+            payload["summary"]["routing_precision_intervention_passing_count"], routing["intervention_case_count"]
+        )
         self.assertEqual(payload["summary"]["routing_precision_missed_intervention_count"], 0)
         self.assertEqual(payload["summary"]["native_competition_cases"], 13)
         self.assertEqual(payload["summary"]["native_competition_passing_count"], 13)

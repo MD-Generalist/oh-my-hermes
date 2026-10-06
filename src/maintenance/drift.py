@@ -18,6 +18,11 @@ honest by checking that every declared site still contains the value it claims.
 No source parsing: every live value comes from calling the real producer, and
 every site is declared data. Sites are file paths, never line numbers, because
 line numbers drift.
+
+It is also the budget ledger: every per-turn and footprint budget is measured,
+held with its limit and kind (`ratchet` or `ceiling`), and judged here, and
+`skill_content_smoke` reads its budget verdicts from `drift_report()` rather
+than comparing on its own.
 """
 
 from __future__ import annotations
@@ -103,6 +108,11 @@ class BudgetMetric:
     the ULW fold). It is never a silent limit bump: the limit keeps its
     captured baseline value, the exception names the accepted overage, and
     both live at `limit_site`.
+
+    `kind` is the policy that sets the limit. A `ratchet` is raised to exactly
+    what the producer measured, with the reason recorded beside the constant.
+    A `ceiling` carries standing headroom; when it records `measured` and
+    `step`, the limit is `derive_ceiling(measured, percent, step)`.
     """
 
     name: str
@@ -112,6 +122,35 @@ class BudgetMetric:
     limit_site: str
     reviewed_exception: int = 0
     exception_reason: str = ""
+    kind: Literal["ratchet", "ceiling"] = "ratchet"
+    measured: int | None = None
+    step: int | None = None
+
+
+@dataclass(frozen=True)
+class Limit:
+    """A budget's limit as `limits()` reports it.
+
+    `measured` is the producer reading the limit was derived from: the limit
+    itself for a ratchet, the recorded measurement for a ceiling the headroom
+    rule produced, and None for a ceiling set by hand -- its comment history
+    may still record a reading, but no rule turned that reading into the value.
+    """
+
+    kind: Literal["ratchet", "ceiling"]
+    value: int
+    measured: int | None
+    step: int | None
+
+
+def derive_ceiling(measured: int, percent: int, step: int) -> int:
+    """The headroom rule (P5 of the 2026-09-23 skill-budget study).
+
+    The measurement plus `percent`, rounded UP to the next multiple of `step`
+    (policy and reasons in src/maintenance/release.py).
+    """
+    with_headroom = -(-measured * (100 + percent) // 100)
+    return -(-with_headroom // step) * step
 
 
 @dataclass(frozen=True)
@@ -185,16 +224,55 @@ def _awareness_primer_markdown_chars() -> int:
     return len(awareness_primer_markdown())
 
 
+def _awareness_primer_context_chars() -> int:
+    from ..plugin_bundle.omh.awareness import awareness_primer_context
+
+    return len(awareness_primer_context())
+
+
+def _awareness_workflow_context_chars_max() -> int:
+    from ..plugin_bundle.omh.awareness import awareness_workflow_context_markdown
+    from ..skill_pack import builtin_skill_templates
+    from .release import DEFAULT_HERMES_SKILL
+
+    names = {template.name for template in builtin_skill_templates()} - {DEFAULT_HERMES_SKILL}
+    return max((len(awareness_workflow_context_markdown(name)) for name in names), default=0)
+
+
+def _role_context_chars_max() -> int:
+    from ..catalogs.roles import role_definitions, role_file_markdown
+
+    return max((len(role_file_markdown(role)) for role in role_definitions()), default=0)
+
+
 def _full_capability_section_chars() -> int:
     from ..capabilities.skills import skill_capabilities
 
     return len(json.dumps(skill_capabilities(), sort_keys=True, ensure_ascii=False))
 
 
+def _full_capability_item_chars_max() -> int:
+    from ..capabilities.skills import skill_capabilities
+
+    return max(
+        (len(json.dumps(item, sort_keys=True, ensure_ascii=False)) for item in skill_capabilities()),
+        default=0,
+    )
+
+
 def _standalone_capability_section_chars() -> int:
     from ..plugin_bundle.omh.tools.capability_tool import standalone_skill_capability_items
 
     return len(json.dumps(standalone_skill_capability_items(), sort_keys=True, ensure_ascii=False))
+
+
+def _standalone_capability_item_chars_max() -> int:
+    from ..plugin_bundle.omh.tools.capability_tool import standalone_skill_capability_items
+
+    return max(
+        (len(json.dumps(item, sort_keys=True, ensure_ascii=False)) for item in standalone_skill_capability_items()),
+        default=0,
+    )
 
 
 def _skill_index_chars() -> int:
@@ -343,12 +421,9 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # drift, redoing work, looping, context lost after compaction) in a
             # human or non-agent sense.
             expected=428,
-            sites=(
-                "tests/test_cli.py",
-                "tests/test_hermes_ux_quality.py",
-                "tests/test_release_smoke.py",
-                "tests/test_routing_precision.py",
-            ),
+            # The one reviewed test pin. Every other test compares its payload
+            # against build_routing_precision_demo() rather than a literal.
+            sites=("tests/test_routing_precision.py",),
         ),
         CountMetric(
             name="routing_precision_intervention_case_count",
@@ -424,12 +499,9 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # #1799 adds five: looping, repeated work, goal drift, context loss
             # and unexpected cost in an agent run, each reaching agent-debug.
             expected=627,
-            sites=(
-                "tests/test_cli.py",
-                "tests/test_hermes_ux_quality.py",
-                "tests/test_release_smoke.py",
-                "tests/test_routing_precision.py",
-            ),
+            # The one reviewed test pin. Every other test compares its payload
+            # against build_routing_precision_demo() rather than a literal.
+            sites=("tests/test_routing_precision.py",),
         ),
         CountMetric(
             name="installable_skill_count",
@@ -498,16 +570,25 @@ def _skill_density_filler_hits() -> int:
 def budget_metrics() -> tuple[BudgetMetric, ...]:
     from ..quality.skill_density import DENSITY_FILLER_HIT_CEILING
     from .release import (
+        AWARENESS_PRIMER_CONTEXT_CHAR_LIMIT,
         AWARENESS_PRIMER_MARKDOWN_CHAR_LIMIT,
+        AWARENESS_WORKFLOW_CONTEXT_CHAR_LIMIT,
+        FULL_CAPABILITY_SKILL_ITEM_CHAR_LIMIT,
         FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT,
+        FULL_PROFILE_SKILL_BODY_CEILING_STEP_CHARS,
         FULL_PROFILE_SKILL_BODY_CHAR_LIMIT,
+        FULL_PROFILE_SKILL_BODY_MEASURED_CHARS,
+        FULL_PROFILE_SKILL_BODY_REPEATED_CEILING_STEP_CHARS,
         FULL_PROFILE_SKILL_BODY_REPEATED_CHAR_LIMIT,
+        FULL_PROFILE_SKILL_BODY_REPEATED_MEASURED_CHARS,
         FULL_PROFILE_SKILL_BODY_REVIEWED_EXCEPTION_CHARS,
         PLUGIN_TOOL_SCHEMA_CHAR_LIMIT,
         PRE_LLM_CALL_CONTEXT_CHAR_LIMIT,
         PRE_LLM_CALL_CONTEXT_FALLBACK_CHAR_LIMIT,
+        ROLE_CONTEXT_CHAR_LIMIT,
         SKILL_INDEX_CHAR_LIMIT,
         SKILL_INDEX_LINE_CHAR_LIMIT,
+        STANDALONE_CAPABILITY_SKILL_ITEM_CHAR_LIMIT,
         STANDALONE_CAPABILITY_SKILL_SECTION_CHAR_LIMIT,
     )
 
@@ -523,6 +604,7 @@ def budget_metrics() -> tuple[BudgetMetric, ...]:
             live=_skill_index_chars,
             limit=SKILL_INDEX_CHAR_LIMIT,
             limit_site="src/maintenance/release.py",
+            kind="ratchet",
         ),
         BudgetMetric(
             name="skill_index_line_max_chars",
@@ -530,6 +612,7 @@ def budget_metrics() -> tuple[BudgetMetric, ...]:
             live=_skill_index_line_max_chars,
             limit=SKILL_INDEX_LINE_CHAR_LIMIT,
             limit_site="src/maintenance/release.py",
+            kind="ratchet",
         ),
         BudgetMetric(
             name="plugin_tool_schema_chars",
@@ -537,6 +620,7 @@ def budget_metrics() -> tuple[BudgetMetric, ...]:
             live=_plugin_tool_schema_chars,
             limit=PLUGIN_TOOL_SCHEMA_CHAR_LIMIT,
             limit_site="src/maintenance/release.py",
+            kind="ratchet",
         ),
         BudgetMetric(
             name="pre_llm_call_context_chars_max",
@@ -544,6 +628,7 @@ def budget_metrics() -> tuple[BudgetMetric, ...]:
             live=_pre_llm_call_context_chars_max,
             limit=PRE_LLM_CALL_CONTEXT_CHAR_LIMIT,
             limit_site="src/maintenance/release.py",
+            kind="ratchet",
         ),
         BudgetMetric(
             name="pre_llm_call_context_fallback_chars_max",
@@ -551,6 +636,7 @@ def budget_metrics() -> tuple[BudgetMetric, ...]:
             live=_pre_llm_call_context_fallback_chars_max,
             limit=PRE_LLM_CALL_CONTEXT_FALLBACK_CHAR_LIMIT,
             limit_site="src/maintenance/release.py",
+            kind="ratchet",
         ),
         BudgetMetric(
             name="awareness_primer_markdown_chars",
@@ -558,6 +644,35 @@ def budget_metrics() -> tuple[BudgetMetric, ...]:
             live=_awareness_primer_markdown_chars,
             limit=AWARENESS_PRIMER_MARKDOWN_CHAR_LIMIT,
             limit_site="src/maintenance/release.py",
+            kind="ceiling",
+        ),
+        # The three below and the two capability item sizes were compared only
+        # inside `skill_content_smoke`, which now reads their verdict here, so
+        # `omh release drift` reports them too. Each is a hand-set ceiling with
+        # standing headroom and no recorded measurement.
+        BudgetMetric(
+            name="awareness_primer_context_chars",
+            describe="Awareness primer compact context size",
+            live=_awareness_primer_context_chars,
+            limit=AWARENESS_PRIMER_CONTEXT_CHAR_LIMIT,
+            limit_site="src/maintenance/release.py",
+            kind="ceiling",
+        ),
+        BudgetMetric(
+            name="awareness_workflow_context_chars_max",
+            describe="Largest per-skill awareness workflow context",
+            live=_awareness_workflow_context_chars_max,
+            limit=AWARENESS_WORKFLOW_CONTEXT_CHAR_LIMIT,
+            limit_site="src/maintenance/release.py",
+            kind="ceiling",
+        ),
+        BudgetMetric(
+            name="role_context_chars_max",
+            describe="Largest role context file",
+            live=_role_context_chars_max,
+            limit=ROLE_CONTEXT_CHAR_LIMIT,
+            limit_site="src/maintenance/release.py",
+            kind="ceiling",
         ),
         BudgetMetric(
             name="full_capability_skill_section_chars",
@@ -565,6 +680,15 @@ def budget_metrics() -> tuple[BudgetMetric, ...]:
             live=_full_capability_section_chars,
             limit=FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT,
             limit_site="src/maintenance/release.py",
+            kind="ratchet",
+        ),
+        BudgetMetric(
+            name="full_capability_skill_item_chars_max",
+            describe="Largest single full capability skill item",
+            live=_full_capability_item_chars_max,
+            limit=FULL_CAPABILITY_SKILL_ITEM_CHAR_LIMIT,
+            limit_site="src/maintenance/release.py",
+            kind="ceiling",
         ),
         BudgetMetric(
             name="standalone_capability_skill_section_chars",
@@ -572,6 +696,15 @@ def budget_metrics() -> tuple[BudgetMetric, ...]:
             live=_standalone_capability_section_chars,
             limit=STANDALONE_CAPABILITY_SKILL_SECTION_CHAR_LIMIT,
             limit_site="src/maintenance/release.py",
+            kind="ratchet",
+        ),
+        BudgetMetric(
+            name="standalone_capability_skill_item_chars_max",
+            describe="Largest single standalone capability skill item",
+            live=_standalone_capability_item_chars_max,
+            limit=STANDALONE_CAPABILITY_SKILL_ITEM_CHAR_LIMIT,
+            limit_site="src/maintenance/release.py",
+            kind="ceiling",
         ),
         BudgetMetric(
             name="full_profile_skill_body_chars",
@@ -580,6 +713,9 @@ def budget_metrics() -> tuple[BudgetMetric, ...]:
             limit=FULL_PROFILE_SKILL_BODY_CHAR_LIMIT,
             limit_site="src/maintenance/release.py",
             reviewed_exception=FULL_PROFILE_SKILL_BODY_REVIEWED_EXCEPTION_CHARS,
+            kind="ceiling",
+            measured=FULL_PROFILE_SKILL_BODY_MEASURED_CHARS,
+            step=FULL_PROFILE_SKILL_BODY_CEILING_STEP_CHARS,
         ),
         # Text repeated verbatim across bodies is paid on every load of each of
         # them and belongs once in a reference. A ceiling with headroom like the
@@ -591,6 +727,9 @@ def budget_metrics() -> tuple[BudgetMetric, ...]:
             live=_full_profile_skill_body_repeated_chars,
             limit=FULL_PROFILE_SKILL_BODY_REPEATED_CHAR_LIMIT,
             limit_site="src/maintenance/release.py",
+            kind="ceiling",
+            measured=FULL_PROFILE_SKILL_BODY_REPEATED_MEASURED_CHARS,
+            step=FULL_PROFILE_SKILL_BODY_REPEATED_CEILING_STEP_CHARS,
         ),
         # The byte budget above says how much the pack costs; this says whether
         # the characters carry instruction. A hit is a reviewed filler phrase
@@ -603,8 +742,27 @@ def budget_metrics() -> tuple[BudgetMetric, ...]:
             live=_skill_density_filler_hits,
             limit=DENSITY_FILLER_HIT_CEILING,
             limit_site="src/quality/skill_density.py",
+            kind="ratchet",
         ),
     )
+
+
+def limits() -> dict[str, Limit]:
+    """Every budget's limit and kind, by metric name. Reads no producer."""
+    return {
+        metric.name: Limit(
+            kind=metric.kind,
+            value=metric.limit,
+            measured=metric.limit if metric.kind == "ratchet" else metric.measured,
+            step=metric.step,
+        )
+        for metric in budget_metrics()
+    }
+
+
+def measure() -> dict[str, int]:
+    """Every count and budget as its producer reads it today, by metric name."""
+    return {metric.name: metric.live() for metric in (*count_metrics(), *budget_metrics())}
 
 
 def generated_artifacts() -> tuple[GeneratedArtifact, ...]:
@@ -805,6 +963,9 @@ def drift_report(
             "review, CI, or merge evidence."
         ),
     }
+
+
+verdict = drift_report
 
 
 def format_drift_report(payload: DriftReport) -> str:

@@ -22,6 +22,7 @@ from ..command_path import (
 )
 from ..install.plugin_compat import compat_matrix_drift
 from ..local_store import atomic_write_json, read_json_object_result, utc_now
+from .drift import BudgetMetric, budget_metrics, drift_report
 from .changelog import ChangelogError, MAX_CHANGELOG_BYTES, bound_release_body, extract_notes
 from .release_notes import notes_metadata, read_bounded, read_notes
 from .documentation_claims import DocumentationClaimReport, documentation_claims_report
@@ -3090,6 +3091,40 @@ def installed_command_smoke_plan(
     }
 
 
+# The budgets `skill_content_smoke` reports, as (name in `budget_metrics()`,
+# failure label in the smoke payload), in payload order.
+SKILL_CONTENT_SMOKE_AWARENESS_BUDGETS = (
+    ("awareness_primer_context_chars", "awareness_primer_context"),
+    ("awareness_primer_markdown_chars", "awareness_primer_markdown"),
+    ("awareness_workflow_context_chars_max", "workflow_context_rail"),
+)
+SKILL_CONTENT_SMOKE_ROLE_BUDGETS = (("role_context_chars_max", "role_context"),)
+SKILL_CONTENT_SMOKE_CAPABILITY_BUDGETS = (
+    ("full_capability_skill_section_chars", "full_capability_skill_section"),
+    ("full_capability_skill_item_chars_max", "full_capability_skill_item"),
+    ("standalone_capability_skill_section_chars", "standalone_capability_skill_section"),
+    ("standalone_capability_skill_item_chars_max", "standalone_capability_skill_item"),
+)
+SKILL_CONTENT_SMOKE_BUDGET_NAMES = frozenset(
+    name
+    for name, _label in (
+        SKILL_CONTENT_SMOKE_AWARENESS_BUDGETS
+        + SKILL_CONTENT_SMOKE_ROLE_BUDGETS
+        + SKILL_CONTENT_SMOKE_CAPABILITY_BUDGETS
+    )
+)
+
+
+def _smoke_threshold(metric: BudgetMetric) -> int:
+    """The same bar the ledger applies: the limit plus any reviewed exception.
+
+    The `oversized_*` lists name the items behind a ledger finding; comparing
+    them against the bare limit would list items the ledger itself accepted
+    the day one of these budgets carries an exception.
+    """
+    return metric.limit + metric.reviewed_exception
+
+
 def skill_content_smoke() -> dict[str, object]:
     templates = {template.name: template.content for template in builtin_skill_templates()}
     workflow_skill_names = set(templates) - {DEFAULT_HERMES_SKILL}
@@ -3197,11 +3232,6 @@ def skill_content_smoke() -> dict[str, object]:
         for name in sorted(workflow_skill_names)
     }
     role_context_chars = {name: len(context) for name, context in role_contexts.items()}
-    oversized_role_contexts = [
-        name
-        for name, char_count in role_context_chars.items()
-        if char_count > ROLE_CONTEXT_CHAR_LIMIT
-    ]
     missing_role_context_roles = sorted(
         name
         for name, context in role_contexts.items()
@@ -3219,30 +3249,46 @@ def skill_content_smoke() -> dict[str, object]:
         for name, context in role_contexts.items()
         if bundled_role_contexts.get(name) is not None and bundled_role_contexts[name] != context
     )
-    oversized_awareness_contexts = [
-        name
-        for name, char_count in workflow_context_chars.items()
-        if char_count > AWARENESS_WORKFLOW_CONTEXT_CHAR_LIMIT
+    # The verdict is the budget ledger's (`drift_report()`); this smoke only
+    # names the failures the way its payload always has.
+    smoke_budgets = {
+        metric.name: metric
+        for metric in budget_metrics()
+        if metric.name in SKILL_CONTENT_SMOKE_BUDGET_NAMES
+    }
+    over_budget = {
+        item["name"]
+        for item in drift_report(
+            counts=(), budgets=tuple(smoke_budgets.values()), artifacts=(), include_tap_skills=False
+        )["drift"]
+    }
+    awareness_budget_failures = [
+        label for name, label in SKILL_CONTENT_SMOKE_AWARENESS_BUDGETS if name in over_budget
     ]
-    awareness_budget_failures = []
-    if primer_context_chars > AWARENESS_PRIMER_CONTEXT_CHAR_LIMIT:
-        awareness_budget_failures.append("awareness_primer_context")
-    if primer_markdown_chars > AWARENESS_PRIMER_MARKDOWN_CHAR_LIMIT:
-        awareness_budget_failures.append("awareness_primer_markdown")
-    if oversized_awareness_contexts:
-        awareness_budget_failures.append("workflow_context_rail")
-    role_context_budget_failures = []
-    if oversized_role_contexts:
-        role_context_budget_failures.append("role_context")
-    capability_budget_failures = []
-    if full_capability_skill_section_chars > FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT:
-        capability_budget_failures.append("full_capability_skill_section")
-    if max_full_capability_skill_chars > FULL_CAPABILITY_SKILL_ITEM_CHAR_LIMIT:
-        capability_budget_failures.append("full_capability_skill_item")
-    if standalone_capability_skill_section_chars > STANDALONE_CAPABILITY_SKILL_SECTION_CHAR_LIMIT:
-        capability_budget_failures.append("standalone_capability_skill_section")
-    if max_standalone_capability_skill_chars > STANDALONE_CAPABILITY_SKILL_ITEM_CHAR_LIMIT:
-        capability_budget_failures.append("standalone_capability_skill_item")
+    role_context_budget_failures = [
+        label for name, label in SKILL_CONTENT_SMOKE_ROLE_BUDGETS if name in over_budget
+    ]
+    capability_budget_failures = [
+        label for name, label in SKILL_CONTENT_SMOKE_CAPABILITY_BUDGETS if name in over_budget
+    ]
+    oversized_awareness_contexts = (
+        [
+            name
+            for name, char_count in workflow_context_chars.items()
+            if char_count > _smoke_threshold(smoke_budgets["awareness_workflow_context_chars_max"])
+        ]
+        if "awareness_workflow_context_chars_max" in over_budget
+        else []
+    )
+    oversized_role_contexts = (
+        [
+            name
+            for name, char_count in role_context_chars.items()
+            if char_count > _smoke_threshold(smoke_budgets["role_context_chars_max"])
+        ]
+        if "role_context_chars_max" in over_budget
+        else []
+    )
     checks: list[dict[str, object]] = []
 
     def add_check(name: str, marker: str, ok: bool, *, scope: str) -> None:
