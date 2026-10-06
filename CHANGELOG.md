@@ -4,6 +4,16 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **The live plugin no longer reads `claude-code.md` as a mention of Claude
+  Code.** The bundle's awareness route hints carried a vendored copy of
+  `contains_boundary_phrase` for standalone hosts, and that copy lacked the
+  rule the control plane had gained: punctuation that runs straight into more
+  letters or digits (`claude-code.md`, `codex-utils.py`, `claudecode-notes`)
+  is a file or hyphenated word, not a mention. Since Hermes loads the bundle
+  without the `omh` package, the live plugin always ran the old copy. The
+  matcher now lives once in the bundle (`boundary_phrase.py`); the control
+  plane imports it from there, and the copy is gone.
+
 - **The router reads one prepared query.** `RoutingQuery`
   (`src/routing/query.py`) holds one message's routing stages — executable,
   scrubbed, routing text, normalized phrase, tokens — built once, with the
