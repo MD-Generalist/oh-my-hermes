@@ -340,7 +340,45 @@ def pre_llm_call_context_fallback_chars_max() -> int:
     return max(chars for name, chars in scenarios.items() if name.endswith(_WITHOUT_SECTION))
 
 
+# Each per-turn slot (`turn_budget.SLOT_LIMITS`) and the `budget_metrics()`
+# entry whose producer measures it.
+_SLOT_METRICS = {
+    "primer": "awareness_primer_context_chars",
+    "primer_markdown": "awareness_primer_markdown_chars",
+    "workflow_context": "awareness_workflow_context_chars_max",
+    "role_context": "role_context_chars_max",
+    "pre_llm_call": "pre_llm_call_context_chars_max",
+    "pre_llm_call_fallback": "pre_llm_call_context_fallback_chars_max",
+}
+
+
+def _slot_report(slot: str, metric: Any) -> dict[str, object]:
+    from ..plugin_bundle.omh.turn_budget import SLOT_LIMITS
+
+    limit = SLOT_LIMITS[slot]
+    live = metric.live()
+    return {"limit": limit, "live": live, "headroom": limit - live, "kind": metric.kind}
+
+
+def budget_report() -> dict[str, dict[str, object]]:
+    """Every per-turn slot's limit, live size, headroom, and budget kind, by slot."""
+    from .drift import budget_metrics
+
+    metrics = {metric.name: metric for metric in budget_metrics()}
+    return {slot: _slot_report(slot, metrics[name]) for slot, name in _SLOT_METRICS.items()}
+
+
+def headroom(slot: str) -> int:
+    """Characters left under one slot's limit, measured by that slot's producer alone."""
+    from .drift import budget_metrics
+
+    metric = next(metric for metric in budget_metrics() if metric.name == _SLOT_METRICS[slot])
+    return int(_slot_report(slot, metric)["headroom"])
+
+
 __all__ = [
+    "budget_report",
+    "headroom",
     "plugin_tool_schema_chars",
     "plugin_tool_schema_chars_by_tool",
     "pre_llm_call_context_chars_max",

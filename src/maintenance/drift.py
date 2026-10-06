@@ -219,15 +219,15 @@ def _ulw_retired_engine_count() -> int:
 
 
 def _awareness_primer_markdown_chars() -> int:
-    from ..plugin_bundle.omh.awareness import awareness_primer_markdown
+    from ..plugin_bundle.omh.turn_budget import render
 
-    return len(awareness_primer_markdown())
+    return len(render("primer_markdown"))
 
 
 def _awareness_primer_context_chars() -> int:
-    from ..plugin_bundle.omh.awareness import awareness_primer_context
+    from ..plugin_bundle.omh.turn_budget import render
 
-    return len(awareness_primer_context())
+    return len(render("primer"))
 
 
 def _awareness_workflow_context_chars_max() -> int:
@@ -569,10 +569,15 @@ def _skill_density_filler_hits() -> int:
 
 def budget_metrics() -> tuple[BudgetMetric, ...]:
     from ..quality.skill_density import DENSITY_FILLER_HIT_CEILING
-    from .release import (
+    from ..plugin_bundle.omh.turn_budget import (
         AWARENESS_PRIMER_CONTEXT_CHAR_LIMIT,
         AWARENESS_PRIMER_MARKDOWN_CHAR_LIMIT,
         AWARENESS_WORKFLOW_CONTEXT_CHAR_LIMIT,
+        PRE_LLM_CALL_CONTEXT_CHAR_LIMIT,
+        PRE_LLM_CALL_CONTEXT_FALLBACK_CHAR_LIMIT,
+        ROLE_CONTEXT_CHAR_LIMIT,
+    )
+    from .release import (
         FULL_CAPABILITY_SKILL_ITEM_CHAR_LIMIT,
         FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT,
         FULL_PROFILE_SKILL_BODY_CEILING_STEP_CHARS,
@@ -583,9 +588,6 @@ def budget_metrics() -> tuple[BudgetMetric, ...]:
         FULL_PROFILE_SKILL_BODY_REPEATED_MEASURED_CHARS,
         FULL_PROFILE_SKILL_BODY_REVIEWED_EXCEPTION_CHARS,
         PLUGIN_TOOL_SCHEMA_CHAR_LIMIT,
-        PRE_LLM_CALL_CONTEXT_CHAR_LIMIT,
-        PRE_LLM_CALL_CONTEXT_FALLBACK_CHAR_LIMIT,
-        ROLE_CONTEXT_CHAR_LIMIT,
         SKILL_INDEX_CHAR_LIMIT,
         SKILL_INDEX_LINE_CHAR_LIMIT,
         STANDALONE_CAPABILITY_SKILL_ITEM_CHAR_LIMIT,
@@ -627,7 +629,7 @@ def budget_metrics() -> tuple[BudgetMetric, ...]:
             describe="Per turn, replayed in history: largest fenced pre_llm_call context over the named scenarios",
             live=_pre_llm_call_context_chars_max,
             limit=PRE_LLM_CALL_CONTEXT_CHAR_LIMIT,
-            limit_site="src/maintenance/release.py",
+            limit_site="src/plugin_bundle/omh/turn_budget.py",
             kind="ratchet",
         ),
         BudgetMetric(
@@ -635,7 +637,7 @@ def budget_metrics() -> tuple[BudgetMetric, ...]:
             describe="Per turn, replayed in history: that context for a session without the awareness section (primer included)",
             live=_pre_llm_call_context_fallback_chars_max,
             limit=PRE_LLM_CALL_CONTEXT_FALLBACK_CHAR_LIMIT,
-            limit_site="src/maintenance/release.py",
+            limit_site="src/plugin_bundle/omh/turn_budget.py",
             kind="ratchet",
         ),
         BudgetMetric(
@@ -643,7 +645,7 @@ def budget_metrics() -> tuple[BudgetMetric, ...]:
             describe="Awareness primer markdown size",
             live=_awareness_primer_markdown_chars,
             limit=AWARENESS_PRIMER_MARKDOWN_CHAR_LIMIT,
-            limit_site="src/maintenance/release.py",
+            limit_site="src/plugin_bundle/omh/turn_budget.py",
             kind="ceiling",
         ),
         # The three below and the two capability item sizes were compared only
@@ -655,7 +657,7 @@ def budget_metrics() -> tuple[BudgetMetric, ...]:
             describe="Awareness primer compact context size",
             live=_awareness_primer_context_chars,
             limit=AWARENESS_PRIMER_CONTEXT_CHAR_LIMIT,
-            limit_site="src/maintenance/release.py",
+            limit_site="src/plugin_bundle/omh/turn_budget.py",
             kind="ceiling",
         ),
         BudgetMetric(
@@ -663,7 +665,7 @@ def budget_metrics() -> tuple[BudgetMetric, ...]:
             describe="Largest per-skill awareness workflow context",
             live=_awareness_workflow_context_chars_max,
             limit=AWARENESS_WORKFLOW_CONTEXT_CHAR_LIMIT,
-            limit_site="src/maintenance/release.py",
+            limit_site="src/plugin_bundle/omh/turn_budget.py",
             kind="ceiling",
         ),
         BudgetMetric(
@@ -671,7 +673,7 @@ def budget_metrics() -> tuple[BudgetMetric, ...]:
             describe="Largest role context file",
             live=_role_context_chars_max,
             limit=ROLE_CONTEXT_CHAR_LIMIT,
-            limit_site="src/maintenance/release.py",
+            limit_site="src/plugin_bundle/omh/turn_budget.py",
             kind="ceiling",
         ),
         BudgetMetric(

@@ -37,6 +37,15 @@ from ..plugin_bundle.omh.awareness import (
     awareness_primer_payload,
     awareness_workflow_context_markdown,
 )
+# Re-exported under their old names; each limit and its history live in the bundle.
+from ..plugin_bundle.omh.turn_budget import (
+    AWARENESS_PRIMER_CONTEXT_CHAR_LIMIT as AWARENESS_PRIMER_CONTEXT_CHAR_LIMIT,
+    AWARENESS_PRIMER_MARKDOWN_CHAR_LIMIT as AWARENESS_PRIMER_MARKDOWN_CHAR_LIMIT,
+    AWARENESS_WORKFLOW_CONTEXT_CHAR_LIMIT as AWARENESS_WORKFLOW_CONTEXT_CHAR_LIMIT,
+    PRE_LLM_CALL_CONTEXT_CHAR_LIMIT as PRE_LLM_CALL_CONTEXT_CHAR_LIMIT,
+    PRE_LLM_CALL_CONTEXT_FALLBACK_CHAR_LIMIT as PRE_LLM_CALL_CONTEXT_FALLBACK_CHAR_LIMIT,
+    ROLE_CONTEXT_CHAR_LIMIT as ROLE_CONTEXT_CHAR_LIMIT,
+)
 from ..plugin_bundle.omh.tools.capability_tool import (
     standalone_playbook_capability_items,
     standalone_skill_capability_ids,
@@ -113,35 +122,9 @@ WORKFLOW_CONTEXT_MARKERS = (
 )
 ROLE_CONTEXT_MARKERS = ("OMH Role Context", "OMH workflow-layer responsibility context", "prepared guidance only")
 CONCEPTUAL_AWARENESS_SURFACES = ("request-to-handoff", "executor selection", "coding runtime handoff")
-# 900 -> 1050 and 3210 -> 3400: the primers gain one line about the reply
-# itself -- written in the user's words and the host's own voice, with these
-# lines and OMH's record vocabulary never quoted to the user. The compact
-# rail measured 897 and the markdown 3168 before the line; a model that
-# echoed the rail produced replies such as "this is an evidence-bounded
-# surface", and the persona belongs to the host's SOUL.md. Re-derived from
-# the producers (1044 and 3316 measured, after the review's carve-out for a
-# user who asks about a term) with standing headroom restored.
-# 1050 -> 1260: one line scoping OMH's own skills to work the user asks for
-# and naming the everyday questions that need none. Measured live (GPT-6
-# Luna, one turn per message, 2026-09-26) an everyday message loaded an OMH
-# skill 39-59% of the time on main; the index lists skills such as
-# `omh-live-info` and `omh-decide` whose words match everyday chat. The
-# compact rail measured 1253 after the line (re-derived from the producer,
-# standing headroom kept as above). Paid once per session, in the system
-# prompt section.
-# 1260 -> 1440 and 3400 -> 3520: the reply line names what the persona owns
-# -- the reply language, tone, speech level and sentence endings, progress
-# updates included, with the user's language only where the persona sets
-# none -- and says OMH shapes structure and content only. "The
-# host's own voice" alone named none of them, and a casual-register Korean
-# persona (miku, deepseek-v4.1-flash-ultrafast, 2026-09-30) kept its voice in
-# the final answer while 13 of 17 interim progress lines in one session came
-# out in English. The compact rail measured 1434 and the markdown 3509
-# (re-derived from the producers, standing headroom kept as above).
-AWARENESS_PRIMER_CONTEXT_CHAR_LIMIT = 1440
-AWARENESS_PRIMER_MARKDOWN_CHAR_LIMIT = 3520
-AWARENESS_WORKFLOW_CONTEXT_CHAR_LIMIT = 1500
-ROLE_CONTEXT_CHAR_LIMIT = 2600
+# AWARENESS_PRIMER_CONTEXT_CHAR_LIMIT, AWARENESS_PRIMER_MARKDOWN_CHAR_LIMIT,
+# AWARENESS_WORKFLOW_CONTEXT_CHAR_LIMIT, ROLE_CONTEXT_CHAR_LIMIT: moved with their
+# history to src/plugin_bundle/omh/turn_budget.py; imported at the top of this file.
 # Per-request budgets: text Hermes can send on every turn of a session with OMH
 # installed (the tool schemas only with tool_search off; see below), unlike the
 # skill-body total further down, which is paid per `skill_view` load. Each
@@ -251,60 +234,8 @@ SKILL_INDEX_LINE_CHAR_LIMIT = 100
 # Owner decision 2026-10-06: approval is auto-safe, no operator step in the
 # loop. Re-derived from the producer.
 PLUGIN_TOOL_SCHEMA_CHAR_LIMIT = 63261
-# The largest fenced `pre_llm_call` context over the named scenario set in
-# `src/maintenance/per_turn_context.py` (the `all_surfaces` scenario). Hermes
-# replays each turn's injection from `api_content` on every later turn, so this
-# accumulates in history. `AWARENESS_PRIMER_CONTEXT_CHAR_LIMIT` above still
-# bounds the primer alone.
-# 6260 -> 5214: the awareness primer (1044 chars plus its "\n\n" join) leaves
-# the fenced context for the `omh.awareness` system prompt section, which
-# every admitted host (Hermes >= 0.20.2) freezes into a new session's system
-# prompt. The scenarios now measure that host; the primer's own limit above
-# bounds the section, far under the host's 4,000-char per-section cap.
-# Re-derived from the producer.
-# 5214 -> 5544: the skill candidate line (`skill_shortlist.py`), up to three
-# skills named with their situations on a turn whose request reads as work.
-# The routed request in `all_surfaces` gets one too (the line stands down only
-# for a workflow the person named), +330. Measured live, the line took the
-# intended-skill load from 78% to 90% (own work set) and 69% to 95% (tuning
-# work set). Per-turn cost: about 330-470 characters (the `skill_candidates`
-# scenario is 468 with the fence), paid on a turn whose request reads as work
-# and whose candidate set differs from the last one this session was shown;
-# a repeat of the same set costs nothing. Re-derived from the producer.
-# 5544 -> 5647: the line names the exact call form, skill_view(name="...")
-# with no category prefix, because a model that guesses the category
-# (`operator/omh-x` for a skill filed under `reviewer/`) gets "not found";
-# Hermes does resolve a correct `category/name` in external dirs (+103). The line is now about 430-580 characters on a turn that
-# carries it. Re-derived from the producer.
-# 5647 -> 5662: the work-context skill openings reach the route hint's
-# context card (+15 on the routed request). Re-derived from the producer.
-# 5662 unchanged: the `done_unverified_plan` scenario joins the set so the plan
-# line's evidence clause and `TODO_EVIDENCE_RULE` are measured (1044 on a turn
-# a finished background process opened). It is under `all_surfaces`, which
-# still sets the maximum, and the fallback maximum is unchanged with it.
-# Re-derived from the producer.
-PRE_LLM_CALL_CONTEXT_CHAR_LIMIT = 5662
-# The same scenario set on the fallback: a session the awareness section did
-# not render for (a restart resume, a legacy id-rotating compaction, a refused
-# section, an older host) still gets the primer in the fenced context, so its
-# largest turn is `all_surfaces_without_section`. Landed at the value the
-# producer measured (6260, the pre-section ceiling), so the fallback cannot
-# grow unseen behind the lower section-host limit above.
-# 6260 -> 6799: the candidate line above (+330) and the primer's scope line
-# (+209 with its join), which rides the fenced context on this fallback.
-# Re-derived from the producer.
-# 6799 -> 6902: the same exact-call-form wording (+103). Re-derived from the
-# producer.
-# 6902 -> 6917: the same +15 from the work-context openings. Re-derived
-# from the producer.
-# 6917 -> 7098: the primer's reply line, replaced in place, now gives the
-# persona the reply language, speech level, endings, and progress updates,
-# with the user's language as the fallback (+193 measured, 6905 -> 7098), and
-# it rides the fenced context on this fallback. The 12 characters of slack
-# main carried are absorbed, so the ceiling is zero-slack again. The
-# section-host limit above does not move: nothing new is injected per turn
-# there. Re-derived from the producer.
-PRE_LLM_CALL_CONTEXT_FALLBACK_CHAR_LIMIT = 7098
+# PRE_LLM_CALL_CONTEXT_CHAR_LIMIT, PRE_LLM_CALL_CONTEXT_FALLBACK_CHAR_LIMIT: moved with
+# their history to src/plugin_bundle/omh/turn_budget.py; imported at the top of this file.
 # 340000 -> 349637: three capability-skill sections were added by the domain
 # skill pack (`backend`, `rust`, `native-debugging`), on top of the
 # `llm-app-dev` section that landed on main under the old ceiling. Each section

@@ -4,6 +4,16 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **Per-turn text budgets live beside the text they bound.** The primer,
+  primer-markdown, workflow-context, role-context and both `pre_llm_call`
+  limits — with their full `A -> B: reason` histories — moved from
+  `src/maintenance/release.py` to `src/plugin_bundle/omh/turn_budget.py`,
+  which also gives the hooks a `render("primer")` seam; `release.py`
+  re-exports the names and keeps a pointer where each block was.
+  `per_turn_context.budget_report()` / `headroom(slot)` report limit, live
+  size, headroom and kind per slot, and the ledger measures the primer
+  through the same `render()` the hooks call. No limit value or rendered
+  byte changed.
 - **The route's prepared query reaches the explicit-invocation checks.**
   `policy.explicit_skill_invocation` and `jev_addressing.jev_addressed_skill`
   accept the chat path's `RoutingQuery` and use it only when its raw text is
