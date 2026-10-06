@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import json
-import sys
 import unittest
 from unittest.mock import patch
 from unittest import mock
 
 from _cli_harness import run_cli
+from _module_patch import patch_modules
 
 from omh.mcp import bridge
 from omh.routing import chat as chat_module
@@ -241,7 +241,7 @@ class RouteKeyIsAdditiveTests(unittest.TestCase):
 
     def test_a_chat_import_failure_is_not_the_standalone_fallback(self) -> None:
         message = "review the code-review skill for the auth module"
-        with patch.dict(sys.modules, {"omh.routing.chat": None}):
+        with patch_modules({"omh.routing.chat": None}):
             payload = json.loads(recommend_tool.omh_recommend_handler({"message": message, "limit": 3}))
         self.assertEqual(payload["source"], "package_recommend", "the ranking imported; only the route is missing")
         self.assertIsNone(payload["route"])
