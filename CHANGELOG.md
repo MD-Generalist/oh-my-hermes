@@ -4,6 +4,21 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **The awareness hint asks the router for its guards per call.** The plugin
+  bundle's `awareness.py` bound the router's jit-learn guard, long-document
+  guard and the two intent classifiers at import time behind the
+  standalone-host `except ImportError`. `routing.policy` imports
+  `routing.intent`, which reaches `awareness` through `skills.catalog_types`
+  → `skills` → `skills.render`, so any process whose first router import was
+  `policy` or `intent` ran those imports against a half-initialised module,
+  caught the ImportError as "no router", and kept the bundle's copies for
+  the rest of the process — `/loop …` then ranked `workflow-learning` above
+  `ulw-loop`. 53 of 285 control-plane modules produced that process when
+  imported first; the Windows CI shard that ran `test_candidate_handoff`
+  before `test_degradation_signal` was one. The four bindings now resolve
+  through `_router_policy_module()` / `_router_intent_module()` on each call,
+  as `_user_trigger_pack_route_decision` already did; a fresh-interpreter test
+  pins the `policy`-first order.
 - **One memory admission path, called in-process by the tool.** Capture, the
   confinement-scoped duplicate check, the candidate write, auto-safe approval
   and the durability receipt move from `src/workflows/memory.py` into the

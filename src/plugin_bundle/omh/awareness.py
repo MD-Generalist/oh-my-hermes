@@ -269,8 +269,12 @@ except ImportError:
     )
 
 try:  # Keep installed plugin bundles usable even when the full package is absent.
-    from ...routing.intent import META_OR_FEEDBACK_INTENTS, classify_omh_quality_intent, classify_workflow_intent
+    from ...routing.intent import META_OR_FEEDBACK_INTENTS
 except ImportError:  # pragma: no cover - exercised by standalone plugin hosts.
+    # The two classifiers defined here are the bundle's own copies.
+    # `classify_workflow_intent` / `classify_omh_quality_intent` (after the
+    # second import block below) ask the router for its classifier on every
+    # call and use these only while no router is importable.
     from dataclasses import dataclass
 
     META_OR_FEEDBACK_INTENTS = frozenset({"meta_discussion", "feedback_signal"})
@@ -359,7 +363,7 @@ except ImportError:  # pragma: no cover - exercised by standalone plugin hosts.
             )
         )
 
-    def classify_omh_quality_intent(message: str) -> _FallbackOmhQualityIntent:
+    def _fallback_classify_omh_quality_intent(message: str) -> _FallbackOmhQualityIntent:
         text = unicodedata.normalize("NFKC", message).casefold()
         compact = text.replace(" ", "")
         system_target_cues = []
@@ -458,7 +462,7 @@ except ImportError:  # pragma: no cover - exercised by standalone plugin hosts.
             customer_feedback_cues=customer_feedback_cues,
         )
 
-    def classify_workflow_intent(message: str) -> _FallbackWorkflowIntent:
+    def _fallback_classify_workflow_intent(message: str) -> _FallbackWorkflowIntent:
         text = unicodedata.normalize("NFKC", message).casefold()
         compact = text.replace(" ", "")
         diagnostic_evaluation = _fallback_diagnostic_omh_evaluation_context(text, compact)
@@ -559,9 +563,44 @@ except ImportError:  # pragma: no cover - exercised by standalone plugin hosts.
         )
 
 try:  # File-loaded plugin bundles should still use package classifiers when OMH is installed.
-    from omh.routing.intent import META_OR_FEEDBACK_INTENTS, classify_omh_quality_intent, classify_workflow_intent
+    from omh.routing.intent import META_OR_FEEDBACK_INTENTS
 except ImportError:  # pragma: no cover - standalone plugin hosts keep the fallback above.
     pass
+
+
+def _router_intent_module() -> object | None:
+    """`routing.intent` when the router is importable, else None.
+
+    Resolved per call for the reason `_router_policy_module` gives: when
+    `routing.intent` is the module mid-import above this one, a module-level
+    `from ...routing.intent import` raises the same ImportError a standalone
+    host raises, and the bundle's own classifier stayed bound for the rest of
+    the process.
+    """
+    try:
+        from ...routing import intent as module
+    except ImportError:
+        try:
+            from omh.routing import intent as module
+        except ImportError:  # pragma: no cover - exercised by standalone plugin hosts.
+            return None
+    return module
+
+
+def classify_workflow_intent(message: str) -> object:
+    """The router's workflow classifier, or the bundle's copy in a standalone host."""
+    classifier = getattr(_router_intent_module(), "classify_workflow_intent", None)
+    if classifier is None:
+        return _fallback_classify_workflow_intent(message)
+    return classifier(message)
+
+
+def classify_omh_quality_intent(message: str) -> object:
+    """The router's OMH-quality classifier, or the bundle's copy in a standalone host."""
+    classifier = getattr(_router_intent_module(), "classify_omh_quality_intent", None)
+    if classifier is None:
+        return _fallback_classify_omh_quality_intent(message)
+    return classifier(message)
 
 try:  # Keep route hints aligned with router locale phrase packs when available.
     from ...routing.localization import prepare_routing_text as _prepare_routing_text
@@ -580,7 +619,6 @@ try:  # Keep the hint hook's jit-learn intent identical to the router guard's.
     )
     from ...routing.policy import (
         JIT_LEARN_CURRICULUM_EXCLUSION_PHRASES as _JIT_LEARN_CURRICULUM_EXCLUSION_PHRASES,
-        jit_learn_guard_applies as _jit_learn_guard_applies,
     )
 except ImportError:  # pragma: no cover - exercised by standalone plugin hosts.
     # Standalone bundles ship without omh core, so they need a literal copy.
@@ -596,7 +634,6 @@ except ImportError:  # pragma: no cover - exercised by standalone plugin hosts.
     )
     _normalized_routing_phrase = None
     _routing_tokens = None
-    _jit_learn_guard_applies = None
 
 try:  # File-loaded plugin bundles should still use the packaged router guard.
     from omh.routing.localization import (
@@ -605,10 +642,40 @@ try:  # File-loaded plugin bundles should still use the packaged router guard.
     )
     from omh.routing.policy import (
         JIT_LEARN_CURRICULUM_EXCLUSION_PHRASES as _JIT_LEARN_CURRICULUM_EXCLUSION_PHRASES,
-        jit_learn_guard_applies as _jit_learn_guard_applies,
     )
 except ImportError:  # pragma: no cover - standalone plugin hosts keep the fallback above.
     pass
+
+
+def _router_policy_module() -> object | None:
+    """`routing.policy` when the router is importable, else None.
+
+    Resolved at call time, like `_user_trigger_pack_route_decision` below, and
+    for the same reason. `routing.policy` imports `routing.intent`, which
+    reaches this module through `skills.catalog_types` -> `skills` ->
+    `skills.render`; so whenever `policy` or `intent` is the first router
+    import of a process, this module's own `from ...routing.policy import`
+    runs against a half-initialised module. The ImportError that raises is
+    the one the standalone-host fallback catches, so the router's guards and
+    classifiers stayed replaced by the bundle's copies for the rest of that
+    process, and `/loop …` ranked `workflow-learning` above `ulw-loop` -- the
+    Windows shard that ran `test_candidate_handoff` before
+    `test_degradation_signal`.
+    """
+    try:
+        from ...routing import policy as module
+    except ImportError:
+        try:
+            from omh.routing import policy as module
+        except ImportError:  # pragma: no cover - exercised by standalone plugin hosts.
+            return None
+    return module
+
+
+def _router_guard(name: str) -> object | None:
+    """The guard `routing.policy` exports under `name`, or None in a standalone host."""
+    return getattr(_router_policy_module(), name, None)
+
 
 try:  # Accept the `omh-`/`ulw-` display labels wrapper bodies render back as routing input.
     from ...routing.display_names import canonical_display_mentions as _canonical_display_mentions
@@ -6344,6 +6411,7 @@ def _prioritized_route_hint_rules(jit_learn_match: bool) -> tuple[dict[str, obje
 
 def _jit_learn_route_hint_applies(message: str, routing_normalized: str) -> bool:
     """Use the router's immediate-learning intent before generic hint rules."""
+    _jit_learn_guard_applies = _router_guard("jit_learn_guard_applies")
     if (
         _jit_learn_guard_applies is not None
         and _normalized_routing_phrase is not None
@@ -7971,14 +8039,17 @@ _LONG_DOCUMENT_PAGE_COUNT_FLOOR = 60
 try:
     from ...routing.localization import normalized_phrase as _long_document_normalized_phrase
     from ...routing.localization import routing_tokens as _long_document_routing_tokens
-    from ...routing.policy import _long_document_reading_guard_applies as _long_document_guard_applies
 except ImportError:  # pragma: no cover - exercised by standalone plugin hosts.
-    _long_document_guard_applies = None
+    _long_document_normalized_phrase = None
+    _long_document_routing_tokens = None
 
 
 def _long_document_request_signal(text: str) -> bool:
     """True when the routing guard would send this text to long-document reading."""
-    if _long_document_guard_applies is None:
+    # Resolved per call; see `_router_guard` for why a module-level import
+    # bound None in every process that imported `routing.policy` first.
+    _long_document_guard_applies = _router_guard("_long_document_reading_guard_applies")
+    if _long_document_guard_applies is None or _long_document_normalized_phrase is None:
         return _long_document_page_count_signal(text)
     normalized = _long_document_normalized_phrase(text)
     return _long_document_guard_applies(normalized, _long_document_routing_tokens(normalized))

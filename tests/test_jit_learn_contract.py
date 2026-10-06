@@ -6,7 +6,11 @@ values rather than snapshotting generated prose.
 
 from __future__ import annotations
 
+import json
+import subprocess
+import sys
 import tempfile
+import textwrap
 import unittest
 
 from _standalone_bundle import _load_standalone_bundle_awareness
@@ -476,6 +480,44 @@ class JitLearnRoutingAndCardContractTests(unittest.TestCase):
         row = next(item for item in report["results"] if item["case_id"] == case.case_id)
         self.assertTrue(row["passed"], row)
         self.assertEqual(row["actual_winner"], "omh")
+
+
+class RouterGuardImportOrderTests(unittest.TestCase):
+    """The hint hook reaches the router's guards whichever omh module a process imports first."""
+
+    def test_the_guards_resolve_when_routing_policy_is_imported_first(self) -> None:
+        # `routing.policy` reaches awareness through `skills.render`, so a
+        # module-level import of its guards ran against the half-initialised
+        # module and bound None for the whole process; `/loop …` then ranked
+        # workflow-learning first in every shard that imported policy before
+        # awareness. Process state, so a fresh interpreter is the only probe.
+        code = textwrap.dedent(
+            """
+            import json
+            import omh.routing.policy  # the first router import of this process
+            from omh.plugin_bundle.omh import awareness
+
+            print(json.dumps({
+                "jit_learn": awareness._router_guard("jit_learn_guard_applies") is not None,
+                "long_document": awareness._router_guard("_long_document_reading_guard_applies") is not None,
+                "classifier": type(awareness.classify_workflow_intent("plan the billing refactor")).__module__,
+                "loop": awareness.awareness_route_hint("/loop fix the flaky site-two integration test")["primary_workflow"],
+            }))
+            """
+        )
+        completed = subprocess.run(
+            [sys.executable, "-P", "-c", code], capture_output=True, text=True, check=False
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(
+            json.loads(completed.stdout),
+            {
+                "jit_learn": True,
+                "long_document": True,
+                "classifier": "omh.routing.intent",
+                "loop": "ulw-loop",
+            },
+        )
 
 
 if __name__ == "__main__":
