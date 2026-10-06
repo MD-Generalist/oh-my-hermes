@@ -18,9 +18,15 @@ as its table states it.
 
 Migration plan: later changes move each table's per-skill fields into the
 record behind this interface, one table at a time, with the generated tree and
-`tests/test_skill_record.py` holding the bytes still. Writers already read
-through `skill_record(name)`, so a move changes where a field is stored, not
-who reads it.
+`tests/test_skill_record.py` holding the bytes still. Today only `packaging.py`
+reads through `skill_record(name)` (bodies and references); the docs, Agent
+Skills, shortlist and capability-family generators still read their tables
+directly and expose the per-skill unit that `project()` calls, so a moved
+field reaches them when the generator is pointed at the record.
+
+Not to be confused with `install/manifest.SkillRecord`, which records an
+installed file (name, path, sha256, source) and has nothing to do with the
+catalog.
 
 Import direction: `packaging.py` imports this module; this module never imports
 `packaging.py`. The routing policy, action labels, portability tables, and the
@@ -187,8 +193,10 @@ def _full_contract_reference_templates() -> list[SkillReferenceTemplate]:
     ]
 
 
-# Every reference producer, in the order the installed reference list is
-# written. A producer may yield references for several skills.
+# Every reference producer. `reference_templates_in_producer_order()` yields
+# in this order and `builtin_skill_reference_templates()` is that sequence, so
+# the installer writes references in this order by construction. A producer
+# may yield references for several skills.
 REFERENCE_PRODUCERS: tuple[Callable[[], list[SkillReferenceTemplate]], ...] = (
     router_reference_templates,
     wiki_reference_templates,

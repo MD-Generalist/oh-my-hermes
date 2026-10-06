@@ -83,7 +83,8 @@ next-action label from the catalog tables, behind `project(skill, target)`. It
 reads the tables and moves no data; boundary fields stay as each table states
 them.
 _Avoid_: reading a skill's fields from the tables directly in a new writer;
-deriving one boundary field from another
+deriving one boundary field from another; `install/manifest.SkillRecord`, an
+installed file's name/path/sha256, which shares the name and nothing else
 
 **Router**:
 OMH's deterministic chat-intake classifier that maps a natural-language

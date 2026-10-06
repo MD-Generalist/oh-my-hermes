@@ -68,7 +68,7 @@ Source of truth → generated file → regen command → drift gate:
 | Source | Generated | Regenerate | Gate |
 | --- | --- | --- | --- |
 | `src/skills/skill_record.py` (`SkillRecord` over `catalog.py`, `catalog_feature_surfaces.py`, `catalog_harnesses.py`, `catalog_portable.py`, `render.py`; `project(skill, target)`) via `builtin_skill_templates()` / `builtin_skill_reference_templates()` | `skills/*/SKILL.md`, `skills/*/references/*.md` | write template `.content` back to `skills/` (short Python loop; no dedicated CLI writer) | tap-skills staleness inside `docs workflows --check` (missing/stale/extra); `tests/test_router_content.py` |
-| `src/skills/skill_record.py` (`SkillRecord` over `catalog.py`, `catalog_feature_surfaces.py`, `catalog_harnesses.py`, `catalog_portable.py`, `render.py`; `project(skill, target)`) | `docs/WORKFLOWS.md` | `uv run python -m omh.cli docs workflows --output docs/WORKFLOWS.md` | `uv run python -m omh.cli docs workflows --check` |
+| Same catalog data | `docs/WORKFLOWS.md` | `uv run python -m omh.cli docs workflows --output docs/WORKFLOWS.md` | `uv run python -m omh.cli docs workflows --check` |
 | Same catalog data | `docs/ROLES.md` | `uv run python -m omh.cli docs roles --output docs/ROLES.md` | `uv run python -m omh.cli docs roles --check` |
 | Demo case engine | `examples/use-cases/g1-g10-demo-cards.json` | `uv run python -m omh.cli cases demo --all --json` output | parse-equality in `tests/test_application_cases.py` |
 | `capability_family_projection()` in `src/capabilities/families.py` | `src/plugin_bundle/omh/tools/capability_families.json` | `uv run python -m omh.cli docs capability-families` | `uv run python -m omh.cli docs capability-families --check`; dict-parity in `tests/test_plugin_capabilities.py` |
