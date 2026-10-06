@@ -17,6 +17,7 @@ import unittest
 from unittest.mock import patch
 
 from _cli_harness import run_cli
+from _credential_fixtures import AWS_ACCESS_KEY_ID
 from _local_package import load_local_package
 
 load_local_package()
@@ -95,6 +96,32 @@ class InProcessCaptureTests(unittest.TestCase):
         held = self.call(summary="Reviews happen on Thursdays.")
         self.assertEqual((held["status"], held["review_reason"]), ("pending_review", "policy_review_first"))
         self.assertEqual(scan_project_memory_records(self.paths), ([], []))
+
+    def test_unsafe_content_is_held_for_review_through_the_tool(self) -> None:
+        # The safety classifier's verdict reaches the tool's status set as
+        # pending_review with its own reason; the fake-runner suite pinned this
+        # and the in-process suite must too.
+        result = self.call(summary=f"Deploy key is {AWS_ACCESS_KEY_ID} for the staging bucket.")
+        self.assertEqual(result["status"], "pending_review", result)
+        self.assertEqual(result["review_reason"], "unsafe_content")
+        self.assertEqual(result["receipt_state"], "candidate_persisted")
+        self.assertIsNone(result["record_id"])
+        self.assertEqual(scan_project_memory_records(self.paths), ([], []))
+
+    def test_the_mapper_never_upgrades_a_receipt_state(self) -> None:
+        # An admission result that stopped at indexes_refreshed is reported at
+        # that state; the tool relays what the write observed and claims no
+        # later state.
+        payload = {
+            "captured": True,
+            "auto_approved": True,
+            "receipt_state": "indexes_refreshed",
+            "candidate": {"candidate_id": "cand_x"},
+            "record": {"record_id": "mem_x", "admission": {"state": "approved_auto_safe"}},
+        }
+        mapped = memory_tool._map_capture_payload(payload)
+        self.assertEqual((mapped["status"], mapped["receipt_state"]), ("remembered", "indexes_refreshed"))
+        self.assertEqual(memory_tool._map_capture_payload({**payload, "receipt_state": None})["receipt_state"], None)
 
     def test_memory_turned_off_is_refused_and_nothing_is_written(self) -> None:
         write_setup_profile(self.paths, [], memory_mode="off")
