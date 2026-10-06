@@ -769,9 +769,11 @@ class ProviderReminderTests(unittest.TestCase):
             self.assertEqual(_record_path(paths, record["record_id"]).read_bytes(), before, "no reminder path mutates a record")
             self.assertEqual(memory_workflow._record_staleness(_stored(paths, record["record_id"]), now=datetime.now(timezone.utc))["state"], "open")
 
-    def test_a_principal_that_blanks_the_pack_is_not_asked_and_the_ledger_stays_clean(self) -> None:
-        # The pack was rendered under one lens; a prefetch under another gets an
-        # empty pack. Nobody saw the reminder, so nothing may say it was asked.
+    def test_a_principal_switch_re_renders_under_the_new_lens_before_serving(self) -> None:
+        # The pack was rendered under one lens; a prefetch under another must
+        # not serve that pack -- and must not serve nothing either, which is
+        # what blanking it did. It renders again under the arriving lens, and
+        # the ask is recorded once, for the lens that actually saw it.
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
             paths = resolve_paths(root / ".omh", root / ".hermes")
@@ -789,14 +791,13 @@ class ProviderReminderTests(unittest.TestCase):
                 "binding_state": "validated_local",
             }
             pack = provider.prefetch("question", principal_context=other_principal)
-            self.assertEqual(pack, "")
-            self.assertIsNone(provider.recall_status())
-            self.assertIsNone(provider.latest_prefetch_receipt())
-            self.assertIsNone(provider.latest_open_reminder())
-            self.assertEqual(read_open_reminders(root / ".omh"), {}, "an ask nobody saw is not an ask")
-            provider.queue_prefetch("question")
-            served = provider.prefetch("question")
-            self.assertIn(f"({record['record_id']})", served, "re-rendered under the new lens, the question is asked")
+            self.assertIn(f"({record['record_id']})", pack, "re-rendered under the new lens, the question is asked")
+            self.assertEqual(provider.recall_status(), RecallStatus(provider_label="OMH", count=1))
+            self.assertEqual(provider.latest_open_reminder()["record_id"], record["record_id"])
+            self.assertEqual(provider.latest_prefetch_receipt()["reminder"]["record_id"], record["record_id"])
+            self.assertEqual(read_open_reminders(root / ".omh")[record["record_id"]]["asked_count"], 1)
+            provider.prefetch("question", principal_context=other_principal)
+            self.assertEqual(read_open_reminders(root / ".omh")[record["record_id"]]["asked_count"], 1, "the same rendered pack is one ask")
             self.assertEqual(read_open_reminders(root / ".omh")[record["record_id"]]["asked_count"], 1)
 
     def test_a_durable_open_record_is_asked_about_once_its_deadline_passes(self) -> None:
@@ -840,10 +841,13 @@ class ProviderReminderTests(unittest.TestCase):
             # does not mention it: the reminder is eligibility-bound, not
             # query-bound.
             unrelated = _open_record(paths, "the cache question nobody typed", days_open=34)
+            # A query that overlaps no record at all re-admits the active tier,
+            # so one record must match for the open one to stay out of the pack.
+            _approved(paths, "zzz overlaps the deploy notes")
             provider.on_turn_start(2, "next")
             provider.queue_prefetch("zzz nothing overlaps")
             pack = provider.prefetch("zzz nothing overlaps")
-            self.assertNotIn("<memory_records>", pack)
+            self.assertNotIn('<record id="%s"' % unrelated["record_id"], pack)
             self.assertIn(f"({unrelated['record_id']})", pack)
             self.assertEqual(set(read_open_reminders(root / ".omh")), {unrelated["record_id"]})
 

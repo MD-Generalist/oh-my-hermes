@@ -1781,7 +1781,7 @@ def _setup_operator_summary(
     profile = steps.get("profile", {})
     operating_model_id = str(profile.get("operating_model_id", "")) if isinstance(profile, dict) else ""
     memory_policy = profile.get("memory_policy", {}) if isinstance(profile, dict) else {}
-    memory_mode = str(memory_policy.get("mode", profile.get("memory_mode", "review-first"))) if isinstance(memory_policy, dict) else "review-first"
+    memory_mode = str(memory_policy.get("mode", profile.get("memory_mode", "auto-safe"))) if isinstance(memory_policy, dict) else "auto-safe"
     summary = {
         "schema_version": SETUP_OPERATOR_SUMMARY_SCHEMA_VERSION,
         "scope": _setup_scope(args),
@@ -1986,7 +1986,7 @@ def _apply_result(args: argparse.Namespace, *, bind_omh_home: bool = True) -> di
     # The store the plugin in this home would bind with nothing naming one.
     # The default install reaches it already and stays byte-identical.
     binds_by_default = paths.omh_home == runtime_paths.unset_launch_omh_home(paths.hermes_home)
-    memory_mode = str(getattr(args, "memory_mode", "") or "") or "review-first"
+    memory_mode = str(getattr(args, "memory_mode", "") or "") or "auto-safe"
     # One mutation, run against the text `update_config` just read and run
     # again on a retry, so a route write landing mid-pass makes this pass
     # re-derive its seven changes from the other writer's file instead of
@@ -2725,7 +2725,7 @@ def cmd_setup(args: argparse.Namespace) -> int:
             "setup_profiles": list(args.profile),
             "default_executor": str(getattr(args, "default_executor", "") or ""),
             "operating_model": str(getattr(args, "operating_model", "") or ""),
-            "memory_mode": str(getattr(args, "memory_mode", "") or "review-first"),
+            "memory_mode": str(getattr(args, "memory_mode", "") or "auto-safe"),
         },
     )
     target_topology = steps["targets"].get("topology", {}) if isinstance(steps["targets"], dict) else {}
@@ -5894,7 +5894,7 @@ def _add_top_level_commands(sub) -> None:
         "--memory-mode",
         choices=PROJECT_MEMORY_MODES,
         default=None,
-        help="Configure OMH project memory: off, review-first, or auto-safe. Defaults to review-first.",
+        help="Configure OMH project memory: off, review-first, or auto-safe. Defaults to auto-safe; only a mode passed here is pinned.",
     )
     setup.add_argument(
         "--with-plugin",

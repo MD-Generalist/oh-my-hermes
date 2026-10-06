@@ -198,7 +198,8 @@ class MemoryFamilyEnforcementTests(_PathsMixin, unittest.TestCase):
             write_capability_policy(paths, ["retain_knowledge"])
             write_capability_policy(paths, [])
             restored = read_project_memory_policy(paths)
-            self.assertEqual(restored["mode"], "review-first")
+            # The profile named no mode, so re-enabling returns to the default.
+            self.assertEqual(restored["mode"], "auto-safe")
             self.assertTrue(restored["capture_enabled"])
 
     def test_disabling_a_different_family_leaves_memory_alone(self) -> None:

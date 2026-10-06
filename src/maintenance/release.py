@@ -240,7 +240,16 @@ SKILL_INDEX_LINE_CHAR_LIMIT = 100
 # per-turn primer line is added for it. It names the plan binding form,
 # check: `<command>`, because a command that is merely mentioned in the plan
 # binds nothing. Re-derived from the producer.
-PLUGIN_TOOL_SCHEMA_CHAR_LIMIT = 62397
+# 62397 -> 63261: `omh_memory` gains `capture` (864): the model's only write
+# path into OMH memory, five parameters and a description that says when to
+# call it unprompted (a lasting preference, decision, setup fact or lesson;
+# one fact per call; never secrets, logs, transcripts or task progress). The
+# guidance rides this schema because the always-on primer has 6 characters of
+# headroom and `pre_llm_call` is zero-slack; a tool description is read only
+# where the tool appears, and is deferrable under the default tool search.
+# Owner decision 2026-10-06: approval is auto-safe, no operator step in the
+# loop. Re-derived from the producer.
+PLUGIN_TOOL_SCHEMA_CHAR_LIMIT = 63261
 # The largest fenced `pre_llm_call` context over the named scenario set in
 # `src/maintenance/per_turn_context.py` (the `all_surfaces` scenario). Hermes
 # replays each turn's injection from `api_content` on every later turn, so this

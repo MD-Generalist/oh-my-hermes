@@ -134,7 +134,9 @@ class MemoryRecallIncidentTests(unittest.TestCase):
         record = self.approved()
         for request, expected in (
             (api.RecallIncidentRequest(record_id=record['record_id']), 'unresolved'),
-            (api.RecallIncidentRequest(record_id=record['record_id'], query='volcano'), 'relevance_attention_or_budget_exclusion'),
+            # A query that overlaps no record re-admits the active tier, so the
+            # lone record is selected; the no_query_overlap stage is pinned last.
+            (api.RecallIncidentRequest(record_id=record['record_id'], query='volcano'), 'unresolved'),
             (api.RecallIncidentRequest(record_id=record['record_id'], max_chars=1), 'relevance_attention_or_budget_exclusion'),
             (api.RecallIncidentRequest(record_id=record['record_id'], scope_ref='another-project'), 'scope_or_perspective_mismatch'),
         ):
@@ -227,6 +229,12 @@ class MemoryRecallIncidentTests(unittest.TestCase):
         # Delivered and used have no record-bound surface; only the synthetic oracle names them.
         for reason in ('delivered_model_use_unknown', 'used'):
             self.assertEqual(api.diagnose_synthetic_recall_stage(reason)['evidence_basis'], 'synthetic')
+        # Once any record overlaps the query, the rest are named no_query_overlap.
+        self.approved('volcano monitoring runbook')
+        result = api.build_memory_recall_incident(self.paths, api.RecallIncidentRequest(
+            record_id=record['record_id'], query='volcano'))
+        self.assertEqual(result['reason_code'], 'no_query_overlap')
+        self.assertEqual(result['stage'], 'relevance_attention_or_budget_exclusion')
 
     def test_receipt_absence_is_not_nondelivery(self) -> None:
         # Given selected memory but no record-bound live evidence.

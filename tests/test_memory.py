@@ -1004,10 +1004,11 @@ class MemoryContractTests(unittest.TestCase):
             self.assertGreater(recall["included_records"][0]["score"], 0)
             self.assertEqual(validate_project_memory_recall_pack(recall), [])
 
-            # Overroute guard: an unrelated Korean query still recalls nothing.
+            # An unrelated Korean query matches nothing, so the active tier is
+            # served unqueried and the pack says why, rather than going empty.
             miss = build_project_memory_recall_pack(paths, "결제 모듈 장애")
-            self.assertEqual(miss["record_count"], 0)
-            self.assertEqual(miss["excluded_records"][0]["reason"], "no_query_overlap")
+            self.assertEqual(miss["record_count"], 1)
+            self.assertEqual(miss["query_fallback"], {"mode": "active_tier", "reason": "no_query_overlap", "readmitted_count": 1})
 
     def test_project_memory_recall_reaches_two_letter_technical_terms(self) -> None:
         """CI, DB, UI, QA and friends must be findable.
@@ -1040,10 +1041,11 @@ class MemoryContractTests(unittest.TestCase):
             self.assertEqual([item["summary"] for item in natural["included_records"]],
                              ["Postgres is the primary DB for the api service"])
 
-            # Overroute guard: an unrelated query still recalls nothing.
+            # An unrelated query matches nothing, so the active tier is served
+            # unqueried and the pack says why, rather than going empty.
             miss = build_project_memory_recall_pack(paths, "quantum tunnelling")
-            self.assertEqual(miss["record_count"], 0)
-            self.assertEqual(miss["excluded_records"][0]["reason"], "no_query_overlap")
+            self.assertEqual(miss["record_count"], 3)
+            self.assertEqual(miss["query_fallback"], {"mode": "active_tier", "reason": "no_query_overlap", "readmitted_count": 3})
 
     def test_two_letter_function_words_stay_out_of_the_recall_index(self) -> None:
         """The floor kept English filler out; naming it must keep doing that.

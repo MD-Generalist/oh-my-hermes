@@ -26,7 +26,9 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
+
+from .memory_state_files import state_file_lock, write_text_atomic, write_text_locked
 
 DREAMING_STATE_SCHEMA_VERSION = "omh_memory_dreaming_state/v1"
 DREAMING_HANDOFF_SCHEMA_VERSION = "omh_memory_consolidation_handoff/v1"
@@ -99,10 +101,30 @@ def read_dreaming_state(omh_home: str | Path) -> dict[str, object]:
 
 
 def write_dreaming_state(omh_home: str | Path, state: dict[str, Any]) -> Path:
+    """Replace the counters whole, under the state lock. Raises ``OSError``."""
+    path = dreaming_state_path(omh_home)
+    write_text_locked(path, json.dumps(state, ensure_ascii=False, sort_keys=True))
+    return path
+
+
+def update_dreaming_state(
+    omh_home: str | Path,
+    mutate: Callable[[dict[str, Any]], dict[str, Any]],
+) -> dict[str, Any]:
+    """Read, mutate and replace the counters as one step; returns what was written.
+
+    Two sessions on one home -- a CLI and a gateway -- each used to read the
+    counters, add one, and write them back, so the later write erased the
+    earlier increment. The read now happens inside the same lock as the
+    write. A ``mutate`` that raises leaves the previous file untouched.
+    Raises ``OSError`` (a lock timeout is one).
+    """
     path = dreaming_state_path(omh_home)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(state, ensure_ascii=False, sort_keys=True), encoding="utf-8")
-    return path
+    with state_file_lock(path):
+        updated = mutate(read_dreaming_state(omh_home))
+        write_text_atomic(path, json.dumps(updated, ensure_ascii=False, sort_keys=True))
+    return updated
 
 
 def record_turn(state: dict[str, Any]) -> dict[str, object]:
@@ -283,14 +305,19 @@ def build_consolidation_handoff(
     """A prepared brief for whoever actually consolidates.
 
     OMH never executes this. It states what it observed and what it would like
-    decided; Hermes' own memory tool is the only thing that can act on it.
+    decided; only the model can act on it -- durable facts through
+    `omh_memory(action="capture")`, Hermes memory through Hermes' own memory tool.
     """
     requested = [_TRIGGER_INSTRUCTIONS.get(trigger, "Review what is below and consolidate what is durable.")]
     if messages_at_risk:
         requested.append(f"{messages_at_risk} message(s) are in the buffer being compressed.")
     requested.extend(
         [
-            "Rewrite or merge memory through Hermes' own memory tool, not through OMH.",
+            (
+                'Move durable facts, preferences, and decisions from this session into OMH with '
+                'omh_memory(action="capture"), one bounded line each.'
+            ),
+            "When Hermes memory headroom is low, trim or merge its entries with Hermes' own memory tool.",
             "Leave anything you cannot source; an unsourced entry is not evidence it is wrong.",
         ]
     )

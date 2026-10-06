@@ -1842,12 +1842,12 @@
 "name":"memory-new",
 "situation":"Project fact to remember across future sessions",
 "terms":{
-"1":"across ask assess bound choos class durabl exist explicit futur herm local past recall retention review scop session sourc sync target through user want",
-"2":"add defer don forget keep naming next refus rule secret time token",
-"3":"candidat captur decision stor",
-"4":"fact save",
-"5":"context",
-"6":"new product project remember",
+"1":"across assess bound clear directly exist explicit futur herm local past recall review session sync through user want",
+"2":"add defer don durabl forget keep naming next refus rule secret stor time token",
+"3":"candidat decision",
+"4":"captur fact save",
+"5":"context remember",
+"6":"new product project",
 "9":"memory"
 }
 },

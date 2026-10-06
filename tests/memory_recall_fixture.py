@@ -53,9 +53,12 @@ def text(value: Json) -> str:
 
 def reviewed(
     record_id: str, *, scope: dict[str, str] | None = None,
-    summary: str = "Release checklist requires tests", **fields: Json,
+    summary: str | None = None, **fields: Json,
 ) -> Pair:
     lens = PROJECT if scope is None else scope
+    # Distinct by default: recall collapses records whose normalized summaries
+    # match, so synthetic records meant as separate facts must not share one.
+    summary = f"Release checklist requires tests ({record_id})" if summary is None else summary
     record: Payload = {
         "schema_version": "project_memory_record/v2", "record_id": record_id,
         "revision": 1, "record_type": "fact", "summary": summary,

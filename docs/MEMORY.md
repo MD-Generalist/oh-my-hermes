@@ -388,14 +388,53 @@ an explicit block read. Unsupported schema, missing review linkage, safety
 failure, expiry, stale review, scope mismatch, conflict, supersession, or a
 legacy v1 artifact fails closed with a reason code.
 
+### The model-driven loop
+
+Hermes writes into this store itself, with no operator step in the normal
+loop. When the user states a lasting preference, a decision, a fact about
+their setup or project, or a lesson, the model calls
+`omh_memory(action="capture", summary=..., record_type=..., tags=...,
+scope=..., retention_class=...)`. The tool runs the installed `omh memory
+capture` command (the plugin bundle cannot import `omh`), passing
+`--on-duplicate skip`, and maps its JSON to one `status`:
+
+| `status` | Meaning |
+| --- | --- |
+| `remembered` | Auto-safe approval ran; `receipt_state` says how far the write was observed, `replay_ready` only when the CLI's own replay evaluation cleared it. |
+| `pending_review` | A candidate was persisted and held; `review_reason` is `unsafe_content`, `relative_time_phrase`, `duplicate`, `derived_content`, or `policy_review_first`. |
+| `already_remembered` | A live record has the same normalized summary; `duplicate_of` names it and nothing was written. |
+| `refused` | Nothing was written: invalid input, memory turned off, or a project scope this session cannot resolve. |
+| `omh_cli_unavailable` | No `omh` executable was found on `PATH`, in the managed generation or legacy venv, or in the command bin directory. |
+| `error` | The CLI failed, timed out (30 s), or printed something unparseable; nothing is confirmed saved. |
+
+`scope` defaults to `project` when the session's working directory resolves a
+project identity, and to `user` otherwise; `user` is stored as the
+`user-global` scope, which needs no acting-principal context and is delivered
+beside the project scope. The default policy is `auto-safe`, so a safe,
+absolute, non-duplicate capture goes straight to `approved_auto_safe` and then
+`replay_ready`. A tool result is what the capture operation observed on local
+disk; it is never evidence that a later session recalled or used the record.
+
+The policy payload discloses `mode_source`. Setup records `explicit` only when
+the operator passed `--memory-mode`; anything else is `default` and follows
+the current default. A profile written before `mode_source` existed that
+stored `review-first` (the old default) is read as defaulted, so it becomes
+`auto-safe` on the next read without re-running setup; any other stored mode
+could only have been chosen and is kept as `legacy_explicit`. `off` and an
+explicit `review-first` keep working.
+
 ## Admission: Remember, Refuse, or Defer
 
-For a new fact, Hermes asks for source class, target store, canonical scope,
-retention class, and an explicit decision:
+For a new fact, Hermes decides source class, target store, canonical scope,
+retention class, and one of these outcomes:
 
-- **Remember** creates only one bounded **durable** candidate. It remains
-  pending review until OMH-local approval and a target write are separately
-  observed.
+- **Remember** captures one bounded **durable** candidate through
+  `omh_memory(action="capture")`. Under the default `auto-safe` policy a safe
+  candidate is approved in the same operation (`approved_auto_safe`, a local
+  policy result, not a human review). It stays pending review only when the
+  content is unsafe, carries a relative-time phrase, duplicates a live record
+  outside the tool path, is derived content, or the operator chose
+  `review-first`.
 - **Refuse** covers secrets, raw logs, transcripts, prompt-injection-shaped
   instructions, and temporary task progress. This is lane guidance, not a
   pattern verdict: `classify_memory_admission` screens protected values, and
@@ -481,6 +520,13 @@ references were not refreshed is neither `indexes_refreshed` nor
 candidate that never clears review stops at `candidate_persisted`, and an
 approved record that is expired, stale, or out of scope stops short of
 `replay_ready`.
+
+`omh memory capture` prints the receipt it reached as `receipt_state`, each
+step re-read from disk: the record file, then the index entry that addresses
+it, then the same replay evaluator recall uses. A held candidate stops at
+`candidate_persisted`; `--on-duplicate skip` and refused captures print
+`null` because nothing was persisted. The `omh_memory` tool relays that value
+unchanged and never upgrades it.
 
 States are receipts, not record states. They describe what one operation
 observed about persistence, so they carry no lifecycle authority: they cannot
@@ -688,6 +734,24 @@ carries a `ranking` block with its per-signal ranks and an integer
 `rrf_score_micro`, so the order is always explainable from the pack itself.
 The usage signal ranks on saturating buckets (0, 1-2, 3-9, 10+ deliveries) so
 delivery counts cannot compound into a permanent head start.
+
+A query that matches nothing does not empty the pack. When a query has
+indexable tokens and no eligible record overlaps it and no pin applies, every
+`active`-tier record that was held out only as `no_query_overlap` is served the
+way an unqueried pack serves it — relevance ties, recency and usage decide the
+order, and the normal budget cut applies — and the pack carries
+`query_fallback: {"mode": "active_tier", "reason": "no_query_overlap",
+"readmitted_count": N}` (the key is absent when the fallback did not fire; the
+prefetch receipt records it as `selection.query_fallback`, null otherwise).
+Reference records stay keyword-gated and archived records stay explicit, so
+they remain `no_query_overlap` / `archived_tier` exclusions. Any overlap at all
+means the query did its job: a partial match never falls back. Two eligible
+records whose summaries are equal after NFC, lowercasing and whitespace
+collapse — the same normalization capture uses for `duplicate_of` — take one
+slot: the pinned one, else the newest `approved_at`, else the smaller record
+id stays, and the other is excluded as `duplicate_record` with `duplicate_of`
+naming the record kept. The collapse runs after eligibility and before
+ranking, so a duplicate never spends budget.
 
 Delivery usage counts only recall packs that were actually attached to a
 prepared handoff payload — building a pack is speculative, so a delegation
@@ -1184,7 +1248,8 @@ The ranking inputs do not expand eligibility or establish truth:
   a permanent head start.
 
 Dreaming prepares a reminder and metadata-only evidence. It never invokes a
-model or performs consolidation, retirement, restore, or prune.
+model or performs consolidation, retirement, restore, or prune; whatever is
+consolidated, the model does through its own tool calls in a later turn.
 
 For agents and operators, `omh_memory(action="consolidation")` reads the latest
 recorded brief and scheduler counters without starting a provider session or
@@ -1203,9 +1268,14 @@ A brief on disk consolidates nothing by itself. While the newest brief is
 `<memory_consolidation>` section (trigger, reasons, Hermes memory headroom
 and duplicate-cluster counts, and what is requested), so the next
 non-trivial turn on any platform carries the request to the model. The
-section asks the model to consolidate through Hermes' own memory tool and
-then tell the user in one short line what changed. A brief is a request, not
-recalled memory: it never moves the recall count or the recall line.
+section asks the model for three things: move durable facts, preferences, and
+decisions from the session into OMH with `omh_memory(action="capture")`, one
+bounded line each; when Hermes memory headroom is low, trim or merge its
+entries with Hermes' own memory tool; then tell the user in one short line
+what it remembered or trimmed, or that nothing needed changing. A brief is a
+request, not recalled memory and not evidence of consolidation: it never moves
+the recall count or the recall line, and only the capture results and memory
+writes the model actually makes are observed.
 
 The section disappears once consolidation is observed: a `replace` or
 `remove` from Hermes' memory tool retires the brief when no standing reason

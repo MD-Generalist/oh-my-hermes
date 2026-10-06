@@ -143,9 +143,26 @@ def write_setup_profile(
     operating_model: str | None = None,
     memory_mode: str | None = None,
 ) -> dict[str, Any]:
+    if not str(memory_mode or "").strip():
+        # A rerun without `--memory-mode` keeps a mode the operator chose
+        # before. Setup rewrites the whole profile, so without this the choice
+        # would be replaced by the default and relabelled `default`, which the
+        # legacy rule in `_stored_memory_mode` then treats as never chosen.
+        memory_mode = _explicit_memory_mode(read_json_object(paths.setup_profile_path))
     profile = build_setup_profile(values, default_executor=default_executor, operating_model=operating_model, memory_mode=memory_mode)
     atomic_write_json(paths.setup_profile_path, profile, private=True)
     return profile
+
+
+def _explicit_memory_mode(existing: dict[str, Any] | None) -> str | None:
+    """The mode an earlier `--memory-mode` recorded, or None when none was."""
+    if not isinstance(existing, dict):
+        return None
+    policy = existing.get("memory_policy")
+    if not isinstance(policy, dict) or policy.get("mode_source") != "explicit":
+        return None
+    mode = str(policy.get("mode", "") or "").strip()
+    return mode or None
 
 
 def read_setup_profile(paths: OmhPaths) -> dict[str, Any] | None:
@@ -162,6 +179,9 @@ def build_project_memory_policy(mode: str | None = None) -> dict[str, object]:
     return {
         "schema_version": PROJECT_MEMORY_POLICY_SCHEMA_VERSION,
         "mode": normalized,
+        # Only a mode the operator named is pinned; a defaulted one follows
+        # the current default when the policy is read back.
+        "mode_source": "explicit" if str(mode or "").strip() else "default",
         "capture_enabled": normalized != "off",
         "recall_enabled": normalized != "off",
         "review_required": normalized == "review-first",
@@ -230,7 +250,7 @@ def _normalize_operating_model(value: str | None) -> str:
 
 
 def _normalize_memory_mode(value: str | None) -> str:
-    mode = str(value or "review-first").strip()
+    mode = str(value or "auto-safe").strip()
     if mode not in PROJECT_MEMORY_MODES:
         raise ValueError(f"unsupported memory mode: {mode}; expected one of {', '.join(PROJECT_MEMORY_MODES)}")
     return mode

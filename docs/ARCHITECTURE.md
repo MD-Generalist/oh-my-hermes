@@ -284,7 +284,10 @@ settings and compact summaries do not rely on an unnamed list-order convention.
 `workflows/memory.py` owns OMH project memory. It stores candidates, reviewed
 records, review decisions, and recall packs under `.omh/memory/` using local
 JSON files. Setup records `project_memory_policy/v1` with `off`,
-`review-first`, or `auto-safe` mode. Coding handoffs can receive
+`review-first`, or `auto-safe` mode (`auto-safe` by default). The Hermes model
+writes through `omh_memory(action="capture")`, which runs the installed CLI's
+capture path, and the plugin's memory provider reads the store on every turn.
+Coding handoffs can receive
 `memory_recall_pack/v1` when reviewed records are relevant. These packs are
 prepared context only; they are not execution, review, CI, merge, or Hermes
 internal-memory evidence.

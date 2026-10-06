@@ -2578,7 +2578,9 @@ class RecallIndicatorTests(unittest.TestCase):
             _approve_record(root, "Tests need PYTHONPATH=tests.")
             provider = self._provider(root)
             self.assertIsNone(provider.recall_status(), "the pack is rendered but not yet served")
-            provider.prefetch("hello")
+            # The query is what Hermes passes for the CURRENT message; the
+            # record is counted when that message reaches it.
+            provider.prefetch("why do tests need PYTHONPATH")
             self.assertEqual(provider.recall_status(), RecallStatus(provider_label="OMH", count=2))
 
             # A reference block reaches the pack as a label only, which is
@@ -2635,6 +2637,9 @@ class DreamingReachesTheTurnTests(unittest.TestCase):
             pack = provider.prefetch("next turn")
             self.assertIn("<memory_consolidation", pack)
             self.assertIn("session_ending_with_unconsolidated_turns", pack)
+            # Durable facts move into OMH through the model's own capture call;
+            # Hermes memory is trimmed only through Hermes' own tool.
+            self.assertIn('omh_memory(action="capture")', pack)
             self.assertIn("Hermes' own memory tool", pack)
             self.assertIn("tell the user in one short line", pack)
             # A brief is a request, not recalled memory: no indicator at all.

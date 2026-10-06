@@ -1439,9 +1439,12 @@ prints a concise step-by-step summary. Use
 machine-readable payload.
 
 Setup also records OMH project-memory policy in `.omh/setup-profile.json`.
-The default is safe `review-first` memory: OMH can capture local candidates,
-but reviewed records are required before recall enters coding handoffs. Operators
-can choose:
+The default is `auto-safe` memory: Hermes remembers durable facts itself
+through `omh_memory(action="capture")`, a locally safe summary is approved
+at once and recalled from the next turn, and nobody has to run an approval
+command. Credentials, raw logs, full transcripts, short-lived PR/commit IDs,
+relative-time phrases, duplicates, and temporary task progress are held for
+review or refused instead. Operators can choose:
 
 ```sh
 omh setup --memory-mode off
@@ -1449,10 +1452,12 @@ omh setup --memory-mode review-first
 omh setup --memory-mode auto-safe
 ```
 
-`auto-safe` approves only locally safe summaries and leaves credentials, raw
-logs, full transcripts, short-lived PR/commit IDs, and temporary task progress
-for review or rejection. This is OMH project memory under `.omh/memory/`; setup
-does not mutate Hermes global or internal memory.
+A mode passed with `--memory-mode` is recorded as explicit and kept; a
+profile that only stored the earlier `review-first` default follows the new
+default on its next read (`omh memory status` shows `mode_source`).
+`review-first` holds every capture for `omh memory approve`. This is OMH
+project memory under `.omh/memory/`; setup does not mutate Hermes global or
+internal memory.
 
 The default user scope writes `~/.omh` and `~/.hermes`. Use project scope when
 one repository needs isolated local OMH skills and Hermes config:

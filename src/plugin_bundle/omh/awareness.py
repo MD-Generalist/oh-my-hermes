@@ -7065,7 +7065,7 @@ def awareness_primer_payload() -> dict[str, object]:
             "Use omh_probe when the user asks whether OMH is installed, what is missing, or what the next setup/runtime evidence step should be.",
             "Use omh_status or omh_hud for metadata-only runtime state.",
             "Use omh_todo to declare or update the plan todo checklist that the Hermes TUI renders above the prompt input; items are declarations, never execution evidence.",
-            "Use omh_memory before adding to Hermes memory: it reports what Hermes already holds, what OMH holds that it does not, and the remaining character headroom.",
+            "Use omh_memory action=capture for a durable fact, preference, or decision the user states; its default action reports Hermes memory and its headroom.",
             "Use omh_role for responsibility context when a role marker is present.",
             "Use wrapper cards/actions for user-facing choices instead of asking users to approve shell catalog commands.",
         ],
@@ -7187,8 +7187,8 @@ def awareness_primer_context() -> str:
             # `tool_hints` alone, a "remember this" turn called Hermes' native
             # `memory` tool directly and omh_memory zero times.
             (
-                "Expand only when needed with omh_context, omh_capabilities, and omh_status/omh_hud; "
-                "check omh_memory before writing Hermes memory."
+                "Expand on need: omh_context, omh_capabilities, omh_status/omh_hud. "
+                "Durable facts: omh_memory(action='capture'), not Hermes memory."
             ),
         ]
     )

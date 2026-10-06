@@ -24,6 +24,8 @@ from ..plugin_bundle.omh.hermes_memory import build_hermes_memory_bridge as _bun
 from ..plugin_bundle.omh.hermes_memory import build_memory_demotion_plan as _bundle_demotion_plan
 from ..plugin_bundle.omh.hermes_memory import classify_record_expiry as _classify_record_expiry
 from ..plugin_bundle.omh.memory_dreaming import consolidation_path as _consolidation_path
+from ..plugin_bundle.omh.memory_prefetch_receipt import prefetch_receipt_path as _prefetch_receipt_path
+from ..plugin_bundle.omh.memory_prefetch_receipt import read_prefetch_receipt as _read_prefetch_receipt
 from ..plugin_bundle.omh.memory_open_reminders import (
     mark_open_reminder_asked as _mark_open_reminder_asked,
     read_open_reminders as _read_open_reminders,
@@ -189,7 +191,21 @@ SOURCE_PRECEDENCE = {
 ALLOWED_UPDATE_OPS = {"keep", "forget", "update", "change_scope", "dismiss_conflict"}
 ALLOWED_SCOPE_KINDS = {"user-global", "user", "project", "target", "thread", "run"}
 PROJECT_MEMORY_MODES = ("off", "review-first", "auto-safe")
+# The mode a profile gets when nobody chose one. Auto-safe because the model
+# captures through `omh_memory(action="capture")` with no operator in the loop;
+# under review-first every capture would wait on an approval nobody runs.
+PROJECT_MEMORY_DEFAULT_MODE = "auto-safe"
+# Where the effective mode came from, disclosed on the policy payload:
+# `explicit` (setup --memory-mode wrote it), `legacy_explicit` (a profile
+# written before `mode_source` existed whose stored mode differs from the old
+# review-first default, so an operator must have chosen it), `default`, and
+# `capability_policy` (the retain_knowledge family is disabled).
+PROJECT_MEMORY_MODE_SOURCES = ("explicit", "legacy_explicit", "default", "capability_policy")
+_LEGACY_DEFAULT_MEMORY_MODE = "review-first"
 PROJECT_MEMORY_RECORD_TYPES = ("fact", "decision", "lesson", "procedure", "episode")
+# `candidate` keeps a duplicate as a pending candidate stamped duplicate_of;
+# `skip` persists nothing and names the existing record instead.
+CAPTURE_ON_DUPLICATE_CHOICES = ("candidate", "skip")
 MEMORY_ACTION_IDS = (
     "keep_memory",
     "forget_memory",
@@ -245,6 +261,7 @@ _PROJECT_MEMORY_RECALL_PACK_KEYS = {
     "scope",
     "perspective",
     "query_intent",
+    "query_fallback",
     "included_records",
     "excluded_records",
     "freshness_warnings",
@@ -332,6 +349,7 @@ _RECALL_RANKING_KEYS = {
 # `records/` and writes a tombstone; a tier change moves nothing and deletes
 # nothing. The tier feeds the one existing ranking ladder in
 # `build_project_memory_recall_pack`, never a second ordering pass.
+_RECALL_QUERY_FALLBACK_KEYS = {"mode", "reason", "readmitted_count"}
 _RECALL_ATTENTION_KEYS = {
     "active_included",
     "reference_included",
@@ -420,6 +438,7 @@ _PROJECT_MEMORY_EXCLUDED_KEYS = {
     "reason",
     "staleness",
     "sibling_included",
+    "duplicate_of",
     "revision",
     "admission_mode",
     "source_class",
@@ -502,11 +521,12 @@ _HANDOFF_CONTEXT_CONFLICT_KEYS = {
 _HANDOFF_CONTEXT_BLOCKED_KEYS = {"schema_version", "blocked_by_conflicts", "claim_boundary"}
 
 
-def build_project_memory_policy(paths: OmhPaths, *, mode: str | None = None) -> dict[str, object]:
+def build_project_memory_policy(paths: OmhPaths, *, mode: str | None = None, mode_source: str = "default") -> dict[str, object]:
     normalized = _normalize_memory_mode(mode)
     return {
         "schema_version": PROJECT_MEMORY_POLICY_SCHEMA_VERSION,
         "mode": normalized,
+        "mode_source": mode_source if mode_source in PROJECT_MEMORY_MODE_SOURCES else "default",
         "capture_enabled": normalized != "off",
         "recall_enabled": normalized != "off",
         "review_required": normalized == "review-first",
@@ -546,12 +566,31 @@ def read_project_memory_policy(paths: OmhPaths) -> dict[str, object]:
         # here reuses the capture gate in `record_project_memory` and the
         # recall gate's empty pack, so there is one disabled path rather than a
         # second one that could drift from it.
-        return build_project_memory_policy(paths, mode="off")
+        return build_project_memory_policy(paths, mode="off", mode_source="capability_policy")
     policy = setup.get("memory_policy")
     if isinstance(policy, dict):
-        base = build_project_memory_policy(paths, mode=str(policy.get("mode", "") or "review-first"))
+        mode, source = _stored_memory_mode(str(policy.get("mode", "") or ""), str(policy.get("mode_source", "") or ""))
+        base = build_project_memory_policy(paths, mode=mode, mode_source=source)
         return {**base, **_policy_cadence_overrides(policy)}
-    return build_project_memory_policy(paths, mode=str(setup.get("memory_mode", "") or "review-first"))
+    mode, source = _stored_memory_mode(str(setup.get("memory_mode", "") or ""), "")
+    return build_project_memory_policy(paths, mode=mode, mode_source=source)
+
+
+def _stored_memory_mode(stored_mode: str, stored_source: str) -> tuple[str | None, str]:
+    """The mode a stored profile actually chose, or None for the current default.
+
+    A profile written before `mode_source` existed stored the old review-first
+    default whether or not anyone chose it, so that value is read as defaulted
+    and follows the current default without a re-setup. Any other stored mode
+    could only have come from an operator's `--memory-mode`, so it is kept.
+    """
+    if not stored_mode:
+        return None, "default"
+    if stored_source == "explicit":
+        return stored_mode, "explicit"
+    if stored_source or stored_mode == _LEGACY_DEFAULT_MEMORY_MODE:
+        return None, "default"
+    return stored_mode, "legacy_explicit"
 
 
 def _retain_knowledge_family_enabled(setup: dict[str, object]) -> bool:
@@ -808,6 +847,59 @@ def _open_record_rows(paths: OmhPaths, records: list[dict[str, Any]], *, now: da
     return [row for _since, _record_id, row in rows]
 
 
+def _last_prefetch_status(paths: OmhPaths, *, now: datetime) -> dict[str, object]:
+    """Whether the provider has ever handed a pack to Hermes from this home.
+
+    The store counts above say what COULD be recalled; this says what the
+    last prefetch actually returned, read off the receipt the provider writes
+    only when it serves a pack. For a month the store was empty and every
+    prefetch returned "" (the hook-order defect), and no status surface could
+    tell the two apart: both read as "nothing recalled". `never_served` is
+    the state that must be loud -- an installed provider that has not served
+    once is either unused or broken, never fine.
+    """
+    receipt_path = _prefetch_receipt_path(paths.omh_home)
+    receipt = _read_prefetch_receipt(paths.omh_home)
+    if receipt is None:
+        # The reader returns None for a missing file and for one it refuses
+        # (malformed, foreign schema, inconsistent). Only the first means
+        # nothing was recorded; a refused receipt was written by a serve.
+        present = receipt_path.is_file() and not receipt_path.is_symlink()
+        return {
+            "state": "unreadable" if present else "never_served",
+            "served_at": None,
+            "age_hours": None,
+            "session_id": None,
+            "rendered_record_count": None,
+            "rendered_block_count": None,
+            "receipt_path": str(receipt_path),
+            "claim_boundary": (
+                "A receipt file exists but does not validate; a pack was served and the record of it cannot be read."
+                if present
+                else "No receipt means no served pack was recorded from this home; it is not evidence that nothing was served elsewhere."
+            ),
+        }
+    served_at = str(receipt.get("served_at", "") or "")
+    age_hours: float | None = None
+    try:
+        served_moment = datetime.fromisoformat(served_at.replace("Z", "+00:00")) if served_at else None
+    except ValueError:
+        served_moment = None
+    if served_moment is not None:
+        age_hours = round(max((now - served_moment).total_seconds(), 0.0) / 3600, 1)
+    rendering = receipt.get("rendering") if isinstance(receipt.get("rendering"), dict) else {}
+    return {
+        "state": str(receipt.get("state", "") or "prepared"),
+        "served_at": served_at or None,
+        "age_hours": age_hours,
+        "session_id": str(receipt.get("session_id", "") or "") or None,
+        "rendered_record_count": int(rendering.get("rendered_count", 0) or 0),
+        "rendered_block_count": int(rendering.get("rendered_block_count", 0) or 0),
+        "receipt_path": str(receipt_path),
+        "claim_boundary": "A receipt records what the provider handed the host; it is not evidence that the model read or used it.",
+    }
+
+
 def build_project_memory_status(paths: OmhPaths) -> dict[str, object]:
     candidates = _read_project_memory_candidates(paths)
     records, unreadable_records = scan_project_memory_records(paths)
@@ -862,6 +954,7 @@ def build_project_memory_status(paths: OmhPaths) -> dict[str, object]:
         # Oldest first, bounded: the list a curation pass reads to ask the
         # three questions (resolved / still open / drop it) per record.
         "open_records": open_records[:_OPEN_RECORDS_STATUS_LIMIT],
+        "last_prefetch": _last_prefetch_status(paths, now=now),
         "hermes_memory": build_hermes_memory_bridge(paths),
         "redaction_policy": "metadata_only",
         "claim_boundary": "Project memory status is prepared local context only; it is not execution, review, CI, merge, or Hermes internal-memory evidence.",
@@ -892,7 +985,10 @@ def capture_project_memory_candidate(
     audience_principals: list[str] | tuple[str, ...] = (),
     executor_perspective: str = "hermes",
     unresolved: bool = False,
+    on_duplicate: str = "candidate",
 ) -> dict[str, object]:
+    if on_duplicate not in CAPTURE_ON_DUPLICATE_CHOICES:
+        raise ValueError(f"unsupported on_duplicate: {on_duplicate}; expected one of {', '.join(CAPTURE_ON_DUPLICATE_CHOICES)}")
     policy = read_project_memory_policy(paths)
     if not bool(policy.get("capture_enabled", True)):
         return {
@@ -1015,7 +1111,33 @@ def capture_project_memory_candidate(
     # comparison uses the candidate's own summary, which already went through
     # the same redaction/truncation pipeline as every stored summary; the raw
     # input would miss any match past the redaction cap.
-    duplicate_of = _find_duplicate_record(paths, str(candidate.get("summary", "")))
+    if on_duplicate == "skip":
+        # The model-driven capture path: a candidate stamped duplicate_of
+        # would wait for a reviewer who is not in that loop, so it names the
+        # record already held and persists nothing -- but only a record held
+        # under the SAME confinement counts as held. The review-first stamp
+        # below may point across scopes because a reviewer sees it; here
+        # nothing is persisted, and a match in another project or for another
+        # principal would never be recalled under this lens, so it is not
+        # "already remembered" and the capture goes through.
+        duplicate_of = _duplicate_held_in_confinement(paths, candidate)
+    else:
+        duplicate_of = _find_duplicate_record(paths, str(candidate.get("summary", "")))
+    if duplicate_of and on_duplicate == "skip":
+        return {
+            "schema_version": PROJECT_MEMORY_CAPTURE_SCHEMA_VERSION,
+            "captured": False,
+            "auto_approved": False,
+            "policy": policy,
+            "reason": "duplicate",
+            "duplicate_of": duplicate_of,
+            "receipt_state": None,
+            "redaction_policy": "metadata_only",
+            "claim_boundary": (
+                "An existing OMH-local record already carries this summary; nothing was persisted. "
+                "This is not evidence that Hermes recalled or used that record."
+            ),
+        }
     if duplicate_of:
         candidate["duplicate_of"] = duplicate_of
     # Relative-time prose is detected on the summary as it will be STORED
@@ -1055,6 +1177,9 @@ def capture_project_memory_candidate(
         record = approved.get("record", {}) if isinstance(approved.get("record"), dict) else {}
         candidate = approved.get("candidate", candidate) if isinstance(approved.get("candidate"), dict) else candidate
         auto_approved = True
+    review_reason = "" if auto_approved else _capture_review_reason(
+        candidate, policy, duplicate_of=duplicate_of, relative_phrase=relative_phrase, force_review=force_review
+    )
     return {
         "schema_version": PROJECT_MEMORY_CAPTURE_SCHEMA_VERSION,
         "captured": True,
@@ -1062,6 +1187,8 @@ def capture_project_memory_candidate(
         "candidate": candidate,
         "record": record,
         "policy": policy,
+        "receipt_state": _capture_receipt_state(paths, record),
+        **({"review_reason": review_reason} if review_reason else {}),
         "capture_receipt": {
             "schema_version": "memory_capture_receipt/v1",
             "subject_principal": candidate.get("identity", {}).get("subject_principal") if isinstance(candidate.get("identity"), dict) else None,
@@ -1076,6 +1203,57 @@ def capture_project_memory_candidate(
             "it is not execution, review, CI, merge, or Hermes internal-memory evidence."
         ),
     }
+
+
+def _capture_review_reason(
+    candidate: dict[str, Any],
+    policy: dict[str, object],
+    *,
+    duplicate_of: str,
+    relative_phrase: str,
+    force_review: bool,
+) -> str:
+    """Why a captured candidate stopped short of auto-safe approval, first match wins."""
+    safety = candidate.get("safety", {}) if isinstance(candidate.get("safety"), dict) else {}
+    if safety.get("status") != "safe":
+        return "unsafe_content"
+    if relative_phrase:
+        return "relative_time_phrase"
+    if duplicate_of:
+        return "duplicate"
+    if force_review:
+        return "derived_content"
+    if not bool(policy.get("auto_approve_safe")):
+        return "policy_review_first"
+    return "unknown"
+
+
+def _capture_receipt_state(paths: OmhPaths, record: dict[str, object]) -> str:
+    """The furthest durability receipt this capture observed (docs/MEMORY.md).
+
+    Each step is re-read from disk rather than inferred from the call that
+    wrote it: the record file, then the index entry addressing it, then the
+    same replay evaluator recall uses. A step that cannot be confirmed stops
+    the receipt at the state before it.
+    """
+    record_id = str(record.get("record_id", "") or "")
+    if not record_id:
+        return "candidate_persisted"
+    record_path = _memory_record_path(paths, record_id)
+    stored, error = read_json_object_result(record_path)
+    if stored is None or error is not None:
+        return "candidate_persisted"
+    index, error = read_json_object_result(paths.memory_index_path)
+    record_files = index.get("record_files", []) if isinstance(index, dict) and error is None else []
+    if record_path.relative_to(paths.memory_dir).as_posix() not in record_files:
+        return "approved_record_persisted"
+    evaluation = _evaluate_memory_artifact(
+        stored,
+        paths=paths,
+        now=datetime.now(timezone.utc),
+        review_resolver=_project_memory_review_resolver(paths),
+    )
+    return "replay_ready" if evaluation.get("eligible") is True else "indexes_refreshed"
 
 
 def build_project_memory_review(
@@ -1640,6 +1818,41 @@ def _find_duplicate_record(paths: OmhPaths, summary: str, *, now: datetime | Non
         if _normalized_summary_key(str(record.get("summary", ""))) == key:
             return str(record.get("record_id", ""))
     return ""
+
+
+def _duplicate_held_in_confinement(paths: OmhPaths, candidate: dict[str, object], *, now: datetime | None = None) -> str:
+    """Record id of a non-expired same-summary record in the candidate's own scope and principal.
+
+    The cross-scope match `_find_duplicate_record` returns is a reviewer's
+    hint; it is the wrong answer for a path that persists nothing on a match,
+    because a record confined to another project or another principal is
+    never recalled under this candidate's lens. Same scope (kind and ref) and
+    same subject principal (both absent, or equal) is what "held" means here.
+    """
+    key = _normalized_summary_key(str(candidate.get("summary", "")))
+    if not key:
+        return ""
+    now = now if now is not None else datetime.now(timezone.utc)
+    scope = candidate.get("scope") if isinstance(candidate.get("scope"), dict) else {}
+    principal = _subject_principal(candidate)
+    for record in _read_project_memory_records(paths):
+        if _classify_record_expiry(record, now=now) == "expired":
+            continue
+        if _normalized_summary_key(str(record.get("summary", ""))) != key:
+            continue
+        record_scope = record.get("scope") if isinstance(record.get("scope"), dict) else {}
+        if record_scope != scope or _subject_principal(record) != principal:
+            continue
+        return str(record.get("record_id", ""))
+    return ""
+
+
+def _subject_principal(artifact: dict[str, object]) -> str | None:
+    identity = artifact.get("identity")
+    if not isinstance(identity, dict):
+        return None
+    value = identity.get("subject_principal")
+    return str(value) if value else None
 
 
 def build_memory_rollup(
@@ -3263,6 +3476,9 @@ def validate_project_memory_recall_pack(value: Any, *, label: str = "memory_reca
     # the full scalar-only shape.
     if "attention" in value:
         _validate_context_map(value.get("attention"), _RECALL_ATTENTION_KEYS, errors, f"{label}.attention")
+    # Present only when the active-tier fallback served the pack.
+    if "query_fallback" in value:
+        _validate_context_map(value.get("query_fallback"), _RECALL_QUERY_FALLBACK_KEYS, errors, f"{label}.query_fallback")
     _validate_context_map(value.get("task_ref"), _PROJECT_MEMORY_TASK_REF_KEYS, errors, f"{label}.task_ref")
     if not isinstance(value.get("truncated"), bool):
         errors.append(f"{label}.truncated must be a boolean")
@@ -3994,7 +4210,7 @@ def _days_after(created_at: str, days: int | None) -> str:
 
 
 def _normalize_memory_mode(value: str | None) -> str:
-    mode = str(value or "review-first").strip()
+    mode = str(value or PROJECT_MEMORY_DEFAULT_MODE).strip()
     if mode not in PROJECT_MEMORY_MODES:
         raise ValueError(f"unsupported memory mode: {mode}; expected one of {', '.join(PROJECT_MEMORY_MODES)}")
     return mode

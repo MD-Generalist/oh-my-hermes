@@ -152,7 +152,10 @@ class RetrievalCorpusCoverageTests(unittest.TestCase):
     def test_the_corpus_covers_every_named_retrieval_interaction(self) -> None:
         required = {
             "exact_and_partial_relevance",
-            "no_match_yields_an_empty_pack_with_named_reasons",
+            "no_match_falls_back_to_the_active_tier",
+            "no_match_fallback_leaves_reference_keyword_gated",
+            "partial_match_never_falls_back",
+            "duplicate_records_collapse_to_the_newest",
             "same_topic_disagreement_names_the_cut_sibling",
             "supersession_removes_the_corrected_revision",
             "expired_volatile_record_leaves_the_pack",

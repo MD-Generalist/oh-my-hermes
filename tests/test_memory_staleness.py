@@ -187,7 +187,10 @@ class HandoffFreshnessWarningTests(unittest.TestCase):
     def test_a_pack_with_nothing_to_say_is_still_omitted_from_the_handoff(self) -> None:
         with TemporaryDirectory() as tmp:
             paths = resolve_paths(Path(tmp) / ".omh", Path(tmp) / ".hermes")
-            _approved(paths, "Branch names start with agent or claude")
+            record = _approved(paths, "Branch names start with agent or claude")
+            # Reference tier: a query that matches nothing re-admits only the
+            # active tier, so an active record would give this pack something to say.
+            memory_workflow.apply_memory_attention_change(paths, record["record_id"], tier="reference")
 
             self.assertIsNone(
                 memory_recall_pack_for_handoff(paths, "wholly unrelated payment gateway topic"),
