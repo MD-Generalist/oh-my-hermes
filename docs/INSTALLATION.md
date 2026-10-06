@@ -2781,8 +2781,10 @@ Before calling the bot integration ready, verify these points:
   dispatches to Codex.
 - `omh memory pack` attaches `context_pack` only when no unresolved memory
   conflict remains; otherwise the handoff contains `context_pack_blocked`.
-- `omh memory apply --batch <file> --dry-run` previews approved memory updates
-  without writing, and the real apply writes only under `.omh/memory/`.
+- `omh memory apply --batch <file>` is a compatibility report: it returns
+  `review_required` and never writes. Reviewed scope updates go through
+  `omh memory batch-stage`, `batch-review`, and `batch-apply --apply`, which
+  writes only under `.omh/memory/`.
 - `omh coding lifecycle result --run <run-id> --result completed` is rejected
   until `omh coding lifecycle dispatch --run <run-id>` records dispatch
   observation.

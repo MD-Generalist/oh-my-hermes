@@ -4,6 +4,24 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **One memory admission path, called in-process by the tool.** Capture, the
+  confinement-scoped duplicate check, the candidate write, auto-safe approval
+  and the durability receipt move from `src/workflows/memory.py` into the
+  plugin bundle (`memory_admission`, with the store files in
+  `memory_store_io`); the control plane keeps every public name as an adapter.
+  `omh_memory(action="capture")` calls admission directly instead of locating
+  and spawning the installed `omh` console script, so a Hermes session whose
+  `omh` is missing, older, or off `PATH` can still remember.
+  `omh_cli_unavailable` leaves the tool's status set and a store fault is
+  `error` naming the exception class. A before/after run of capture → review →
+  approve → status → recall produced identical JSON and store files (modulo
+  ids and timestamps). CONTEXT.md gains **Memory admission**. The v1
+  scope-snapshot store turned out to have no write path left: its seven
+  unreachable update helpers are deleted, inspect / pack / handoff context
+  packs were already a read-only projection of reviewed records and
+  batch-applied scope items (output unchanged), and INSTALLATION.md no longer
+  claims `omh memory apply` previews or writes.
+
 - **Portable overrides live on the skill they replace.** The first table
   moved behind the `SkillRecord` facade: `SkillDefinition` gains
   `portable_overrides` (section → replacement lines), replacing the

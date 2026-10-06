@@ -280,6 +280,14 @@ when `memory.provider: omh` is selected in Hermes config. Hermes runs at most
 one external provider, so the key is a slot, not a list.
 _Avoid_: claiming the slot when another product holds it
 
+**Memory admission**:
+The one path from a stated fact to a replay-ready record: capture, the
+confinement-scoped duplicate check, the candidate write, auto-safe approval,
+and the receipt. Owned by the plugin bundle (`memory_admission`), called
+in-process by the `omh_memory` tool and through adapters by the `omh memory`
+CLI.
+_Avoid_: a second write path, a subprocess from the plugin into the CLI
+
 **HUD payload**:
 The metadata-only JSON projection built by `read_omh_hud()` from OMH home and
 Hermes home — plugin readiness, activity rows, the plan todo, display lines.
