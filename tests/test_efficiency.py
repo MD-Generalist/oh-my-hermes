@@ -25,6 +25,7 @@ from omh.workflows import hermes_planning as hermes_planning_module
 from omh.workflows import learning_candidate as learning_candidate_module
 from omh.wrapper import contract as contract_module
 from omh.wrapper.route_hints import build_chat_route_hint_payload
+from omh.maintenance.drift import derive_ceiling, limits
 from omh.paths import OmhPaths
 from omh.release import (
     AWARENESS_PRIMER_CONTEXT_CHAR_LIMIT,
@@ -325,11 +326,24 @@ class EfficiencyContractTests(unittest.TestCase):
         # next step (policy and reason in src/maintenance/release.py). The
         # literal must stay a literal for `tests/test_drift_registry.py`, so
         # this is what keeps it equal to the derivation.
-        step = FULL_PROFILE_SKILL_BODY_CEILING_STEP_CHARS
-        with_headroom = -(
-            -FULL_PROFILE_SKILL_BODY_MEASURED_CHARS * (100 + FULL_PROFILE_SKILL_BODY_HEADROOM_PERCENT) // 100
+        self.assertEqual(
+            FULL_PROFILE_SKILL_BODY_CHAR_LIMIT,
+            derive_ceiling(
+                FULL_PROFILE_SKILL_BODY_MEASURED_CHARS,
+                FULL_PROFILE_SKILL_BODY_HEADROOM_PERCENT,
+                FULL_PROFILE_SKILL_BODY_CEILING_STEP_CHARS,
+            ),
         )
-        self.assertEqual(FULL_PROFILE_SKILL_BODY_CHAR_LIMIT, -(-with_headroom // step) * step)
+        body = limits()["full_profile_skill_body_chars"]
+        self.assertEqual(
+            (body.kind, body.value, body.measured, body.step),
+            (
+                "ceiling",
+                FULL_PROFILE_SKILL_BODY_CHAR_LIMIT,
+                FULL_PROFILE_SKILL_BODY_MEASURED_CHARS,
+                FULL_PROFILE_SKILL_BODY_CEILING_STEP_CHARS,
+            ),
+        )
         self.assertGreater(FULL_PROFILE_SKILL_BODY_HEADROOM_PERCENT, 0)
         # The headroom must hold at least one average body at the measurement,
         # or an ordinary new skill forces a raise again and the ceiling is a

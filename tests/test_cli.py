@@ -29,6 +29,7 @@ from omh.config_adapter import (
 from omh.maintenance.doctor import _identity_conflicts_check
 from omh.maintenance.update_check import DEFAULT_UPDATE_CHECK_MODE
 from omh.paths import resolve_paths
+from omh.quality.routing_precision import build_routing_precision_demo
 from project_identity_fixture import pin_review_first
 from omh.plugin_bundle.omh.memory_governance import canonical_payload_digest
 from omh.record_revision import MAX_MUTATION_ID_CHARS
@@ -4783,8 +4784,10 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
             self.assertEqual(gates["context_brief_coverage"]["status"], "passed")
             self.assertIn("12/12 context brief cases passing", gates["context_brief_coverage"]["summary"])
             self.assertEqual(gates["routing_precision"]["status"], "passed")
-            self.assertIn("428/428 negative-control cases", gates["routing_precision"]["summary"])
-            self.assertIn("627/627 interventions", gates["routing_precision"]["summary"])
+            routing = build_routing_precision_demo(source="discord")["summary"]
+            negatives, interventions = routing["case_count"], routing["intervention_case_count"]
+            self.assertIn(f"{negatives}/{negatives} negative-control cases", gates["routing_precision"]["summary"])
+            self.assertIn(f"{interventions}/{interventions} interventions", gates["routing_precision"]["summary"])
             self.assertIn("overroutes 0", gates["routing_precision"]["summary"])
             self.assertIn("missed interventions 0", gates["routing_precision"]["summary"])
             self.assertEqual(gates["localized_chat_copy"]["status"], "passed")
@@ -4840,8 +4843,11 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
             self.assertIn("Grounded score: 50/50 (avg 10.0)", stdout)
             self.assertIn("Chat card coverage: 90/90 (generic ack 0)", stdout)
             self.assertIn("Context brief coverage: 12/12 (route hints 11, catalog hints 1)", stdout)
+            routing = build_routing_precision_demo(source="discord")["summary"]
+            negatives, interventions = routing["case_count"], routing["intervention_case_count"]
             self.assertIn(
-                "Routing precision: 428/428 negative controls, 627/627 interventions "
+                f"Routing precision: {negatives}/{negatives} negative controls, "
+                f"{interventions}/{interventions} interventions "
                 "(overroutes 0, catalog pickers 0, generic ack 0, missed interventions 0)",
                 stdout,
             )
@@ -4890,12 +4896,18 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
             self.assertEqual(payload["summary"]["route_hint_mismatch_count"], 0)
             self.assertEqual(payload["summary"]["context_brief_coverage_passing"], 12)
             self.assertEqual(payload["summary"]["context_brief_coverage_total"], 12)
-            # Includes the measured omh-docs and github-issue-intake cases.
-            self.assertEqual(payload["summary"]["routing_precision_passing"], 428)
-            self.assertEqual(payload["summary"]["routing_precision_total"], 428)
+            # Routing totals agree with their producer (`routing` above); the
+            # reviewed pins are in tests/test_routing_precision.py and
+            # src/maintenance/drift.py.
+            self.assertEqual(payload["summary"]["routing_precision_passing"], routing["case_count"])
+            self.assertEqual(payload["summary"]["routing_precision_total"], routing["case_count"])
             self.assertEqual(payload["summary"]["routing_precision_overroute_count"], 0)
-            self.assertEqual(payload["summary"]["routing_precision_intervention_passing"], 627)
-            self.assertEqual(payload["summary"]["routing_precision_intervention_total"], 627)
+            self.assertEqual(
+                payload["summary"]["routing_precision_intervention_passing"], routing["intervention_case_count"]
+            )
+            self.assertEqual(
+                payload["summary"]["routing_precision_intervention_total"], routing["intervention_case_count"]
+            )
             self.assertEqual(payload["summary"]["routing_precision_missed_intervention_count"], 0)
             self.assertEqual(payload["summary"]["localized_chat_copy_passing"], 8)
             self.assertEqual(payload["summary"]["localized_chat_copy_total"], 8)

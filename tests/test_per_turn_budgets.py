@@ -27,18 +27,13 @@ from omh.commands.main import build_parser
 from omh.install.installer import RECONCILE_CONTEXT_COST_NOTE, _context_cost_warning
 from omh.maintenance import per_turn_context
 from omh.maintenance.advisory import check_installed_skill_context_weight
-from omh.maintenance.drift import budget_metrics
+from omh.maintenance.drift import budget_metrics, derive_ceiling, limits
 from omh.maintenance.release import (
     AWARENESS_PRIMER_CONTEXT_CHAR_LIMIT,
     FULL_PROFILE_SKILL_BODY_HEADROOM_PERCENT,
     FULL_PROFILE_SKILL_BODY_REPEATED_CEILING_STEP_CHARS,
     FULL_PROFILE_SKILL_BODY_REPEATED_CHAR_LIMIT,
     FULL_PROFILE_SKILL_BODY_REPEATED_MEASURED_CHARS,
-    PLUGIN_TOOL_SCHEMA_CHAR_LIMIT,
-    PRE_LLM_CALL_CONTEXT_CHAR_LIMIT,
-    PRE_LLM_CALL_CONTEXT_FALLBACK_CHAR_LIMIT,
-    SKILL_INDEX_CHAR_LIMIT,
-    SKILL_INDEX_LINE_CHAR_LIMIT,
 )
 from omh.plugin_bundle.omh.awareness import awareness_primer_context
 from omh.plugin_bundle.omh.hooks import llm_hooks
@@ -66,19 +61,18 @@ class PerRequestBudgetRegistryTests(unittest.TestCase):
         self.assertEqual(tuple(names[: len(PER_REQUEST_BUDGETS)]), PER_REQUEST_BUDGETS)
 
     def test_each_per_request_budget_holds_on_the_tree(self) -> None:
-        limits = {
-            "skill_index_chars": SKILL_INDEX_CHAR_LIMIT,
-            "skill_index_line_max_chars": SKILL_INDEX_LINE_CHAR_LIMIT,
-            "plugin_tool_schema_chars": PLUGIN_TOOL_SCHEMA_CHAR_LIMIT,
-            "pre_llm_call_context_chars_max": PRE_LLM_CALL_CONTEXT_CHAR_LIMIT,
-            "pre_llm_call_context_fallback_chars_max": PRE_LLM_CALL_CONTEXT_FALLBACK_CHAR_LIMIT,
-        }
+        # Zero-slack ratchets: no headroom step and no reviewed exception
+        # (policy in src/maintenance/release.py beside the body ceiling).
+        ledger = limits()
         for metric in budget_metrics():
-            if metric.name in limits:
+            if metric.name in PER_REQUEST_BUDGETS:
                 with self.subTest(metric=metric.name):
-                    self.assertEqual(metric.limit, limits[metric.name])
+                    limit = ledger[metric.name]
+                    self.assertEqual(limit.kind, "ratchet")
+                    self.assertIsNone(limit.step)
+                    self.assertEqual(limit.measured, limit.value)
                     self.assertEqual(metric.reviewed_exception, 0)
-                    self.assertLessEqual(metric.live(), metric.limit)
+                    self.assertLessEqual(metric.live(), limit.value)
 
     def test_the_body_total_is_labelled_as_install_footprint(self) -> None:
         body = next(metric for metric in budget_metrics() if metric.name == "full_profile_skill_body_chars")
@@ -93,11 +87,14 @@ class PerRequestBudgetRegistryTests(unittest.TestCase):
         )
         self.assertEqual(repeated.limit, FULL_PROFILE_SKILL_BODY_REPEATED_CHAR_LIMIT)
         self.assertEqual(repeated.reviewed_exception, 0)
-        step = FULL_PROFILE_SKILL_BODY_REPEATED_CEILING_STEP_CHARS
-        with_headroom = -(
-            -FULL_PROFILE_SKILL_BODY_REPEATED_MEASURED_CHARS * (100 + FULL_PROFILE_SKILL_BODY_HEADROOM_PERCENT) // 100
+        limit = limits()["full_profile_skill_body_repeated_chars"]
+        self.assertEqual(limit.kind, "ceiling")
+        self.assertEqual(limit.measured, FULL_PROFILE_SKILL_BODY_REPEATED_MEASURED_CHARS)
+        self.assertEqual(limit.step, FULL_PROFILE_SKILL_BODY_REPEATED_CEILING_STEP_CHARS)
+        self.assertEqual(
+            FULL_PROFILE_SKILL_BODY_REPEATED_CHAR_LIMIT,
+            derive_ceiling(limit.measured, FULL_PROFILE_SKILL_BODY_HEADROOM_PERCENT, limit.step),
         )
-        self.assertEqual(FULL_PROFILE_SKILL_BODY_REPEATED_CHAR_LIMIT, -(-with_headroom // step) * step)
 
     def test_repeated_body_measurement_is_the_producer_floor(self) -> None:
         # The measurement is a floor as well as the base of the ceiling: a

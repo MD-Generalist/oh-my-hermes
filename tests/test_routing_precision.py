@@ -17,22 +17,30 @@ class RoutingPrecisionTests(unittest.TestCase):
         self.assertEqual(payload["schema_version"], "routing_precision/v1")
         self.assertEqual(payload["source"], "discord")
         self.assertTrue(payload["summary"]["all_passing"])
+        # The two reviewed pins for the routing corpus totals: these literals
+        # and `expected=` in src/maintenance/drift.py. Every other count
+        # assertion compares against this producer instead of a literal.
         # omh-docs contributes four measured negatives and five measured interventions.
         self.assertEqual(payload["summary"]["case_count"], 428)
-        self.assertEqual(payload["summary"]["passing_count"], 428)
-        self.assertEqual(payload["summary"]["negative_case_count"], 428)
-        self.assertEqual(payload["summary"]["negative_passing_count"], 428)
+        self.assertEqual(payload["summary"]["passing_count"], payload["summary"]["case_count"])
+        self.assertEqual(payload["summary"]["negative_case_count"], payload["summary"]["case_count"])
+        self.assertEqual(payload["summary"]["negative_passing_count"], payload["summary"]["case_count"])
         self.assertEqual(payload["summary"]["direct_answer_count"], 167)
         self.assertEqual(payload["summary"]["file_lookup_count"], 9)
         self.assertEqual(payload["summary"]["overroute_count"], 0)
         self.assertEqual(payload["summary"]["catalog_picker_count"], 0)
         self.assertEqual(payload["summary"]["generic_ack_count"], 0)
         self.assertEqual(payload["summary"]["intervention_case_count"], 627)
-        self.assertEqual(payload["summary"]["intervention_passing_count"], 627)
+        self.assertEqual(
+            payload["summary"]["intervention_passing_count"], payload["summary"]["intervention_case_count"]
+        )
         self.assertEqual(payload["summary"]["missed_intervention_count"], 0)
         self.assertEqual(payload["summary"]["intervention_generic_ack_count"], 0)
-        self.assertEqual(payload["summary"]["total_case_count"], 1055)
-        self.assertEqual(payload["summary"]["total_passing_count"], 1055)
+        self.assertEqual(
+            payload["summary"]["total_case_count"],
+            payload["summary"]["case_count"] + payload["summary"]["intervention_case_count"],
+        )
+        self.assertEqual(payload["summary"]["total_passing_count"], payload["summary"]["total_case_count"])
         self.assertEqual(routing_precision_errors(payload), [])
         self.assertIn("over-intervention and missed-intervention guards", payload["claim_boundary"])
 
@@ -443,8 +451,10 @@ class RoutingPrecisionTests(unittest.TestCase):
         self.assertEqual(status, 0, stderr)
         self.assertEqual(stderr, "")
         self.assertIn("OMH routing precision", stdout)
-        self.assertIn("428/428 negative-control cases passing", stdout)
-        self.assertIn("Interventions: 627/627 expected workflow cases passing", stdout)
+        summary = build_routing_precision_demo(source="discord")["summary"]
+        negatives, interventions = summary["case_count"], summary["intervention_case_count"]
+        self.assertIn(f"{negatives}/{negatives} negative-control cases passing", stdout)
+        self.assertIn(f"Interventions: {interventions}/{interventions} expected workflow cases passing", stdout)
         self.assertIn("overroutes: 0", stdout)
         self.assertIn("catalog pickers: 0", stdout)
         self.assertIn("generic ack: 0", stdout)

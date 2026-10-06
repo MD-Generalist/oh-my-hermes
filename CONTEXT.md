@@ -485,6 +485,13 @@ The two named guard corpora for router changes: `ROUTING_PRECISION_CASES`
 `missed_intervention_count`). Every trigger change ships cases in both.
 _Avoid_: underroute (that name matches nothing in the code)
 
+**Budget ledger**:
+The one module (`src/maintenance/drift.py`) that measures every per-turn and
+footprint number, holds its limit and kind (`ratchet` | `ceiling`), and renders
+the verdict (`drift_report()`, also `verdict`). `skill_content_smoke` and
+`omh release drift` read their budget verdicts from it.
+_Avoid_: a second comparer, a count or headroom formula restated in a test
+
 **Managed artifact**:
 A file OMH installs and refreshes under a host-owned root and may safely
 overwrite on setup/update — the plugin bundle, the widget file, the identity

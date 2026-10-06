@@ -4,6 +4,23 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **One budget ledger.** `src/maintenance/drift.py` is now the only place a
+  per-turn or install-footprint budget is compared. `skill_content_smoke`
+  used to re-compare eight limits privately — the awareness primer and
+  workflow contexts, the role contexts, the capability items — so `omh release
+  drift` never reported them; it now reads `drift_report()` for them and
+  `omh release drift` lists 30 checks instead of 25 (no limit value changed).
+  Each budget carries a kind (`ratchet` | `ceiling`); `derive_ceiling()` is
+  the headroom rule as code, replacing the two copies tests kept, and
+  `limits()`, `measure()` and `verdict` expose the ledger. The routing-corpus
+  totals keep reviewed pins in two places only — the `expected=` values in
+  `drift.py` with their reason histories and the two literals at the top of
+  `tests/test_routing_precision.py`; `tests/test_cli.py`,
+  `tests/test_release_smoke.py` and `tests/test_hermes_ux_quality.py` now
+  compare their payloads and `NNN/NNN` strings against
+  `build_routing_precision_demo()`, so a new case costs two edits where it
+  cost about thirty. CLAUDE.md and CONTEXT.md (**Budget ledger**) describe
+  the new shape.
 - **The run-record format has one owner.**
   `src/plugin_bundle/omh/run_records.py` defines every run, dispatch and
   receipt file name, every schema version, and the shared progress, profile,
