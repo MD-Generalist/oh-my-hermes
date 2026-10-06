@@ -26,6 +26,7 @@ from omh.plugin_bundle.omh.awareness_delivery import read_awareness_delivery, re
 from omh.plugin_bundle.omh import register
 from omh.plugin_bundle.omh.awareness import awareness_primer_context
 from omh.plugin_bundle.omh.hooks import llm_hooks
+from omh.plugin_bundle.omh import turn_budget
 
 # Hermes' own limits (`hermes_cli/plugins_dispatch.py`), copied because the
 # host is not importable here. The per-section cap is what `max_chars` may not
@@ -287,7 +288,7 @@ class PerTurnDeliveryTests(SectionTestCase):
         # Over the host's per-section cap the host drops the text after
         # rendering it, so the session must keep the per-turn primer.
         oversized = "p" * (llm_hooks.AWARENESS_SECTION_MAX_CHARS + 1)
-        with mock.patch.object(llm_hooks, "awareness_primer_context", return_value=oversized):
+        with mock.patch.object(turn_budget, "awareness_primer_context", return_value=oversized):
             llm_hooks.awareness_system_prompt_section(_session_info("s-oversized"))
             self.assertIn(oversized, self.first_turn_context("s-oversized"))
 

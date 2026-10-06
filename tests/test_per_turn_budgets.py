@@ -37,6 +37,7 @@ from omh.maintenance.release import (
 )
 from omh.plugin_bundle.omh.awareness import awareness_primer_context
 from omh.plugin_bundle.omh.hooks import llm_hooks
+from omh.plugin_bundle.omh import turn_budget
 from omh.plugin_bundle.omh.skill_shortlist import skill_candidate_line, skill_candidates_for_turn
 from omh.plugin_bundle.omh.tools import BUILTIN_TOOL_NAMES
 from omh.plugin_bundle.omh.tools.todo_tool import OMH_TODO_SCHEMA
@@ -531,7 +532,7 @@ class PreLlmCallScenarioTests(unittest.TestCase):
 
     def test_a_larger_primer_moves_the_fallback_maximum(self) -> None:
         before = per_turn_context.pre_llm_call_context_fallback_chars_max()
-        with mock.patch.object(llm_hooks, "awareness_primer_context", return_value="p" * 2000):
+        with mock.patch.object(turn_budget, "awareness_primer_context", return_value="p" * 2000):
             after = per_turn_context.pre_llm_call_context_fallback_chars_max()
         self.assertEqual(after - before, 2000 - len(awareness_primer_context()))
 
@@ -553,7 +554,7 @@ class PreLlmCallScenarioTests(unittest.TestCase):
 
     def test_a_larger_injected_part_moves_the_measurement(self) -> None:
         before = per_turn_context.pre_llm_call_context_scenario_chars()["first_turn_without_section"]
-        with mock.patch.object(llm_hooks, "awareness_primer_context", return_value="p" * 2000):
+        with mock.patch.object(turn_budget, "awareness_primer_context", return_value="p" * 2000):
             after = per_turn_context.pre_llm_call_context_scenario_chars()["first_turn_without_section"]
         self.assertEqual(after - before, 2000 - len(awareness_primer_context()))
 
@@ -561,7 +562,7 @@ class PreLlmCallScenarioTests(unittest.TestCase):
         # The section scenarios are the default host; a primer that grows must
         # not move them, or the primer is still riding the per-turn context.
         before = per_turn_context.pre_llm_call_context_scenario_chars()
-        with mock.patch.object(llm_hooks, "awareness_primer_context", return_value="p" * 2000):
+        with mock.patch.object(turn_budget, "awareness_primer_context", return_value="p" * 2000):
             after = per_turn_context.pre_llm_call_context_scenario_chars()
         for name in before:
             if name.endswith("_without_section"):

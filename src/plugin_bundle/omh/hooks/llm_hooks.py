@@ -14,7 +14,6 @@ import threading
 from ..awareness import (
     awareness_context_match_degradation,
     awareness_context_matches_message,
-    awareness_primer_context,
     awareness_route_hint,
     awareness_route_hint_context_from_payload,
     route_hint_for_installed_skills,
@@ -48,6 +47,7 @@ from ..todo_reconciliation import (
     continuation_claim_without_resume,
     open_todo_reminder,
 )
+from .. import turn_budget
 from ..turn_authorship import host_synthesized_turn
 from ..status_board_reader import (
     last_running_work_board_fingerprint,
@@ -243,7 +243,8 @@ def _record_delivery(
 # - an id evicted past `_AWARENESS_SECTION_SESSION_CAP`.
 AWARENESS_SECTION_ID = "omh.awareness"
 # The host's per-section ceiling (`MAX_SYSTEM_PROMPT_SECTION_CHARS`). The
-# primer's own budget is `AWARENESS_PRIMER_CONTEXT_CHAR_LIMIT`, far below it.
+# primer's own budget is `AWARENESS_PRIMER_CONTEXT_CHAR_LIMIT` (`turn_budget.py`),
+# far below it.
 AWARENESS_SECTION_MAX_CHARS = 4000
 # A render alone does not prove the session's own prompt carries the
 # section. A routed background-review fork builds its own prompt under the
@@ -286,7 +287,7 @@ def awareness_system_prompt_section(session_info: object) -> str:
     The text is the same for every session. `session_info` is read only for
     the session id, to record that a prompt built under it carries the primer.
     """
-    primer = awareness_primer_context()
+    primer = turn_budget.render("primer")
     session_id = str(session_info.get("session_id") or "") if isinstance(session_info, Mapping) else ""
     if session_id and 0 < len(primer.strip()) <= AWARENESS_SECTION_MAX_CHARS:
         with _awareness_section_lock:
@@ -642,7 +643,7 @@ def pre_llm_call(**kwargs) -> dict[str, object] | None:
         and (bool(route_hint_context) or message_matches_awareness or is_first_turn)
     )
     if should_include_awareness:
-        primer = awareness_primer_context()
+        primer = turn_budget.render("primer")
         if _awareness_section_carries_primer(session_id, is_first_turn=is_first_turn):
             # The primer is in this session's system prompt. The first turn
             # that relies on it is the section's delivery for `omh doctor`,
