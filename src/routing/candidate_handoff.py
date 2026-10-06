@@ -34,7 +34,8 @@ from .dispatch_evidence import OWN_EVIDENCE_FLOOR, own_evidence_score
 from .input_language import SUPPORT_MODEL_SELECTION_REQUIRED
 from .lexical_shortlist import LEXICAL_SCORE_FLOOR, lexical_anchor_terms, lexical_ranking, only_held_back_overlap
 from .policy import skill_is_negated
-from .recommend import everyday_sense_withheld, offers_itself_withheld, recommendation_for_definition
+from .query import RoutingQuery
+from .recommend import recommendation_for_definition
 from ..skills.catalog import routable_definitions
 from ..workflows.hermes_planning import is_coding_shaped_task
 
@@ -223,6 +224,8 @@ def _lexical_shortlist(
             candidates.append(_candidate(recommendation))
     named = {str(candidate.get("skill") or "") for candidate in candidates}
     definitions = {definition.name: definition for definition in routable_definitions()}
+    # Built on the first skill that needs it, then shared by every later one.
+    query: RoutingQuery | None = None
     for skill, score in lexical_ranking(message):
         if len(candidates) >= MAX_CANDIDATES or score < LEXICAL_SCORE_FLOOR:
             break
@@ -234,7 +237,8 @@ def _lexical_shortlist(
         # A skill whose only shared words are an everyday-English phrase of
         # its own is not offered back by word overlap either; see
         # `EVERYDAY_SENSE_PHRASES` in `policy.py`.
-        if everyday_sense_withheld(message, skill):
+        query = query or RoutingQuery.from_message(message)
+        if query.everyday_sense_withheld(skill):
             continue
         # After a declined dispatch the ranking is admitted as it stands --
         # the router was confident enough to have dispatched, and the ranking
@@ -245,7 +249,7 @@ def _lexical_shortlist(
         if declined_dispatch:
             if only_held_back_overlap(message, skill):
                 continue
-        elif not lexical_anchor_terms(message, skill) or offers_itself_withheld(message, skill):
+        elif not lexical_anchor_terms(message, skill) or query.offers_itself_withheld(skill):
             continue
         named.add(skill)
         candidates.append(

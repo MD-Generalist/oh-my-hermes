@@ -78,12 +78,12 @@ from .policy import _github_event_ops_guard_applies
 from .policy import _github_issue_intake_guard_applies
 from .policy import _invocation_token
 from .recommend import (
-    everyday_sense_withheld,
     has_strong_named_catalog_owner,
     recommendation_for_definition,
     recommend_skills,
     user_trigger_pack_phrase_match,
 )
+from .query import RoutingQuery
 from .route_plan import (
     build_workflow_route_plan,
     compact_workflow_route_plan,
@@ -1911,6 +1911,17 @@ def public_chat_route_payload(
     )
 
 
+def recommend_route_summary(message: str) -> dict[str, object]:
+    """The chat route's verdict for `message`, as the recommend surfaces show it.
+
+    `omh recommend`, the `omh_recommend` plugin tool, and the MCP bridge rank
+    with `recommend_skills`; this is the decision chat dispatch makes on top of
+    that ranking, so a reader of either surface sees the same answer.
+    """
+    route = public_chat_route_payload(message)
+    return {key: route[key] for key in ("action", "selected_skill", "candidate_skill", "confidence")}
+
+
 def _names_skill_display_label(message: str, skill: str) -> bool:
     """The message names `skill` by its rendered label (`ulw-context`, `omh-code-review`)."""
     if not skill:
@@ -1998,6 +2009,9 @@ def _route_chat_message_cached(
     routing_message = _with_canonical_display_names(scrub_diagnostic_status_text(executable_routing_text(message)))
     if not routing_message.strip():
         return _direct_answer_decision(message, source=source, min_confidence=min_confidence).to_dict()
+    # Built once: the fast paths and the scorer below read its stages instead
+    # of each re-deriving the prep chain from `routing_message`.
+    query = RoutingQuery.from_message(routing_message)
     trivial_decision = _trivial_message_fast_path_decision(
         routing_message,
         source=source,
@@ -2042,6 +2056,7 @@ def _route_chat_message_cached(
             fast_operator_decision = _operator_surface_fast_path_decision(
                 message,
                 routing_message=routing_message,
+                query=query,
                 source=source,
                 min_confidence=min_confidence,
                 allow_explicit_skill=True,
@@ -2155,6 +2170,7 @@ def _route_chat_message_cached(
     fast_operator_surface_decision = _operator_surface_fast_path_decision(
         message,
         routing_message=routing_message,
+        query=query,
         source=source,
         min_confidence=min_confidence,
     )
@@ -2226,6 +2242,7 @@ def _route_chat_message_cached(
     fast_guarded_operator_decision = _guarded_operator_fast_path_decision(
         message,
         routing_message=routing_message,
+        query=query,
         source=source,
         min_confidence=min_confidence,
     )
@@ -2276,7 +2293,7 @@ def _route_chat_message_cached(
             return late_ulw_alias_decision.to_dict()
 
     definitions = routable_definitions()
-    full_recommendations = recommend_skills(routing_message, limit=len(definitions))
+    full_recommendations = recommend_skills(query, limit=len(definitions))
     explicit_prefix = _has_explicit_invocation_prefix(routing_message)
     explicit_skill = explicit_skill_invocation(routing_message, definitions)
     if explicit_skill and not explicit_prefix and is_missed_route_feedback(routing_message):
@@ -4747,6 +4764,7 @@ def _operator_surface_fast_path_decision(
     message: str,
     *,
     routing_message: str,
+    query: RoutingQuery,
     source: str,
     min_confidence: str,
     allow_explicit_skill: bool = False,
@@ -4769,7 +4787,7 @@ def _operator_surface_fast_path_decision(
     # The fast path matched a phrase the scorer would have withdrawn the skill
     # for ("what is media input on an old VCR"); see `EVERYDAY_SENSE_PHRASES`
     # in `policy.py`.
-    if everyday_sense_withheld(routing_message, selected_skill):
+    if query.everyday_sense_withheld(selected_skill):
         return None
     if selected_skill == "ralplan" and _is_fast_plain_direct_answer_question(routing_message):
         return None
@@ -5558,6 +5576,7 @@ def _guarded_operator_fast_path_decision(
     message: str,
     *,
     routing_message: str,
+    query: RoutingQuery,
     source: str,
     min_confidence: str,
 ) -> ChatRouteDecision | None:
@@ -5589,7 +5608,7 @@ def _guarded_operator_fast_path_decision(
         return None
     if (
         guard.id == "toolbelt_readiness_before_generic_or_visual_fallback"
-        and has_strong_named_catalog_owner(routing_message)
+        and has_strong_named_catalog_owner(query)
     ):
         return None
     if guard.preferred_skills[0] == "feedback-triage" and _feedback_triage_fast_path_blocked(routing_message):

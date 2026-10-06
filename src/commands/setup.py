@@ -121,6 +121,7 @@ from ..release import (
 )
 from ..skin_pack import SKIN_NAME, SkinInstallError, install_skin, is_omh_skin_name, uninstall_skin
 from ..tui_widget_pack import TuiWidgetInstallError, install_tui_widget, uninstall_tui_widget
+from ..routing.chat import recommend_route_summary
 from ..routing.recommend import recommend_skills
 from ..routing.route_plan import build_workflow_route_plan, compact_workflow_route_plan
 from ..runtime.artifacts import read_state_result, update_state
@@ -5083,6 +5084,10 @@ def _print_recommend_summary(payload: dict[str, object]) -> None:
             if path:
                 print(_color("Workflow path", "1;35", use_color))
                 print(f"  {path}")
+    route = payload.get("route")
+    if isinstance(route, dict):
+        route_skill = route.get("selected_skill") or route.get("candidate_skill") or "none"
+        print(f"route: {route.get('action', 'unknown')} -> {route_skill}")
     print(_color("Boundary", "1;32", use_color))
     print("  A recommendation is routing guidance, not execution or verification evidence.")
     print(f"  {tr('en', 'machine_readable')}")
@@ -5744,6 +5749,7 @@ def cmd_recommend(args: argparse.Namespace) -> int:
     )
     if workflow_route_plan:
         payload["workflow_route_plan"] = workflow_route_plan
+    payload["route"] = recommend_route_summary(query)
     if _wants_json(args):
         _print_json(payload)
     else:

@@ -4,6 +4,22 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **The router reads one prepared query.** `RoutingQuery`
+  (`src/routing/query.py`) holds one message's routing stages — executable,
+  scrubbed, routing text, normalized phrase, tokens — built once, with the
+  two withheld-skill predicates as methods. `recommend_skills` accepts a
+  string or a `RoutingQuery` (the cache stays keyed on the string, a hit
+  builds nothing, a miss reuses a passed query), and the router helpers that
+  used to spell the four-step prep chain by hand take the value instead. The
+  chat path builds the query once per message and threads it through the
+  operator fast paths and the lexical shortlist; prep-chain runs over the
+  routing corpora fall from 1,815 to 1,365. Every verdict is unchanged:
+  428/428 negative-control and 627/627 interventions, byte-identical.
+  `omh recommend`, the `omh_recommend` plugin tool and the MCP bridge now also
+  return `route` (`action`, `selected_skill`, `candidate_skill`, `confidence`),
+  the chat dispatch decision for the same message; existing keys are
+  unchanged and `omh_recommend_result/v1` is not bumped. CONTEXT.md gains
+  **Routing query**.
 - **One budget ledger.** `src/maintenance/drift.py` is now the only place a
   per-turn or install-footprint budget is compared. `skill_content_smoke`
   used to re-compare eight limits privately — the awareness primer and

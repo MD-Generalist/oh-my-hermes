@@ -82,7 +82,7 @@ def omh_recommend_handler(args: dict, **kwargs) -> str:
         }
         return json.dumps(attach_public_observation(payload, observation), sort_keys=True)
 
-    recommendations, source, error_type = _recommendations(message, limit)
+    recommendations, route, source, error_type = _recommendations(message, limit)
     payload = {
         "schema_version": "omh_recommend_result/v1",
         "status": "error" if error_type else ("recommended" if recommendations else "no_match"),
@@ -94,6 +94,7 @@ def omh_recommend_handler(args: dict, **kwargs) -> str:
             "raw_prompt_echoed": False,
         },
         "recommendations": recommendations[:limit],
+        "route": route,
         "tool_guidance": (
             "Use this tool when Hermes needs the nearest OMH workflow without asking the user to approve "
             "`omh recommend` or `omh list` shell commands."
@@ -107,18 +108,24 @@ def omh_recommend_handler(args: dict, **kwargs) -> str:
     return json.dumps(attach_public_observation(payload, observation), sort_keys=True)
 
 
-def _recommendations(message: str, limit: int) -> tuple[list[dict[str, Any]], str, str | None]:
+def _recommendations(
+    message: str, limit: int
+) -> tuple[list[dict[str, Any]], dict[str, Any] | None, str, str | None]:
+    # The route is the chat decision on top of the ranking; the standalone
+    # fallback has no router to ask, so it reports `None` rather than a guess.
     try:
+        from omh.routing.chat import recommend_route_summary
         from omh.routing.recommend import recommend_skills
     except (ImportError, ModuleNotFoundError):
-        return _fallback_recommendations(message, limit), "standalone_plugin_bundle_fallback", None
+        return _fallback_recommendations(message, limit), None, "standalone_plugin_bundle_fallback", None
     try:
-        return [_redacted_recommendation(item) for item in recommend_skills(message, limit=limit)], "package_recommend", None
+        recommendations = [_redacted_recommendation(item) for item in recommend_skills(message, limit=limit)]
+        return recommendations, recommend_route_summary(message), "package_recommend", None
     except Exception as exc:
         # The package imported successfully but the delegated call raised. This is a
         # package runtime failure, not a genuine missing-package fallback, so it must
         # not be mislabeled as `standalone_plugin_bundle_fallback`.
-        return [], "package_recommend_error", _safe_error_type(type(exc).__name__)
+        return [], None, "package_recommend_error", _safe_error_type(type(exc).__name__)
 
 
 def _redacted_recommendation(item: dict[str, Any]) -> dict[str, Any]:
