@@ -47,6 +47,7 @@ except ImportError:  # pragma: no cover - standalone plugin hosts have no omh pa
     UNIT_STATE_FAILED = None
 
 from .fanout_scan import RECENT_FANOUT_DIR_LIMIT, newest_fanout_dirs, path_mtime
+from .run_records import DISPATCH_SUMMARY_FILE, FANOUT_DISPATCH_SCHEMA_VERSION as _FANOUT_DISPATCH_SCHEMA_VERSION
 from .runtime_reader import (
     # The hardened read (symlink-refusing, size-bounded, confined to the home
     # root) every other bundle reader uses. Restating it here would fork a
@@ -59,9 +60,6 @@ from .runtime_reader import (
 
 DISPATCH_OUTCOME_SCHEMA_VERSION = "omh_dispatch_outcome/v1"
 
-# The dispatch summary this reader trusts; a mismatch is skipped, never
-# guessed at.
-_FANOUT_DISPATCH_SCHEMA_VERSION = "fanout_dispatch_summary/v1"
 _FANOUT_ID_RE = re.compile(r"^fanout-[0-9a-f]{12}$")
 
 # Bounds. The reminder runs on every turn, so the scan keeps only the newest
@@ -126,7 +124,7 @@ def unacknowledged_outcomes(
     home = _expand_path(omh_home) if omh_home else default_omh_home()
     outcomes: list[dict[str, Any]] = []
     for fanout_dir in _recent_fanout_dirs(home):
-        summary = _read_hud_json(fanout_dir / "dispatch_summary.json", root=home)
+        summary = _read_hud_json(fanout_dir / DISPATCH_SUMMARY_FILE, root=home)
         if summary.get("schema_version") != _FANOUT_DISPATCH_SCHEMA_VERSION:
             continue
         raw_units = summary.get("units")
@@ -255,7 +253,7 @@ def _summary_activity(fanout_dir: Path) -> float | None:
     before the epoch stays dropped for the same reason it was: it is not a
     time anything wrote.
     """
-    activity = path_mtime(fanout_dir / "dispatch_summary.json")
+    activity = path_mtime(fanout_dir / DISPATCH_SUMMARY_FILE)
     return activity if activity is not None and activity > 0.0 else None
 
 

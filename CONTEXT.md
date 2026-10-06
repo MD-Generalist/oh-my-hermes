@@ -96,6 +96,15 @@ place prepared handoffs, observations, and effect receipts about that work
 accumulate.
 _Avoid_: session (wrapper sessions are a different record), task
 
+**Run record**:
+An on-disk run, dispatch, or receipt file (`run.json`, `events.jsonl`,
+`dispatch_summary.json`, `external_effect_receipts.jsonl`, …) that the
+control-plane writers produce and the Hermes-side readers in the plugin bundle
+consume. Its file names, schema versions, and closed vocabularies are owned
+once, by `src/plugin_bundle/omh/run_records.py`; the writers import them.
+_Avoid_: a second definition of a file name or schema version, a parity test as
+the owner
+
 **Prepared handoff**:
 OMH's output contract for coding work — a payload a coding owner may execute
 later. Preparing one is not dispatch, execution, review, CI, or merge

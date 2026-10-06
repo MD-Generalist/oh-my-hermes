@@ -67,10 +67,10 @@ from .kanban_board_reader import (
     hermes_root,
     kanban_db_path,
 )
+from .run_records import DISPATCH_SUMMARY_FILE, FANOUT_DISPATCH_SCHEMA_VERSION as _FANOUT_DISPATCH_SCHEMA_VERSION
 from .runtime_reader import _read_hud_json
 
 COST_RECEIPT_SCHEMA_VERSION = "omh_cost_receipt/v1"
-_FANOUT_DISPATCH_SCHEMA_VERSION = "fanout_dispatch_summary/v1"
 _FANOUT_DIR_PREFIX = "fanout-"
 # Bounds the walk and the listing, not the sum: a receipt that hit either
 # says so in `truncated` rather than presenting a partial total as whole.
@@ -423,7 +423,7 @@ def _add_fanout(
         return False
     read = 0
     for name in names:
-        summary_path = root / name / "dispatch_summary.json"
+        summary_path = root / name / DISPATCH_SUMMARY_FILE
         written = path_mtime(summary_path)
         # A summary last written before the conversation began cannot hold a
         # unit it dispatched; skipping it is a bound, not an attribution.

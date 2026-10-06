@@ -3,6 +3,16 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Mapping
 
+from ..plugin_bundle.omh.run_records import (
+    CI_FILE,
+    CODING_DELEGATION_FILE,
+    DELEGATION_FILE,
+    EVENTS_FILE,
+    MERGE_FILE,
+    REVIEW_FILE,
+    RUN_FILE,
+    WRAPPER_FILE,
+)
 from ..coding.handoff_contract import (
     HandoffContractError,
     build_handoff_contract_receipt,
@@ -364,7 +374,7 @@ def _progress_event_for_result(result: str) -> str:
 
 def _existing_run_dir(paths: OmhPaths, run_id: str) -> Path:
     run_dir = paths.runtime_runs_dir / run_id
-    if not (run_dir / "run.json").exists():
+    if not (run_dir / RUN_FILE).exists():
         raise FileNotFoundError(run_id)
     return run_dir
 
@@ -413,12 +423,12 @@ def _blocking_reason(next_action: str) -> str:
 def _artifact_paths(paths: OmhPaths, run_id: str) -> dict[str, str]:
     run_dir = paths.runtime_runs_dir / run_id
     return {
-        "run": str(run_dir / "run.json"),
-        "events": str(run_dir / "events.jsonl"),
-        "coding_delegation": str(run_dir / "coding_delegation.json"),
-        "delegation": str(run_dir / "delegation.json"),
-        "wrapper": str(run_dir / "wrapper.json"),
-        "review": str(run_dir / "review.json"),
-        "ci": str(run_dir / "ci.json"),
-        "merge": str(run_dir / "merge.json"),
+        "run": str(run_dir / RUN_FILE),
+        "events": str(run_dir / EVENTS_FILE),
+        "coding_delegation": str(run_dir / CODING_DELEGATION_FILE),
+        "delegation": str(run_dir / DELEGATION_FILE),
+        "wrapper": str(run_dir / WRAPPER_FILE),
+        "review": str(run_dir / REVIEW_FILE),
+        "ci": str(run_dir / CI_FILE),
+        "merge": str(run_dir / MERGE_FILE),
     }

@@ -122,6 +122,8 @@ def _seed_active_workflow(omh_home: Path) -> None:
 def _seed_running_board(omh_home: Path) -> None:
     from datetime import datetime, timezone
 
+    from ..plugin_bundle.omh.run_records import INFLIGHT_MARKER_SCHEMA_VERSION
+
     inflight = omh_home / "coding" / "fanout" / "fanout-000000000000" / "inflight"
     inflight.mkdir(parents=True, exist_ok=True)
     started_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
@@ -129,7 +131,7 @@ def _seed_running_board(omh_home: Path) -> None:
         (inflight / f"u{index}.json").write_text(
             json.dumps(
                 {
-                    "schema_version": "omh_inflight_marker/v1",
+                    "schema_version": INFLIGHT_MARKER_SCHEMA_VERSION,
                     "owner": "codex",
                     "model": "gpt-6-astra",
                     "started_at": started_at,

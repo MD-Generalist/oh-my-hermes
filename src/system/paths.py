@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from omh.plugin_bundle.omh import runtime_paths
+from omh.plugin_bundle.omh.run_records import EVENTS_FILE, EXTERNAL_EFFECT_RECEIPT_STORE_NAME
 
 import os
 import re
@@ -86,14 +87,14 @@ class OmhPaths:
 
     @property
     def runtime_journal_events_path(self) -> Path:
-        return self.runtime_journal_dir / "events.jsonl"
+        return self.runtime_journal_dir / EVENTS_FILE
 
     @property
     def runtime_external_effect_receipts_path(self) -> Path:
         # Runtime-wide, next to the observation journal, not per run: an
         # external effect belongs to the surface that acted, and adapter
         # deliveries have a session but no run.
-        return self.runtime_journal_dir / "external_effect_receipts.jsonl"
+        return self.runtime_journal_dir / EXTERNAL_EFFECT_RECEIPT_STORE_NAME
 
     @property
     def runtime_approval_receipts_path(self) -> Path:

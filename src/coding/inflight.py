@@ -40,6 +40,7 @@ import re
 from typing import Any, Final, Mapping
 
 from ..system.local_store import atomic_write_json, ensure_dir, read_json_object_result, utc_now
+from ..plugin_bundle.omh.run_records import INFLIGHT_MARKER_SCHEMA_VERSION
 from ..system.paths import OmhPaths
 from .fanout_artifacts import _managed_fanout_dir
 from .fanout_contracts import FANOUT_ID_PATTERN
@@ -52,8 +53,8 @@ from .fanout_contracts import FANOUT_ID_PATTERN
 # for a purely additive field set would therefore blank the running-work board
 # on every machine whose plugin lags its core by one update, which is a worse
 # outcome than an older reader ignoring keys it does not know. Bump when a
-# field's MEANING changes; not when one is added.
-INFLIGHT_MARKER_SCHEMA_VERSION: Final[str] = "omh_inflight_marker/v1"
+# field's MEANING changes; not when one is added. The version itself is
+# `INFLIGHT_MARKER_SCHEMA_VERSION` in `plugin_bundle/omh/run_records.py`.
 
 INFLIGHT_CLAIM_BOUNDARY: Final[str] = (
     "An in-flight marker records that a dispatch wrote a file before spawning a unit and has not "

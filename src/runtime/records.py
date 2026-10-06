@@ -74,6 +74,16 @@ from ..coding.project_governance import validate_project_governance_blocked, val
 from ..routing.route_plan import compact_workflow_route_plan
 from ..routing.route_question import ROUTE_QUESTION_DECLINE_REASONS
 from ..plugin_bundle.omh.route_question_mode import route_question_mode_fields
+from ..plugin_bundle.omh.run_records import (
+    CI_FILE,
+    CODING_DELEGATION_FILE,
+    DELEGATION_FILE,
+    EXTERNAL_EFFECT_RECEIPT_STORE_NAME,
+    MERGE_FILE,
+    OBSERVED_RESULTS,
+    REVIEW_FILE,
+    WRAPPER_FILE,
+)
 from ..routing.decision_contract import ROUTE_DECISION_SCHEMA_VERSION
 from ..skills.catalog_types import REASONING_DEMAND_VALUES
 from ..workflows.approval_receipts import (
@@ -128,12 +138,9 @@ RUN_ARTIFACT_KINDS = ("workflow_run", "prepared_coding_delegation")
 RUN_PHASES = ("runtime", "prepared", "unknown")
 RUN_OBSERVATION_STATUSES = ("unknown", "observed", "not_observed", "prepared_not_observed")
 DELEGATION_RESULTS = ("completed", "blocked", "failed", "cancelled", "not_available", "not_observed")
-# `cancelled` is an OBSERVED result, not an unobserved one. Recording it still
-# requires the same `observed=True` evidence every other terminal result
-# requires: OMH records that a cancellation was observed (process termination or
-# an authoritative executor result), never that one was requested. A request to
-# cancel is not a terminal result and has no member here.
-OBSERVED_RESULTS = ("completed", "blocked", "failed", "cancelled")
+# `OBSERVED_RESULTS` (`cancelled` is an observed result, never a requested one)
+# lives in `plugin_bundle/omh/run_records.py`, because the plugin reader derives
+# its terminal statuses from the same tuple.
 UNOBSERVED_RESULTS = ("not_available", "not_observed")
 EVENT_LEVELS = ("debug", "info", "warning", "error")
 WRAPPER_COMPLETION_STATUSES = ("started", "completed", "blocked", "failed", "cancelled", "unknown")
@@ -4435,12 +4442,12 @@ def _is_sha256(value: str) -> bool:
 
 OPTIONAL_RECORD_VALIDATORS = (
     ("routing.json", validate_routing_record),
-    ("coding_delegation.json", validate_coding_delegation_record),
-    ("delegation.json", validate_delegation_record),
-    ("wrapper.json", validate_wrapper_record),
-    ("review.json", validate_review_record),
-    ("ci.json", validate_ci_record),
-    ("merge.json", validate_merge_record),
+    (CODING_DELEGATION_FILE, validate_coding_delegation_record),
+    (DELEGATION_FILE, validate_delegation_record),
+    (WRAPPER_FILE, validate_wrapper_record),
+    (REVIEW_FILE, validate_review_record),
+    (CI_FILE, validate_ci_record),
+    (MERGE_FILE, validate_merge_record),
 )
 
 # Same registry shape for the append-only stores that live beside runs rather
@@ -4484,7 +4491,7 @@ class OptionalRuntimeStoreValidator:
 # half that reports lines belonging to no run.
 OPTIONAL_RUNTIME_STORE_VALIDATORS = (
     OptionalRuntimeStoreValidator(
-        "external_effect_receipts.jsonl", validate_external_effect_receipt, "receipt_id"
+        EXTERNAL_EFFECT_RECEIPT_STORE_NAME, validate_external_effect_receipt, "receipt_id"
     ),
     OptionalRuntimeStoreValidator("approval_receipts.jsonl", validate_approval_receipt, "receipt_id"),
     OptionalRuntimeStoreValidator("blocked_work_records.jsonl", validate_blocked_work_record, "record_id"),

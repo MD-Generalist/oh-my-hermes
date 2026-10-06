@@ -8,12 +8,15 @@ import json
 import re
 from typing import Final
 
+from .run_records import (
+    FANOUT_CONTRACT_PROVENANCE_SCHEMA_VERSION as _FANOUT_PROVENANCE_SCHEMA_VERSION,
+    FANOUT_CONTRACT_SCHEMA_VERSION as _FANOUT_CONTRACT_SCHEMA_VERSION,
+)
+
 GRAPH_CONTRACT_UNIT_LIMIT: Final[int] = 64
 GRAPH_DEPENDENCY_LIMIT: Final[int] = 32
 GRAPH_FILE_SCOPE_LIMIT: Final[int] = 32
 
-_FANOUT_CONTRACT_SCHEMA_VERSION: Final[str] = "fanout_contract/v2"
-_FANOUT_PROVENANCE_SCHEMA_VERSION: Final[str] = "fanout_contract_provenance/v1"
 _FANOUT_ID_RE: Final[re.Pattern[str]] = re.compile(r"^fanout-[0-9a-f]{12}$")
 _UNIT_ID_RE: Final[re.Pattern[str]] = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
 _PROVENANCE_KEYS: Final[frozenset[str]] = frozenset(

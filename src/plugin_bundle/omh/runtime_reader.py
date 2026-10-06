@@ -40,6 +40,37 @@ from .metadata import (
     TOOL_FILE_STEMS,
     TOOLS_REQUIRING_ROLE_CATALOG,
 )
+from .run_records import (
+    CI_FILE,
+    CODING_DELEGATION_FILE,
+    CONTRACT_PROVENANCE_FILE,
+    DELEGATION_FILE,
+    DISPATCH_SUMMARY_FILE,
+    EVENTS_FILE,
+    EXECUTOR_PROGRESS_BINDING_FILE,
+    EXECUTOR_PROGRESS_BINDING_SCHEMA_VERSION,
+    EXECUTOR_PROGRESS_BINDING_STATES,
+    EXECUTOR_PROGRESS_EVENT_SCHEMA_VERSION,
+    EXECUTOR_PROGRESS_EVENT_TYPES,
+    EXECUTOR_PROGRESS_PROFILES,
+    EXECUTOR_PROGRESS_REPORT_SCHEMA_VERSION,
+    EXECUTOR_PROGRESS_REPORTS_FILE,
+    EXECUTOR_SESSION_FILE,
+    EXTERNAL_EFFECT_CLAIM_BOUNDARY,
+    EXTERNAL_EFFECT_RECEIPT_SCHEMA_VERSION,
+    EXTERNAL_EFFECT_RECEIPT_STORE_NAME,
+    FANOUT_CONTRACT_FILE,
+    FANOUT_DISPATCH_SCHEMA_VERSION as _FANOUT_DISPATCH_SCHEMA_VERSION,
+    INFLIGHT_MARKER_SCHEMA_VERSION as _INFLIGHT_MARKER_SCHEMA_VERSION,
+    LIFECYCLE_PROJECTION_SCHEMA_VERSION,
+    MERGE_FILE,
+    OBSERVATION_EVENT_SCHEMA_VERSION,
+    RECEIPT_BACKED_RUN_CLAIMS,
+    REVIEW_FILE,
+    RUN_FILE,
+    TERMINAL_JOURNAL_STATUSES,
+    WRAPPER_FILE,
+)
 from .todo_evidence import valid_evidence
 from .todo_store import (
     MAX_TODO_BLOCKED_REASON_CHARS,
@@ -111,7 +142,6 @@ ACTIVITY_ROW_LIMIT = 8
 HUD_REQUIRED_TOOLS = PROVIDED_TOOLS
 HUD_REQUIRED_HOOKS = REQUIRED_HOOKS
 HUD_OPTIONAL_HOOKS = OPTIONAL_HOOKS
-OBSERVATION_EVENT_SCHEMA_VERSION = "omh_observation_event/v1"
 JOURNAL_EVENT_ALIASES = {
     "coding_handoff_prepared": "prepared_handoff_created",
     "handoff_prepared": "prepared_handoff_created",
@@ -127,53 +157,6 @@ JOURNAL_EVENT_ALIASES = {
     "merge_readiness": "merge_gate_observed",
     "merge": "merge_observed",
 }
-# Hand-copied from `omh.coding.owner_progress_normalization`
-# (`NORMALIZED_PROGRESS_EVENT_TYPES`) and `omh.coding.executor_progress`
-# (`ALLOWED_EXECUTOR_PROFILES`); the bundle cannot import from src. Parity is
-# gated by `tests/test_executor_progress_quality_floor.py` -- an event type
-# added in one place and not the other is silently dropped at this read
-# boundary, which is how `omo_runtime` bindings were rejected here long after
-# the lane accepted them.
-EXECUTOR_PROGRESS_EVENT_TYPES = {
-    "executor_dispatched",
-    "repo_exploration",
-    "running_no_diff_observed",
-    "diff_started",
-    "tests_started",
-    "tests_failed",
-    "tests_passed",
-    "executor_completed",
-    "executor_blocked",
-    "executor_failed",
-    "executor_cancelled",
-    "reported_change_not_observed",
-    "progress_observed",
-    "unmapped_source_event",
-}
-# Hand-copied from `omh.workflows.observation_journal` (the non-`observed`
-# members of `OBSERVATION_STATUSES`) and `omh.runtime.records`
-# (`OBSERVED_RESULTS` minus `completed`); the bundle cannot import from src.
-# These are the statuses that END a target. `cancelled` belongs to both because
-# a run someone stopped is over: leaving it out is what made a cancelled run
-# read as one that had merely not got there yet.
-TERMINAL_JOURNAL_STATUSES = {"blocked", "failed", "cancelled"}
-EXECUTOR_PROGRESS_PROFILES = {"codex", "claude_code", "hermes_local", "omo_runtime"}
-EXECUTOR_PROGRESS_BINDING_STATES = {"active", "stale", "expired", "closed"}
-# Hand-copied from `omh.workflows.external_effect_receipts` and
-# `omh.runtime.artifacts` (`external_effect_id`, which composes an effect id as
-# `<kind>:<run_id>`); the bundle cannot import from src. Parity is gated by
-# `tests/test_runtime_reader_external_effect_receipts.py` -- a store renamed or
-# a schema version bumped in one place and not the other would silently return
-# this reader to claiming CI and merge success from a local record alone.
-EXTERNAL_EFFECT_RECEIPT_STORE_NAME = "external_effect_receipts.jsonl"
-EXTERNAL_EFFECT_RECEIPT_SCHEMA_VERSION = "external_effect_receipt/v1"
-EXTERNAL_EFFECT_CLAIM_BOUNDARY = (
-    "An external effect receipt is one acting surface's observation of one external effect. "
-    "It is not execution, verification, review, CI, merge-readiness, or merge evidence for any other effect."
-)
-# The run-summary claims that assert an external effect, and the effect kind
-# whose receipt has to back each one.
-RECEIPT_BACKED_RUN_CLAIMS = {"review_observed": "review", "ci_observed": "ci", "merge_observed": "merge"}
 OBSERVATION_STATUS_ORDER = (
     "unknown",
     "prepared_not_observed",
@@ -229,9 +212,7 @@ _FANOUT_GRAPH_STATUSES = {
     "model_choice_required",
     "prepared_not_observed",
 }
-_FANOUT_DISPATCH_SCHEMA_VERSION = "fanout_dispatch_summary/v1"
 _FANOUT_ROSTER_SCHEMA_VERSION = "omh_running_work_board/v1"
-_INFLIGHT_MARKER_SCHEMA_VERSION = "omh_inflight_marker/v1"
 
 
 def _expand_path(value: str | Path) -> Path:
@@ -533,12 +514,12 @@ def _summarize_run(
     json_reader: Callable[[Path], dict[str, Any]] = _read_json,
     coding_reader: Callable[[Path], dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    coding = (coding_reader or json_reader)(run_dir / "coding_delegation.json")
-    delegation = json_reader(run_dir / "delegation.json")
-    wrapper = json_reader(run_dir / "wrapper.json")
-    review = json_reader(run_dir / "review.json")
-    ci = json_reader(run_dir / "ci.json")
-    merge = json_reader(run_dir / "merge.json")
+    coding = (coding_reader or json_reader)(run_dir / CODING_DELEGATION_FILE)
+    delegation = json_reader(run_dir / DELEGATION_FILE)
+    wrapper = json_reader(run_dir / WRAPPER_FILE)
+    review = json_reader(run_dir / REVIEW_FILE)
+    ci = json_reader(run_dir / CI_FILE)
+    merge = json_reader(run_dir / MERGE_FILE)
     legacy = {
         "run_id": str(run.get("run_id", run_dir.name)),
         "workflow": str(coding.get("recommended_workflow") or run.get("skill", "unknown")),
@@ -683,7 +664,7 @@ def _journal_projection_for_run(
         and str(event.get("run_id", "")) == run_id
     ]
     projection: dict[str, Any] = {
-        "schema_version": "omh_lifecycle_projection/v1",
+        "schema_version": LIFECYCLE_PROJECTION_SCHEMA_VERSION,
         "run_id": run_id,
         "workflow": str(legacy.get("workflow", "")),
         "harness": str(legacy.get("harness", "")),
@@ -1102,7 +1083,7 @@ def _hud_local_fanout_record(
                 continue
             if not stat.S_ISDIR(child_stat.st_mode):
                 continue
-            contract_path = child / "fanout_contract.json"
+            contract_path = child / FANOUT_CONTRACT_FILE
             try:
                 contract_path.lstat()
             except FileNotFoundError:
@@ -1125,7 +1106,7 @@ def _hud_local_fanout_record(
                     updated_at,
                 )
                 continue
-            provenance_path = child / "contract_provenance.json"
+            provenance_path = child / CONTRACT_PROVENANCE_FILE
             try:
                 provenance_path.lstat()
             except FileNotFoundError:
@@ -1227,8 +1208,8 @@ def _hud_fanout_candidate_score(fanout_dir: Path) -> tuple[float, str]:
     return (
         max(
             _hud_metadata_mtime(fanout_dir),
-            _hud_metadata_mtime(fanout_dir / "fanout_contract.json"),
-            _hud_metadata_mtime(fanout_dir / "dispatch_summary.json"),
+            _hud_metadata_mtime(fanout_dir / FANOUT_CONTRACT_FILE),
+            _hud_metadata_mtime(fanout_dir / DISPATCH_SUMMARY_FILE),
             _hud_metadata_mtime(fanout_dir / "inflight"),
         ),
         fanout_dir.name,
@@ -1256,7 +1237,7 @@ def _hud_fanout_roster(
         for unit in contract_units
         if str(unit.get("unit_id", ""))
     }
-    summary_path = fanout_dir / "dispatch_summary.json"
+    summary_path = fanout_dir / DISPATCH_SUMMARY_FILE
     try:
         summary_path.lstat()
         summary_present = True
@@ -2894,12 +2875,12 @@ def read_omh_status(omh_home: str | Path | None = None, limit: int = 5) -> dict[
     runs_dir = runtime_dir / "runs"
     state = _read_json(runtime_dir / "state.json")
     journal_dir = runtime_dir / "journal"
-    journal_events_by_run = _group_rows_by_run_id(_read_jsonl(journal_dir / "events.jsonl"))
+    journal_events_by_run = _group_rows_by_run_id(_read_jsonl(journal_dir / EVENTS_FILE))
     receipts_by_run = _group_rows_by_run_id(
         _read_jsonl(journal_dir / EXTERNAL_EFFECT_RECEIPT_STORE_NAME)
     )
     runs: list[dict[str, Any]] = []
-    for run_json in sorted(_child_files(runs_dir, "run.json"), reverse=True)[:safe_limit]:
+    for run_json in sorted(_child_files(runs_dir, RUN_FILE), reverse=True)[:safe_limit]:
         run = _read_json(run_json)
         run_id = str(run.get("run_id", run_json.parent.name))
         runs.append(
@@ -2915,7 +2896,7 @@ def read_omh_status(omh_home: str | Path | None = None, limit: int = 5) -> dict[
         "schema_version": STATUS_SCHEMA_VERSION,
         "omh_home": str(home),
         "runtime_dir": str(runtime_dir),
-        "journal_path": str(runtime_dir / "journal" / "events.jsonl"),
+        "journal_path": str(runtime_dir / "journal" / EVENTS_FILE),
         "runtime_state_present": bool(state),
         "latest_run_id": str(state.get("last_run_id", "")) if state else "",
         "plugin_session_end": _read_json(runtime_dir / "plugin-session-end.json"),
@@ -2953,7 +2934,7 @@ def _read_omh_hud_status(home: Path, *, limit: int) -> dict[str, Any]:
     coding_reader = partial(_read_hud_coding_projection, root=runtime_dir)
     runs: list[dict[str, Any]] = []
     for run_json in sorted(
-        _hud_child_files(runtime_dir / "runs", "run.json"),
+        _hud_child_files(runtime_dir / "runs", RUN_FILE),
         reverse=True,
     )[:limit]:
         run = json_reader(run_json)
@@ -3062,13 +3043,13 @@ def _progress_bindings(
             if hud_safe
             else _read_jsonl
         )
-        for binding_path in sorted(child_files(root, "executor_progress", "binding.json"), reverse=True):
+        for binding_path in sorted(child_files(root, "executor_progress", EXECUTOR_PROGRESS_BINDING_FILE), reverse=True):
             binding = json_reader(binding_path)
             if not _valid_progress_binding(binding, target_type):
                 continue
             progress_dir = binding_path.parent
-            events = jsonl_reader(progress_dir / "events.jsonl")
-            reports = jsonl_reader(progress_dir / "reports.jsonl")
+            events = jsonl_reader(progress_dir / EVENTS_FILE)
+            reports = jsonl_reader(progress_dir / EXECUTOR_PROGRESS_REPORTS_FILE)
             binding_id = str(binding.get("binding_id", ""))
             instance_id = str(binding.get("instance_id", ""))
             matching_events = [event for event in events if _valid_progress_event(event, binding_id, instance_id)]
@@ -3124,10 +3105,10 @@ def _target_has_terminal_result(runtime_dir: Path, target_type: str, target_id: 
     ):
         return False
     if target_type == "run":
-        delegation = _read_json(runtime_dir / "runs" / target_id / "delegation.json")
+        delegation = _read_json(runtime_dir / "runs" / target_id / DELEGATION_FILE)
         return bool(delegation.get("observed")) and bool(str(delegation.get("result", "")).strip())
     if target_type == "wrapper_session":
-        record = _read_json(runtime_dir / "wrapper_sessions" / target_id / "executor_session.json")
+        record = _read_json(runtime_dir / "wrapper_sessions" / target_id / EXECUTOR_SESSION_FILE)
         return bool(record.get("result_observed")) and bool(str(record.get("result", "")).strip())
     return False
 
@@ -3260,7 +3241,7 @@ def _compact_progress_report(report: dict[str, Any]) -> dict[str, Any]:
 def _valid_progress_binding(binding: dict[str, Any], expected_target_type: str) -> bool:
     if not isinstance(binding, dict) or _has_raw_or_hidden_content(binding):
         return False
-    if binding.get("schema_version") != "omh_executor_progress_binding/v1":
+    if binding.get("schema_version") != EXECUTOR_PROGRESS_BINDING_SCHEMA_VERSION:
         return False
     target_value = binding.get("target")
     target = target_value if isinstance(target_value, dict) else {}
@@ -3293,7 +3274,7 @@ def _valid_progress_binding(binding: dict[str, Any], expected_target_type: str) 
 def _valid_progress_event(event: dict[str, Any], binding_id: str, instance_id: str) -> bool:
     if not isinstance(event, dict) or _has_raw_or_hidden_content(event):
         return False
-    if event.get("schema_version") != "omh_progress_event/v1":
+    if event.get("schema_version") != EXECUTOR_PROGRESS_EVENT_SCHEMA_VERSION:
         return False
     if str(event.get("binding_id", "")) != binding_id:
         return False
@@ -3314,7 +3295,7 @@ def _valid_progress_event(event: dict[str, Any], binding_id: str, instance_id: s
 def _valid_progress_report(report: dict[str, Any], binding_id: str, instance_id: str) -> bool:
     if not isinstance(report, dict) or _has_raw_or_hidden_content(report):
         return False
-    if report.get("schema_version") != "omh_progress_report/v1":
+    if report.get("schema_version") != EXECUTOR_PROGRESS_REPORT_SCHEMA_VERSION:
         return False
     if str(report.get("binding_id", "")) != binding_id:
         return False

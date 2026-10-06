@@ -6,6 +6,7 @@ from json import JSONDecodeError
 from pathlib import Path
 from typing import Any, Mapping
 
+from ..plugin_bundle.omh.run_records import CODING_DELEGATION_FILE, EVENTS_FILE, EXECUTOR_SESSION_FILE
 from ..coding.maestro import (
     HermesNativeSelectionError,
     Maestro,
@@ -875,7 +876,7 @@ def _session_handoff(paths: OmhPaths, session: dict[str, Any]) -> dict[str, Any]
     run_id = str(session.get("current_run_id", ""))
     if not run_id:
         return {}
-    coding = read_json_object(paths.runtime_runs_dir / run_id / "coding_delegation.json")
+    coding = read_json_object(paths.runtime_runs_dir / run_id / CODING_DELEGATION_FILE)
     handoff = coding.get("executor_handoff") if isinstance(coding, dict) else None
     return handoff if isinstance(handoff, dict) else {}
 
@@ -974,7 +975,7 @@ def _write_executor_session(paths: OmhPaths, record: dict[str, Any]) -> dict[str
             ),
         },
         operation="write_executor_session",
-        lock_name="executor_session.json",
+        lock_name=EXECUTOR_SESSION_FILE,
         validate=_validate,
         default={},
     )
@@ -1062,7 +1063,7 @@ def validate_executor_session_record(record: dict[str, Any]) -> list[str]:
 
 
 def read_executor_session_result(session_dir: Path) -> tuple[dict[str, Any] | None, str | None]:
-    path = session_dir / "executor_session.json"
+    path = session_dir / EXECUTOR_SESSION_FILE
     try:
         record = read_json_object(path)
     except (OSError, JSONDecodeError, ValueError) as exc:
@@ -1314,7 +1315,7 @@ def _isolation_plan_for_session(
             return dict(handoff["isolation_plan"])
     run_id = str(session.get("current_run_id", "") or linked_status.get("run_id", ""))
     if run_id:
-        coding = read_json_object(paths.runtime_runs_dir / run_id / "coding_delegation.json")
+        coding = read_json_object(paths.runtime_runs_dir / run_id / CODING_DELEGATION_FILE)
         if isinstance(coding, dict):
             if isinstance(coding.get("isolation_plan"), dict):
                 return dict(coding["isolation_plan"])
@@ -1887,7 +1888,7 @@ def _append_executor_event(
     extra_data: dict[str, Any] | None = None,
 ) -> None:
     session_dir = _session_dir(paths, session_id)
-    events_path = session_dir / "events.jsonl"
+    events_path = session_dir / EVENTS_FILE
     ensure_dir(session_dir, private=True)
     ensure_file(events_path, private=True)
     data = {
@@ -1910,7 +1911,7 @@ def _append_executor_event(
 
 
 def _executor_session_path(paths: OmhPaths, session_id: str) -> Path:
-    return _session_dir(paths, session_id) / "executor_session.json"
+    return _session_dir(paths, session_id) / EXECUTOR_SESSION_FILE
 
 
 def _session_dir(paths: OmhPaths, session_id: str) -> Path:

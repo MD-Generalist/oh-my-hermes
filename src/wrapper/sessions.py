@@ -6,6 +6,12 @@ from json import JSONDecodeError
 from pathlib import Path
 from typing import Any, Callable, Mapping
 
+from ..plugin_bundle.omh.run_records import (
+    CODING_DELEGATION_FILE,
+    EVENTS_FILE,
+    EXECUTOR_SESSION_FILE,
+    RUN_FILE,
+)
 from ..ingress import CHAT_SOURCES, compact_source_metadata, extract_message_text, extract_source_metadata
 from ..routing.chat import CONFIDENCE_LEVELS
 from ..executors import CODING_EXECUTOR_TARGETS, executor_label, executor_selection_for_target
@@ -1389,7 +1395,7 @@ def append_wrapper_session_event(session_dir: Path, event: dict[str, Any]) -> di
     if errors:
         raise WrapperSessionError(errors[0])
     ensure_dir(session_dir, private=True)
-    events_path = session_dir / "events.jsonl"
+    events_path = session_dir / EVENTS_FILE
     ensure_file(events_path, private=True)
     with events_path.open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(item, sort_keys=True) + "\n")
@@ -1401,7 +1407,7 @@ def read_wrapper_session_events(session_dir: Path) -> list[dict[str, Any]]:
 
 
 def read_wrapper_session_events_result(session_dir: Path) -> tuple[list[dict[str, Any]], list[str]]:
-    return read_jsonl_objects(session_dir / "events.jsonl")
+    return read_jsonl_objects(session_dir / EVENTS_FILE)
 
 
 def validate_wrapper_sessions(paths: OmhPaths, session_id: str | None = None) -> dict[str, Any]:
@@ -1501,7 +1507,7 @@ def _find_recoverable_prepared_handoff_run(
         run_id = str(run.get("run_id") or run_json.parent.name)
         if _run_owned_by_other_session(paths, run_id, str(session["session_id"])):
             continue
-        coding = read_json_object(run_json.parent / "coding_delegation.json")
+        coding = read_json_object(run_json.parent / CODING_DELEGATION_FILE)
         if not _is_matching_coding_handoff(coding, session, message_sha256, expected_metadata):
             continue
         return run_id
@@ -1509,7 +1515,7 @@ def _find_recoverable_prepared_handoff_run(
 
 
 def _prepared_run_message_sha(paths: OmhPaths, run_id: str) -> str:
-    coding = read_json_object(paths.runtime_runs_dir / run_id / "coding_delegation.json")
+    coding = read_json_object(paths.runtime_runs_dir / run_id / CODING_DELEGATION_FILE)
     return str(coding.get("message_sha256", "")) if isinstance(coding, dict) else ""
 
 
@@ -1601,8 +1607,8 @@ def _existing_lifecycle_payload(paths: OmhPaths, run_id: str) -> dict[str, objec
     run_dir = paths.runtime_runs_dir / run_id
     return {
         "schema_version": "coding_lifecycle/v1",
-        "run": read_json_object(run_dir / "run.json"),
-        "coding_delegation": read_json_object(run_dir / "coding_delegation.json"),
+        "run": read_json_object(run_dir / RUN_FILE),
+        "coding_delegation": read_json_object(run_dir / CODING_DELEGATION_FILE),
         "status": report_codex_delegation_lifecycle(paths, run_id),
     }
 
@@ -1622,7 +1628,7 @@ def _validate_wrapper_session_dir(session_dir: Path) -> dict[str, Any]:
         errors.extend(f"{session_path}: {error}" for error in validate_wrapper_session_record(session))
         if session.get("session_id") != session_id:
             errors.append(f"{session_path}: session_id must match directory name")
-    events_path = session_dir / "events.jsonl"
+    events_path = session_dir / EVENTS_FILE
     if events_path.exists():
         events, event_errors = read_jsonl_objects(events_path)
         errors.extend(event_errors)
@@ -1641,7 +1647,7 @@ def _validate_wrapper_session_dir(session_dir: Path) -> dict[str, Any]:
             )
         if session:
             errors.extend(validate_runtime_observations_for_wrapper_session(observations_path, session, observations))
-    executor_session_path = session_dir / "executor_session.json"
+    executor_session_path = session_dir / EXECUTOR_SESSION_FILE
     if executor_session_path.exists():
         executor_session, executor_session_error = read_executor_session_result(session_dir)
         if executor_session_error:

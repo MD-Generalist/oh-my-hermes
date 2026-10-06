@@ -10,6 +10,18 @@ from typing import Any
 
 from ..local_store import atomic_write_json, ensure_dir, ensure_file, read_json_object, read_jsonl_objects, utc_now
 from ..paths import OmhPaths
+from ..plugin_bundle.omh.run_records import (
+    DELEGATION_FILE,
+    EVENTS_FILE,
+    EXECUTOR_PROGRESS_BINDING_FILE,
+    EXECUTOR_PROGRESS_BINDING_SCHEMA_VERSION,
+    EXECUTOR_PROGRESS_BINDING_STATES as BINDING_STATES,
+    EXECUTOR_PROGRESS_EVENT_SCHEMA_VERSION,
+    EXECUTOR_PROGRESS_PROFILES as ALLOWED_EXECUTOR_PROFILES,
+    EXECUTOR_PROGRESS_REPORT_SCHEMA_VERSION,
+    EXECUTOR_PROGRESS_REPORTS_FILE,
+    EXECUTOR_SESSION_FILE,
+)
 from ..runtime.records import OBSERVED_RESULTS as RUNTIME_OBSERVED_RESULTS
 from .context_safety import sanitize_user_facing_progress_text
 from .owner_progress_normalization import (
@@ -22,22 +34,16 @@ from .owner_progress_normalization import (
 )
 
 
-EXECUTOR_PROGRESS_BINDING_SCHEMA_VERSION = "omh_executor_progress_binding/v1"
-EXECUTOR_PROGRESS_EVENT_SCHEMA_VERSION = "omh_progress_event/v1"
-EXECUTOR_PROGRESS_REPORT_SCHEMA_VERSION = "omh_progress_report/v1"
-
-# `omo_runtime` is one profile covering every omo host CLI (`pi`, `senpi`,
-# `opencode`) because the binding answers "which lane is working", not "which
-# binary was on PATH". Without it `fanout dispatch` spawns omo units into a lane
+# `ALLOWED_EXECUTOR_PROFILES` and `BINDING_STATES` are the run-record
+# vocabularies the plugin reader checks too, so `run_records` owns them.
+# Without `omo_runtime` there `fanout dispatch` spawns omo units into a lane
 # that `normalize_executor_profile` rejects, so the units run entirely unobserved.
-ALLOWED_EXECUTOR_PROFILES = ("codex", "claude_code", "hermes_local", "omo_runtime")
 TARGET_TYPES = ("run", "wrapper_session")
-BINDING_STATES = ("active", "stale", "expired", "closed")
-# One definition, two names. The vocabulary now lives with the normalizer that
-# translates owner words into it (`owner_progress_normalization`), because a
-# second copy is exactly the drift the plugin-bundle mirror already had to be
-# gated against. `PROGRESS_EVENT_TYPES` stays the public name every caller,
-# validator, and CLI `--event` choice list already imports from here.
+# One definition, several names. The vocabulary is owned by `run_records` in
+# the plugin bundle, which the plugin reader checks against too, and the
+# normalizer (`owner_progress_normalization`) re-exports it. `PROGRESS_EVENT_TYPES`
+# stays the public name every caller, validator, and CLI `--event` choice list
+# already imports from here.
 PROGRESS_EVENT_TYPES = NORMALIZED_PROGRESS_EVENT_TYPES
 # Exempt from the volume rules -- an exact duplicate transition is still
 # deduplicated. `reported_change_not_observed` belongs here because it only
@@ -349,12 +355,12 @@ def write_progress_binding(paths: OmhPaths, binding: dict[str, Any]) -> dict[str
     target = _binding_target(binding)
     progress_dir = progress_dir_for_target(paths, target["type"], target["id"])
     ensure_dir(progress_dir, private=True)
-    atomic_write_json(progress_dir / "binding.json", binding, private=True)
+    atomic_write_json(progress_dir / EXECUTOR_PROGRESS_BINDING_FILE, binding, private=True)
     return binding
 
 
 def read_progress_binding(paths: OmhPaths, target_type: str, target_id: str) -> dict[str, Any] | None:
-    binding = read_json_object(progress_dir_for_target(paths, target_type, target_id) / "binding.json")
+    binding = read_json_object(progress_dir_for_target(paths, target_type, target_id) / EXECUTOR_PROGRESS_BINDING_FILE)
     if not binding:
         return None
     _require_valid("binding", validate_progress_binding(binding))
@@ -1068,7 +1074,7 @@ def append_progress_event(paths: OmhPaths, binding: dict[str, Any], event: dict[
     target = _binding_target(binding)
     progress_dir = progress_dir_for_target(paths, target["type"], target["id"])
     ensure_dir(progress_dir, private=True)
-    events_path = progress_dir / "events.jsonl"
+    events_path = progress_dir / EVENTS_FILE
     ensure_file(events_path, private=True)
     with events_path.open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(event, sort_keys=True) + "\n")
@@ -1077,7 +1083,7 @@ def append_progress_event(paths: OmhPaths, binding: dict[str, Any], event: dict[
 
 def latest_progress_event(paths: OmhPaths, binding: dict[str, Any]) -> dict[str, Any]:
     target = _binding_target(binding)
-    events, _errors = read_jsonl_objects(progress_dir_for_target(paths, target["type"], target["id"]) / "events.jsonl")
+    events, _errors = read_jsonl_objects(progress_dir_for_target(paths, target["type"], target["id"]) / EVENTS_FILE)
     valid = [event for event in events if not validate_progress_event(event) and _payload_matches_binding_instance(event, binding)]
     return valid[-1] if valid else {}
 
@@ -1124,7 +1130,7 @@ def append_progress_report(paths: OmhPaths, binding: dict[str, Any], report: dic
     target = _binding_target(binding)
     progress_dir = progress_dir_for_target(paths, target["type"], target["id"])
     ensure_dir(progress_dir, private=True)
-    reports_path = progress_dir / "reports.jsonl"
+    reports_path = progress_dir / EXECUTOR_PROGRESS_REPORTS_FILE
     ensure_file(reports_path, private=True)
     with reports_path.open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(report, sort_keys=True) + "\n")
@@ -1133,7 +1139,7 @@ def append_progress_report(paths: OmhPaths, binding: dict[str, Any], report: dic
 
 def latest_progress_report(paths: OmhPaths, binding: dict[str, Any]) -> dict[str, Any]:
     target = _binding_target(binding)
-    reports, _errors = read_jsonl_objects(progress_dir_for_target(paths, target["type"], target["id"]) / "reports.jsonl")
+    reports, _errors = read_jsonl_objects(progress_dir_for_target(paths, target["type"], target["id"]) / EXECUTOR_PROGRESS_REPORTS_FILE)
     valid = [report for report in reports if not validate_progress_report(report) and _payload_matches_binding_instance(report, binding)]
     return valid[-1] if valid else {}
 
@@ -1445,13 +1451,13 @@ def _terminal_result_status(paths: OmhPaths, binding: dict[str, Any]) -> str:
     target_type = target["type"]
     target_id = target["id"]
     if target_type == "run":
-        delegation = read_json_object(paths.runtime_runs_dir / target_id / "delegation.json") or {}
+        delegation = read_json_object(paths.runtime_runs_dir / target_id / DELEGATION_FILE) or {}
         if bool(delegation.get("observed")):
             result = str(delegation.get("result", ""))
             if result in _OBSERVED_TERMINAL_RESULTS:
                 return result
     if target_type == "wrapper_session":
-        record = read_json_object(paths.runtime_wrapper_sessions_dir / target_id / "executor_session.json") or {}
+        record = read_json_object(paths.runtime_wrapper_sessions_dir / target_id / EXECUTOR_SESSION_FILE) or {}
         if bool(record.get("result_observed")):
             result = str(record.get("result", ""))
             if result in _OBSERVED_TERMINAL_RESULTS:

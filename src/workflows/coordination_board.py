@@ -30,6 +30,7 @@ from __future__ import annotations
 import json
 from typing import Any, Final
 
+from ..plugin_bundle.omh.run_records import DISPATCH_SUMMARY_FILE, FANOUT_CONTRACT_FILE
 from ..hashutil import sha256_text
 from ..local_store import read_json_object_result, utc_now
 from ..paths import OmhPaths
@@ -591,10 +592,10 @@ def _fanout_records(paths: OmhPaths) -> list[dict[str, Any]]:
     for fanout_dir in sorted(root.iterdir()):
         if not fanout_dir.is_dir() or fanout_dir.is_symlink():
             continue
-        contract, error = read_json_object_result(fanout_dir / "fanout_contract.json")
+        contract, error = read_json_object_result(fanout_dir / FANOUT_CONTRACT_FILE)
         if error or not isinstance(contract, dict):
             continue
-        summary, summary_error = read_json_object_result(fanout_dir / "dispatch_summary.json")
+        summary, summary_error = read_json_object_result(fanout_dir / DISPATCH_SUMMARY_FILE)
         dispatch: dict[str, Any] = {}
         if not summary_error and isinstance(summary, dict):
             for entry in _dict_items(summary.get("units")):

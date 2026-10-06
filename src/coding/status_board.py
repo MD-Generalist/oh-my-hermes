@@ -39,6 +39,7 @@ from typing import Any, Final, Mapping
 
 from ..system.local_store import read_json_object_result, utc_now
 from ..evidence import PHASE_CODE, status_label
+from ..plugin_bundle.omh.run_records import DISPATCH_STATUS_VOCABULARY, DISPATCH_SUMMARY_FILE, FANOUT_CONTRACT_FILE
 from ..system.paths import OmhPaths
 from ..workflows.observation_journal import (
     failure_diagnostic_text, project_bound_failure_diagnostic,
@@ -77,16 +78,9 @@ CODING_STATUS_BOARD_SHORT_BOUNDARY: Final[str] = (
     "Observed activity only; unknown is never estimated."
 )
 
-# Closed status vocabulary. Anything else an artifact carries collapses to
-# `prepared_not_observed`, which is the honest reading of "we wrote it down but
-# never watched it run".
-STATUS_VOCABULARY: Final[tuple[str, ...]] = (
-    "running",
-    "completed",
-    "failed",
-    "worktree_failed",
-    "prepared_not_observed",
-)
+# Closed status vocabulary, shared with the plugin's running-work reader.
+# Anything else an artifact carries collapses to `prepared_not_observed`.
+STATUS_VOCABULARY: Final[tuple[str, ...]] = DISPATCH_STATUS_VOCABULARY
 
 UNKNOWN: Final[str] = "unknown"
 DEFAULT_LIMIT: Final[int] = 20
@@ -438,7 +432,7 @@ def _dispatch_summary_units(paths: OmhPaths) -> list[dict[str, Any]]:
     for fanout_dir in sorted(root.iterdir()):
         if not fanout_dir.is_dir() or fanout_dir.is_symlink():
             continue
-        summary, error = read_json_object_result(fanout_dir / "dispatch_summary.json")
+        summary, error = read_json_object_result(fanout_dir / DISPATCH_SUMMARY_FILE)
         if error or not is_string_map(summary):
             continue
         fanout_id = str(summary.get("fanout_id", "") or fanout_dir.name)
@@ -620,7 +614,7 @@ def _unit_row(
 
 
 def _contract_units(fanout_dir: Path) -> dict[str, dict[str, Any]]:
-    contract, error = read_json_object_result(fanout_dir / "fanout_contract.json")
+    contract, error = read_json_object_result(fanout_dir / FANOUT_CONTRACT_FILE)
     if error or not isinstance(contract, dict):
         return {}
     units: dict[str, dict[str, Any]] = {}

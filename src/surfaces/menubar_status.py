@@ -6,6 +6,7 @@ from json import JSONDecodeError
 from pathlib import Path
 from typing import Any
 
+from ..plugin_bundle.omh.run_records import CODING_DELEGATION_FILE
 from ..executors import executor_label
 from ..hud import build_hud_payload
 from ..local_store import read_json_object
@@ -346,7 +347,7 @@ def _recent_run_ids(paths: OmhPaths, *, limit: int) -> list[str]:
 
 def _run_coding_record(paths: OmhPaths, run_id: str) -> dict[str, Any]:
     try:
-        coding = read_json_object(paths.runtime_runs_dir / run_id / "coding_delegation.json")
+        coding = read_json_object(paths.runtime_runs_dir / run_id / CODING_DELEGATION_FILE)
     except (OSError, JSONDecodeError, ValueError):
         return {}
     return coding if isinstance(coding, dict) else {}
