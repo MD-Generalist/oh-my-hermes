@@ -13,12 +13,13 @@ All notable changes will be documented here.
   `policy` or `intent` ran those imports against a half-initialised module,
   caught the ImportError as "no router", and kept the bundle's copies for
   the rest of the process — `/loop …` then ranked `workflow-learning` above
-  `ulw-loop`. 53 of 285 control-plane modules produced that process when
-  imported first; the Windows CI shard that ran `test_candidate_handoff`
+  `ulw-loop`. Dozens of control-plane modules produce that process when they
+  are the first import; the Windows CI shard that ran `test_candidate_handoff`
   before `test_degradation_signal` was one. The four bindings now resolve
   through `_router_policy_module()` / `_router_intent_module()` on each call,
-  as `_user_trigger_pack_route_decision` already did; a fresh-interpreter test
-  pins the `policy`-first order.
+  as `_user_trigger_pack_route_decision` already did; a host where no router
+  module imported at load keeps its standalone copies. A fresh-interpreter
+  test pins the `policy`-first order.
 - **One memory admission path, called in-process by the tool.** Capture, the
   confinement-scoped duplicate check, the candidate write, auto-safe approval
   and the durability receipt move from `src/workflows/memory.py` into the

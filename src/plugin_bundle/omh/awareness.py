@@ -577,18 +577,31 @@ def _router_intent_module() -> object | None:
     host raises, and the bundle's own classifier stayed bound for the rest of
     the process.
     """
+    if _normalized_routing_phrase is None:
+        # No router module imported when this module loaded: a standalone
+        # host, which stays one. A later successful import would otherwise be
+        # read as the router appearing, e.g. a test that unblocks `omh` after
+        # loading the bundle standalone.
+        return None
     try:
         from ...routing import intent as module
     except ImportError:
         try:
             from omh.routing import intent as module
-        except ImportError:  # pragma: no cover - exercised by standalone plugin hosts.
-            return None
+        except ImportError:
+            return None  # mid-import of the cycle; the next call resolves it.
     return module
 
 
 def classify_workflow_intent(message: str) -> object:
-    """The router's workflow classifier, or the bundle's copy in a standalone host."""
+    """The router's workflow classifier, or the bundle's copy in a standalone host.
+
+    `_fallback_classify_workflow_intent` exists only when the module-level
+    `routing.intent` import above failed, and `_router_intent_module()` is None
+    only in a host where that import failed too (no router at load) or while
+    the router is mid-import, which cannot be the case after a successful
+    module-level import; so the fallback is defined whenever it is reached.
+    """
     classifier = getattr(_router_intent_module(), "classify_workflow_intent", None)
     if classifier is None:
         return _fallback_classify_workflow_intent(message)
@@ -656,19 +669,25 @@ def _router_policy_module() -> object | None:
     `skills.render`; so whenever `policy` or `intent` is the first router
     import of a process, this module's own `from ...routing.policy import`
     runs against a half-initialised module. The ImportError that raises is
-    the one the standalone-host fallback catches, so the router's guards and
-    classifiers stayed replaced by the bundle's copies for the rest of that
-    process, and `/loop …` ranked `workflow-learning` above `ulw-loop` -- the
-    Windows shard that ran `test_candidate_handoff` before
+    the one the standalone-host fallback catches, so for the rest of that
+    process the two guards stayed None (jit-learn took the literal path,
+    long-document the page-count regex) and the two classifiers stayed the
+    bundle's copies, which rank `/loop …` as `workflow-learning` above
+    `ulw-loop` -- the Windows shard that ran `test_candidate_handoff` before
     `test_degradation_signal`.
+
+    `_normalized_routing_phrase` is None only when no router module imported
+    at load (see `_router_intent_module`); that host keeps its fallbacks.
     """
+    if _normalized_routing_phrase is None:
+        return None
     try:
         from ...routing import policy as module
     except ImportError:
         try:
             from omh.routing import policy as module
-        except ImportError:  # pragma: no cover - exercised by standalone plugin hosts.
-            return None
+        except ImportError:
+            return None  # mid-import of the cycle; the next call resolves it.
     return module
 
 
@@ -8036,23 +8055,17 @@ _LONG_DOCUMENT_HINT_MARKERS = (
 _LONG_DOCUMENT_PAGE_COUNT_RE = re.compile(r"(\d{2,5})\s*-?\s*(?:pages?|페이지)")
 _LONG_DOCUMENT_PAGE_COUNT_FLOOR = 60
 
-try:
-    from ...routing.localization import normalized_phrase as _long_document_normalized_phrase
-    from ...routing.localization import routing_tokens as _long_document_routing_tokens
-except ImportError:  # pragma: no cover - exercised by standalone plugin hosts.
-    _long_document_normalized_phrase = None
-    _long_document_routing_tokens = None
-
-
 def _long_document_request_signal(text: str) -> bool:
     """True when the routing guard would send this text to long-document reading."""
-    # Resolved per call; see `_router_guard` for why a module-level import
-    # bound None in every process that imported `routing.policy` first.
+    # Resolved per call; see `_router_policy_module` for why a module-level
+    # import bound None in every process that imported `routing.policy` first.
+    # The localization helpers are the twinned module-level bindings, so a
+    # file-loaded bundle with `omh` installed reaches the router here too.
     _long_document_guard_applies = _router_guard("_long_document_reading_guard_applies")
-    if _long_document_guard_applies is None or _long_document_normalized_phrase is None:
+    if _long_document_guard_applies is None or _normalized_routing_phrase is None:
         return _long_document_page_count_signal(text)
-    normalized = _long_document_normalized_phrase(text)
-    return _long_document_guard_applies(normalized, _long_document_routing_tokens(normalized))
+    normalized = _normalized_routing_phrase(text)
+    return _long_document_guard_applies(normalized, _routing_tokens(normalized))
 
 
 def _user_trigger_pack_route_decision(message: str) -> dict[str, str]:

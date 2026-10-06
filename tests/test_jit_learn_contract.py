@@ -332,6 +332,15 @@ class JitLearnRoutingAndCardContractTests(unittest.TestCase):
         self.assertFalse(standalone_awareness.__name__.startswith("omh."))
         for phrase in ("curriculum", "syllabus", "커리큘럼", "교육과정", "강의계획"):
             self.assertIn(phrase, standalone_awareness._JIT_LEARN_CURRICULUM_EXCLUSION_PHRASES)
+        # The router helpers resolve per call, so this host must still answer
+        # with its own copies now that `omh` is importable again in this
+        # process: a host that had no router at load does not grow one.
+        self.assertIsNone(standalone_awareness._router_intent_module())
+        self.assertIsNone(standalone_awareness._router_policy_module())
+        self.assertEqual(
+            type(standalone_awareness.classify_workflow_intent("plan the billing refactor")).__module__,
+            standalone_awareness.__name__,
+        )
 
         positive = standalone_awareness.awareness_route_hint(
             "What should I learn next to solve my current blocker?"
@@ -496,17 +505,23 @@ class RouterGuardImportOrderTests(unittest.TestCase):
             import json
             import omh.routing.policy  # the first router import of this process
             from omh.plugin_bundle.omh import awareness
+            from omh.routing.localization import normalized_phrase
 
+            # Each field is a value only the router's helper produces: the
+            # bundle's jit-learn copy rejects a message that names the
+            # workflow, its long-document copy knows page counts only, and its
+            # classifiers rank `/loop …` under workflow-learning.
+            jit_message = "Current-blocker learning requests route to just-in-time learning"
             print(json.dumps({
-                "jit_learn": awareness._router_guard("jit_learn_guard_applies") is not None,
-                "long_document": awareness._router_guard("_long_document_reading_guard_applies") is not None,
+                "jit_learn": awareness._jit_learn_route_hint_applies(jit_message, normalized_phrase(jit_message)),
+                "long_document": awareness._long_document_request_signal("read this long contract end to end"),
                 "classifier": type(awareness.classify_workflow_intent("plan the billing refactor")).__module__,
                 "loop": awareness.awareness_route_hint("/loop fix the flaky site-two integration test")["primary_workflow"],
             }))
             """
         )
         completed = subprocess.run(
-            [sys.executable, "-P", "-c", code], capture_output=True, text=True, check=False
+            [sys.executable, "-P", "-c", code], capture_output=True, text=True, check=False, timeout=120
         )
         self.assertEqual(completed.returncode, 0, completed.stderr)
         self.assertEqual(
