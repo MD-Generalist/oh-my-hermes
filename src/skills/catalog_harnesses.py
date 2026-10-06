@@ -2481,8 +2481,8 @@ _FEATURE_SURFACE_HARNESSES = (
     _feature_surface_harness(
         "memory-new",
         "Capture one bounded durable project or product memory candidate through explicit remember, refuse, or defer review; for existing Hermes memory use omh-memory-sync.",
-        "Use when the user wants to assess one new project, product, or context fact for OMH-local memory; ask source class, target store, scope, retention class, then choose remember, refuse, or defer.",
-        ("source class", "target store", "canonical scope", "retention class", "remember/refuse/defer decision"),
+        "Use when the user states one new durable project, product, or context fact for OMH-local memory; capture it as one bounded line, ask one question only when scope or durability is ambiguous, and refuse or defer what does not belong.",
+        ("one bounded summary", "record type and tags", "canonical scope", "retention class", "remember/refuse/defer decision"),
         ("memory_new_candidate/v1", "source/target/scope/retention decision", "remember/refuse/defer decision", "not_omh_reviewed disclosure"),
         quality_tier="capture-gated",
         evidence_ladder=("candidate_captured", "candidate_reviewed", "candidate_approved", "target_write_observed_when_available"),

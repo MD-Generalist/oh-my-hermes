@@ -1086,7 +1086,7 @@ def render_consolidation_brief(brief: dict[str, Any] | None) -> str:
     requested = [str(item) for item in brief.get("requested_of_executor", []) if isinstance(item, str)]
     for item in requested[:CONSOLIDATION_MAX_ITEMS]:
         lines.append(f"  <do>{_text(item)}</do>")
-    lines.append("  <do>Then tell the user in one short line that OMH asked for memory consolidation and what you changed, or that nothing needed changing.</do>")
+    lines.append("  <do>Then tell the user in one short line what you remembered or trimmed, or that nothing needed changing.</do>")
     lines.append("</memory_consolidation>")
     text = "\n".join(lines)
     if len(text) > CONSOLIDATION_RENDER_BUDGET_CHARS:

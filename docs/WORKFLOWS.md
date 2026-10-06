@@ -8465,14 +8465,14 @@ These surfaces are generated command references, not installed Hermes workflow s
 - Preferred usage: Use as an installed Hermes workflow skill when the user wants to add new project, product, or durable context memory through capture, review, and approval.
 - Handoff policy: Keep this as Hermes-facing orchestration guidance first. Prepare executor, connector, gateway, or host-runtime handoff only when the user accepts that next step and observed evidence can be recorded.
 - Why this exists: `memory-new` exists so Hermes users can ask for this workflow in chat and get a structured, checkable answer instead of an improvised one.
-- Use when: Use when the user wants to assess one new project, product, or context fact for OMH-local memory. Ask source class, target store, scope, retention class, then choose remember, refuse, or defer.
+- Use when: Use when the user wants to assess one new project, product, or context fact for OMH-local memory. Capture a clear durable fact directly, or refuse or defer it.
 - Do not use when:
   - The request is already handled by a narrower explicit skill with stronger evidence.
   - The user asks OMH to secretly run external platforms, connectors, schedulers, file exports, or runtime agents.
   - The only safe answer is to ask for missing authority, credentials, target, or observed evidence first.
 - Strong routing signals: `memory-new`, `new memory`, `project memory`, `product memory`, `remember this project`, `remember this product`, `do not save`, `do not save this token`, `memory capture`, `capture memory`, `save project memory`, `save product memory`, `project context memory`, `product context memory`, `add memory candidate`, `프로젝트 메모리 저장`, `제품 메모리 저장`, `프로젝트 기억`, `제품 기억`, `새 기억`, `기억 추가`, `메모리 캡처`
 - Good example:
-  - Prompt: memory-new remember this bounded product decision as one durable OMH candidate after asking source, scope, and target.
+  - Prompt: memory-new remember this bounded product decision as one durable OMH memory.
   - Expected behavior: Produce `prepare_memory_new` with required context, wrapper actions, and not-evidence boundaries.
   - Why: The prompt names a real workflow surface that Hermes can orchestrate without hiding execution.
 - Bad example:
@@ -8483,7 +8483,7 @@ These surfaces are generated command references, not installed Hermes workflow s
   - Name the user-facing workflow objective, required context, next action, and stop condition.
   - Separate prepared guidance from observed platform, runtime, connector, file, memory, or delivery evidence.
   - Expose missing tools, credentials, targets, or observations as user-visible gaps.
-  - Ask source class, target store, scope, retention class, and the explicit remember/refuse/defer decision before candidate capture.
+  - Capture a clear durable fact directly, without an interview; ask one question only for ambiguous scope or durability.
 - Completion checklist:
   - Confirm the workflow target, evidence boundary, and stop condition are named.
   - Report which outputs are prepared, observed, blocked, or missing.
@@ -8498,7 +8498,7 @@ These surfaces are generated command references, not installed Hermes workflow s
   - known missing evidence
 - Expected outputs:
   - memory_new_candidate/v1
-  - source class, target store, scope, and retention-class decision
+  - one bounded capture: type, tags, scope, retention
   - remember/refuse/defer decision
   - prepared-vs-observed boundary
 - Artifact expectations:
@@ -8507,7 +8507,7 @@ These surfaces are generated command references, not installed Hermes workflow s
   - An OMH project-memory candidate is prepared local context only, not an approved record or Hermes-native mutation. Hermes-native and external provider/vector context is not_omh_reviewed, can nominate a candidate only, and a configured Hermes runtime may transmit rendered OMH prefetch content in its model request.
   - Do not claim connector, gateway, runtime, file generation, memory mutation, or host automation evidence from prepared guidance.
   - Remember only one bounded durable candidate; refuse secrets, raw logs, transcripts, prompt-injection-shaped instructions, and temporary progress.
-  - Defer uncertain source, scope, target, retention, and external provider/vector content to review; not_omh_reviewed context never inherits OMH approval.
+  - Defer unsourced material and external provider/vector content to review; not_omh_reviewed context never inherits OMH approval.
 
 ### memory-sync
 
@@ -13321,15 +13321,15 @@ Coordinate multi-Hermes-agent or profile work as board cards with task, handoff,
 
 Capture one bounded durable project or product memory candidate through explicit remember, refuse, or defer review; for existing Hermes memory use omh-memory-sync.
 
-- Use when: Use when the user wants to assess one new project, product, or context fact for OMH-local memory; ask source class, target store, scope, retention class, then choose remember, refuse, or defer.
+- Use when: Use when the user states one new durable project, product, or context fact for OMH-local memory; capture it as one bounded line, ask one question only when scope or durability is ambiguous, and refuse or defer what does not belong.
 - Quality tier: `capture-gated`
 - Quality bar:
   - Name the workflow objective, owner, input boundary, next action, and stop condition.
   - Represent prepared, observed, blocked, and missing evidence as separate states.
   - Never upgrade a card, blueprint, or readiness check into external execution proof.
 - Inputs:
-  - source class
-  - target store
+  - one bounded summary
+  - record type and tags
   - canonical scope
   - retention class
   - remember/refuse/defer decision

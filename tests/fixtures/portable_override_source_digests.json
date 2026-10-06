@@ -1,6 +1,6 @@
 {
   "omh-adversarial-consensus::artifact_expectations": "26dd5fe667594b24d4bb5e4fbe7100e55469fd3af5b306bf26bd5fcbd06979ab",
-  "omh-memory-new::safety_rules": "113a32c85373da95e53f95ffa6ffe8ae8e56abd2d5b6aa9787a1ddc26b143695",
+  "omh-memory-new::safety_rules": "1339e73ae4df4feb34e2bfe93e42f0e6945e8a83176c0602b6778b2842ffc354",
   "omh-paper-learning::recovery_notes": "beb1368db3764b36ffa2de84e71d13043698b6f570686d8c89aaef972b52332f",
   "omh-report-package::expected_outputs": "e1e56353a2af34c52a86e2d6c92b4e4476904a7f6ea2ff7521d2004c2ba45063",
   "ulw-context::artifact_expectations": "dc56fbd317ef90eb197d2c2dc13a2b61256bd7ca6a7803a0eb97145ff53eb8ea",

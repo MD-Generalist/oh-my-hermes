@@ -101,7 +101,12 @@ class MemorySyncSkillTests(unittest.TestCase):
         memory_sync = _template_content("memory-sync")
 
         self.assertIn("memory_new_candidate/v1", memory_new)
-        self.assertIn("Ask these five questions", memory_new)
+        # The model captures a clear durable fact itself; no five-question
+        # interview stands between the user's statement and the write.
+        self.assertIn('call `omh_memory` with `action="capture"`', memory_new)
+        self.assertIn("A clear durable fact needs no interview", memory_new)
+        self.assertNotIn("Ask these five questions", memory_new)
+        self.assertIn('`action="capture"`', memory_sync)
         self.assertIn("**Remember**", memory_new)
         self.assertIn("**Refuse**", memory_new)
         self.assertIn("**Defer**", memory_new)

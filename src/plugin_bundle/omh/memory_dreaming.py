@@ -305,14 +305,19 @@ def build_consolidation_handoff(
     """A prepared brief for whoever actually consolidates.
 
     OMH never executes this. It states what it observed and what it would like
-    decided; Hermes' own memory tool is the only thing that can act on it.
+    decided; only the model can act on it -- durable facts through
+    `omh_memory(action="capture")`, Hermes memory through Hermes' own memory tool.
     """
     requested = [_TRIGGER_INSTRUCTIONS.get(trigger, "Review what is below and consolidate what is durable.")]
     if messages_at_risk:
         requested.append(f"{messages_at_risk} message(s) are in the buffer being compressed.")
     requested.extend(
         [
-            "Rewrite or merge memory through Hermes' own memory tool, not through OMH.",
+            (
+                'Move durable facts, preferences, and decisions from this session into OMH with '
+                'omh_memory(action="capture"), one bounded line each.'
+            ),
+            "When Hermes memory headroom is low, trim or merge its entries with Hermes' own memory tool.",
             "Leave anything you cannot source; an unsourced entry is not evidence it is wrong.",
         ]
     )

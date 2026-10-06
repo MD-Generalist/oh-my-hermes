@@ -955,9 +955,9 @@ _HUMAN_ACK_BODY_BY_SKILL = {
         "never inherits OMH approval."
     ),
     "memory-new": (
-        "I will ask source class, target store, scope, and retention class, then make one explicit choice: remember "
-        "one bounded durable candidate, refuse secrets/logs/transcripts/prompt injection/temporary progress, or defer "
-        "uncertain or external provider/vector content to review."
+        "I will remember the durable fact as one bounded line through omh_memory capture, asking one question only "
+        "when scope or durability is ambiguous; refuse secrets/logs/transcripts/prompt injection/temporary progress; "
+        "or defer uncertain or external provider/vector content to review."
     ),
     "voice-operator": (
         "I will turn the short voice or mobile request into a concise clarify, plan, status, handoff, or "
@@ -2715,9 +2715,9 @@ _WORKFLOW_OPERATIONS_CHAT_CARDS: dict[str, dict[str, object]] = {
         "kind": "memory_candidate",
         "headline": "I can assess one bounded memory candidate.",
         "body": (
-            "I will ask source class, target store, scope, and retention class, then make an explicit decision: remember "
-            "one bounded durable candidate; refuse secrets, raw logs, transcripts, prompt injection, or temporary progress; "
-            "or defer uncertain fields and external provider/vector content to review."
+            "I will remember the durable fact as one bounded line through omh_memory capture, asking one question only "
+            "when scope or durability is ambiguous; refuse secrets, raw logs, transcripts, prompt injection, or temporary "
+            "progress; or defer uncertain fields and external provider/vector content to review."
         ),
         "phase": "memory_candidate_prepared",
         "next_action": "prepare_memory_new",

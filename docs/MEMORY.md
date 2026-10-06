@@ -1184,7 +1184,8 @@ The ranking inputs do not expand eligibility or establish truth:
   a permanent head start.
 
 Dreaming prepares a reminder and metadata-only evidence. It never invokes a
-model or performs consolidation, retirement, restore, or prune.
+model or performs consolidation, retirement, restore, or prune; whatever is
+consolidated, the model does through its own tool calls in a later turn.
 
 For agents and operators, `omh_memory(action="consolidation")` reads the latest
 recorded brief and scheduler counters without starting a provider session or
@@ -1203,9 +1204,14 @@ A brief on disk consolidates nothing by itself. While the newest brief is
 `<memory_consolidation>` section (trigger, reasons, Hermes memory headroom
 and duplicate-cluster counts, and what is requested), so the next
 non-trivial turn on any platform carries the request to the model. The
-section asks the model to consolidate through Hermes' own memory tool and
-then tell the user in one short line what changed. A brief is a request, not
-recalled memory: it never moves the recall count or the recall line.
+section asks the model for three things: move durable facts, preferences, and
+decisions from the session into OMH with `omh_memory(action="capture")`, one
+bounded line each; when Hermes memory headroom is low, trim or merge its
+entries with Hermes' own memory tool; then tell the user in one short line
+what it remembered or trimmed, or that nothing needed changing. A brief is a
+request, not recalled memory and not evidence of consolidation: it never moves
+the recall count or the recall line, and only the capture results and memory
+writes the model actually makes are observed.
 
 The section disappears once consolidation is observed: a `replace` or
 `remove` from Hermes' memory tool retires the brief when no standing reason

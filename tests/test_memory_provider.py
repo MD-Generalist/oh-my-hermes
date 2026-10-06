@@ -2637,6 +2637,9 @@ class DreamingReachesTheTurnTests(unittest.TestCase):
             pack = provider.prefetch("next turn")
             self.assertIn("<memory_consolidation", pack)
             self.assertIn("session_ending_with_unconsolidated_turns", pack)
+            # Durable facts move into OMH through the model's own capture call;
+            # Hermes memory is trimmed only through Hermes' own tool.
+            self.assertIn('omh_memory(action="capture")', pack)
             self.assertIn("Hermes' own memory tool", pack)
             self.assertIn("tell the user in one short line", pack)
             # A brief is a request, not recalled memory: no indicator at all.
