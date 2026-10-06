@@ -4,6 +4,18 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **The plugin bundle passes Hermes's install scanner again.** The generated
+  skill-shortlist sidecar carried the standalone token `monero` from the
+  `external-connector-readiness` triggers, and Hermes scans bundled JSON
+  with the same critical patterns it applies to code, so
+  `hermes plugins validate` reported `dangerous: crypto_mining` and refused
+  the catalog install. The token is left out of the BM25 document weights
+  and anchors, in the core index and the sidecar alike; the explicit
+  `monero gateway` trigger in `recommend.py` still routes that request.
+  Measured: "assess the monero gateway connector" still decides `route`,
+  with the lexical score 13.8 → 9.7 and the skill still first; `monero`
+  alone decides `clarify` before and after. Carried from #1997 by
+  @elriclegloire.
 - **Git the dispatcher runs in a unit's worktree now runs inside that
   unit's fence.** Git takes its configuration from the worktree it runs in,
   and a fanout unit owns its worktree, so the dispatcher's own git calls
