@@ -9,6 +9,27 @@ import unittest
 
 
 
+def _shadow_problems(definitions) -> list[str]:
+    """Every override whose recorded shadow digest no longer matches its section (#1786)."""
+    from omh.skills.catalog import omh_skill_display_name
+
+    problems: list[str] = []
+    for definition in definitions:
+        name = omh_skill_display_name(definition.name)
+        recorded = definition.portable_override_shadows
+        for section in sorted(definition.portable_overrides.keys() | recorded.keys()):
+            if section not in definition.portable_overrides:
+                problems.append(f"{name}::{section}: portable_override_shadows entry without an override; drop it")
+                continue
+            actual = hashlib.sha256(json.dumps(getattr(definition, section, None), ensure_ascii=False).encode()).hexdigest()
+            if recorded.get(section) != actual:
+                problems.append(
+                    f"{name}::{section}: shadowed section changed; re-read the override, "
+                    f"then update portable_override_shadows[{section!r}] to {actual}"
+                )
+    return problems
+
+
 class AgentSkillsProjectionTests(unittest.TestCase):
     def test_ulw_work_projection_has_no_hermes_framing(self):
         from omh.skills.render import agent_skill_templates
@@ -177,25 +198,25 @@ class AgentSkillsProjectionTests(unittest.TestCase):
         The digest is sha256 of the section's JSON form, so a scalar and a
         one-element tuple never collide.
         """
+        from omh.skills.catalog import installable_skill_definitions
+
+        self.assertEqual(_shadow_problems(installable_skill_definitions()), [], "portable_override_shadows out of date (#1786)")
+
+    def test_a_changed_shadowed_section_is_named_alone(self):
+        # The guard's precision is part of the contract: one section edited
+        # upstream names exactly that skill::section, and nothing else, so the
+        # fix is one literal away rather than a hunt.
+        from dataclasses import replace
+
         from omh.skills.catalog import installable_skill_definitions, omh_skill_display_name
 
-        problems = []
-        for definition in installable_skill_definitions():
-            name = omh_skill_display_name(definition.name)
-            recorded = definition.portable_override_shadows
-            for section in sorted(definition.portable_overrides.keys() | recorded.keys()):
-                if section not in definition.portable_overrides:
-                    problems.append(f"{name}::{section}: portable_override_shadows entry without an override; drop it")
-                    continue
-                actual = hashlib.sha256(
-                    json.dumps(getattr(definition, section, None), ensure_ascii=False).encode()
-                ).hexdigest()
-                if recorded.get(section) != actual:
-                    problems.append(
-                        f"{name}::{section}: shadowed section changed; re-read the override, "
-                        f"then update portable_override_shadows[{section!r}] to {actual}"
-                    )
-        self.assertEqual(problems, [], "portable_override_shadows out of date (#1786)")
+        definitions = list(installable_skill_definitions())
+        victim = next(d for d in definitions if "quality_bar" in d.portable_overrides)
+        mutated = replace(victim, quality_bar=(*victim.quality_bar, "a line added upstream"))
+        problems = _shadow_problems([mutated if d is victim else d for d in definitions])
+        self.assertEqual(len(problems), 1, problems)
+        self.assertTrue(problems[0].startswith(f"{omh_skill_display_name(victim.name)}::quality_bar: shadowed section changed"), problems[0])
+        self.assertIn("update portable_override_shadows['quality_bar'] to ", problems[0])
 
     def test_user_scope_mirror_has_shared_manifest_and_drift(self):
         from omh.install.agent_skills_projection import install_agent_skills, agent_skills_status, MANIFEST_NAME

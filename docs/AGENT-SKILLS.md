@@ -182,8 +182,11 @@ mirror the line.
 
 `tests/test_agent_skills_projection.py` fails, naming `<skill>::<section>`,
 when an override key is not a `SkillDefinition` field (a renamed section) or
-when a replacement line is absent from the rendered portable body (a section
-that body does not render), because either replacement is never applied.
+when a replacement line is absent from the rendered portable body. The second
+check is a floor, not a proof: an override whose lines the body already
+carries without it (a no-op override, or lines shared with the catalog
+section) passes it, so the field-name check is what catches a mis-targeted
+section.
 
 ### Loop boundary
 
