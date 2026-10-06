@@ -365,6 +365,14 @@ CLASSIFIED_SITES: tuple[ClassifiedSite, ...] = (
         "error type instead of `standalone_plugin_bundle_fallback`.",
     ),
     ClassifiedSite(
+        "src/plugin_bundle/omh/tools/recommend_tool.py",
+        "_route_summary",
+        INTENTIONAL,
+        "The `route` key is additive beside a ranking that already computed: a chat import or "
+        "decision failure returns `route: None` -- the same value the standalone fallback "
+        "reports -- and never empties `recommendations` or relabels the source.",
+    ),
+    ClassifiedSite(
         "src/workflows/memory_store.py",
         "_resume_unlocked",
         INTENTIONAL,
@@ -480,8 +488,11 @@ CLASSIFIED_SITES: tuple[ClassifiedSite, ...] = (
 # function. `_write_candidate_batch`, `_is_catalog_question`, `pre_llm_call`,
 # `_resume_unlocked`, and `_execute_cell` each hold two handlers, so the handler
 # count is five above the anchor count.
-EXPECTED_HANDLER_COUNT = 50
-EXPECTED_ANCHOR_COUNT = 45
+# 45 -> 46 / 50 -> 51: `recommend_tool._route_summary`, the additive route beside
+# the ranking (#2005 review: a route failure must not empty the ranking or
+# relabel the source).
+EXPECTED_HANDLER_COUNT = 51
+EXPECTED_ANCHOR_COUNT = 46
 
 
 class DerivedSite(NamedTuple):

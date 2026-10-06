@@ -10,6 +10,7 @@ from ..hud import build_hud_payload
 from ..local_store import ensure_dir, ensure_file, read_jsonl_objects, utc_now
 from ..paths import OmhPaths
 from ..probe import probe_capabilities
+from ..routing.chat import recommend_route_summary
 from ..routing.recommend import recommend_skills
 from ..runtime.artifacts import update_state
 from ..core.failure_mender import decide_failure
@@ -490,6 +491,7 @@ def _call_tool(paths: OmhPaths, name: str, arguments: dict[str, Any]) -> dict[st
             {
                 "message_summary": f"{len(message)} characters; raw prompt not stored by the bridge",
                 "recommendations": recommendations,
+                "route": recommend_route_summary(message),
             },
         )
     if name == "omh_probe":

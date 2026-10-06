@@ -88,6 +88,14 @@ returned by `omh_recommend` or `omh recommend`. It records nothing and
 authorizes nothing.
 _Avoid_: dispatch, delegation, decision
 
+**Routing query**:
+The prepared stages of one message (`RoutingQuery` in
+`src/routing/query.py`: executable, scrubbed, routing text, normalized,
+tokens), built once and taken as input by every router reader that needs the
+full prep chain.
+_Avoid_: re-deriving the prep chain at a call site; passing a half-prepared
+string into the scorer
+
 ### Runtime evidence
 
 **Run**:

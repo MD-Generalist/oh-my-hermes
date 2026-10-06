@@ -13,12 +13,9 @@ from .domain_signals import (
     specialist_domain_operator_override,
     specialist_domain_route_signal,
 )
-from .intent import scrub_diagnostic_status_text
-from .reference_regions import executable_routing_text
 from .localization import (
     normalized_phrase,
     phrase_is_spoken,
-    prepare_routing_text,
     routing_terms,
     routing_tokens,
 )
@@ -34,6 +31,7 @@ from .trigger_language_packs import (
     shipped_trigger_language_packs,
 )
 from .path_signal import PATH_GLOB_SCORE, matching_path_glob
+from .query import RoutingQuery
 from .policy import (
     appearance_edit_request,
     everyday_sense_phrase_unanchored,
@@ -2468,41 +2466,33 @@ class Recommendation:
         }
 
 
-def recommend_skills(query: str, *, limit: int = 5, apply_guardrails: bool = True) -> list[dict[str, object]]:
+def recommend_skills(
+    query: str | RoutingQuery, *, limit: int = 5, apply_guardrails: bool = True
+) -> list[dict[str, object]]:
     if limit < 1:
         raise ValueError("recommend --limit must be at least 1")
+    key = _RawMessageKey(query) if isinstance(query, str) else _RawMessageKey(query.raw, query)
+    return [recommendation.to_dict() for recommendation in _recommend_skills_cached(key, apply_guardrails)[:limit]]
 
-    return [recommendation.to_dict() for recommendation in _recommend_skills_cached(query, apply_guardrails)[:limit]]
 
+class _RawMessageKey:
+    """Cache key for `_recommend_skills_cached`: equal and hashed on the raw text alone.
 
-def offers_itself_withheld(query: str, skill: str) -> bool:
-    """True when `skill` has an offers-itself precondition and `query` fails it.
-
-    `_score_definition` drops such a skill before scoring; a reader that ranks
-    the catalog another way asks here so it drops the same skill.
+    A `RoutingQuery` and its text share one cache entry, a hit builds no stage,
+    and a miss reuses the caller's prepared query when it handed one in.
     """
-    offers_itself = _SKILL_OFFERS_ITSELF.get(skill)
-    if offers_itself is None:
-        return False
-    routing_text = prepare_routing_text(
-        _strip_path_like_fragments(scrub_diagnostic_status_text(executable_routing_text(query)))
-    )
-    normalized_query = normalized_phrase(routing_text.scoring_text)
-    return not offers_itself(normalized_query, _tokens(normalized_query))
 
+    __slots__ = ("raw", "query")
 
-def everyday_sense_withheld(query: str, skill: str) -> bool:
-    """True when `skill` shares only an everyday-English phrase with `query`.
+    def __init__(self, raw: str, query: RoutingQuery | None = None) -> None:
+        self.raw = raw
+        self.query = query
 
-    `_score_definition` drops such a skill before scoring (see
-    `EVERYDAY_SENSE_PHRASES` in `policy.py`); a reader that ranks the
-    catalog another way, or matches the phrase on a fast path, asks here so
-    it drops the same skill.
-    """
-    routing_text = prepare_routing_text(
-        _strip_path_like_fragments(scrub_diagnostic_status_text(executable_routing_text(query)))
-    )
-    return everyday_sense_phrase_unanchored(skill, normalized_phrase(routing_text.scoring_text))
+    def __hash__(self) -> int:
+        return hash(self.raw)
+
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, _RawMessageKey) and other.raw == self.raw
 
 
 def held_back_trigger_tokens(skill: str) -> frozenset[str]:
@@ -2510,12 +2500,12 @@ def held_back_trigger_tokens(skill: str) -> frozenset[str]:
     return _trigger_token_holdback_for(skill)
 
 
-def has_strong_named_catalog_owner(query: str) -> bool:
+def has_strong_named_catalog_owner(query: str | RoutingQuery) -> bool:
     """Return whether one catalog name and a second semantic signal match."""
 
-    routing_text = prepare_routing_text(_strip_path_like_fragments(scrub_diagnostic_status_text(executable_routing_text(query))))
-    normalized_query = normalized_phrase(routing_text.scoring_text)
-    query_tokens = _tokens(normalized_query)
+    q = RoutingQuery.coerce(query)
+    normalized_query = q.normalized
+    query_tokens = set(q.tokens)
     if (
         any(guard.id == _TOOLBELT_READINESS_GUARD_ID for guard in active_routing_guard_rules(normalized_query, query_tokens))
         and query_tokens
@@ -2537,7 +2527,7 @@ def has_strong_named_catalog_owner(query: str) -> bool:
     for prepared in _prepared_routable_definitions():
         if not _phrase_match(normalized_query, prepared.name_phrase):
             continue
-        if _explicit_skill_candidate_is_negated(executable_routing_text(query), prepared.definition.name):
+        if _explicit_skill_candidate_is_negated(q.executable, prepared.definition.name):
             continue
         name_tokens = _tokens(prepared.name_phrase)
         if query_tokens & (prepared.trigger_tokens - name_tokens - _GENERIC_TRIGGER_TOKENS):
@@ -2575,24 +2565,21 @@ def recommendation_for_definition(
 
 
 @lru_cache(maxsize=2048)
-def _recommend_skills_cached(query: str, apply_guardrails: bool) -> tuple[Recommendation, ...]:
-    routing_query = scrub_diagnostic_status_text(executable_routing_text(query))
-    routing_text = prepare_routing_text(_strip_path_like_fragments(routing_query))
-    normalized_query = normalized_phrase(routing_text.scoring_text)
-    query_tokens = _tokens(normalized_query)
+def _recommend_skills_cached(key: _RawMessageKey, apply_guardrails: bool) -> tuple[Recommendation, ...]:
+    q = key.query or RoutingQuery.from_message(key.raw)
     prepared_definitions = _prepared_routable_definitions()
     definitions = [prepared.definition for prepared in prepared_definitions]
-    explicit_skill = explicit_skill_invocation(routing_query, {definition.name for definition in definitions})
-    if explicit_skill and is_missed_route_feedback(normalized_query):
+    explicit_skill = explicit_skill_invocation(q.scrubbed, {definition.name for definition in definitions})
+    if explicit_skill and is_missed_route_feedback(q.normalized):
         explicit_skill = None
-    if explicit_skill == "skill" and _skill_scout_candidate_alias_intent_match(normalized_query):
+    if explicit_skill == "skill" and _skill_scout_candidate_alias_intent_match(q.normalized):
         explicit_skill = None
     return _scored_field(
-        query,
-        routing_query=routing_query,
-        routing_text=routing_text,
-        normalized_query=normalized_query,
-        query_tokens=query_tokens,
+        q.raw,
+        routing_query=q.scrubbed,
+        routing_text=q.routing_text,
+        normalized_query=q.normalized,
+        query_tokens=set(q.tokens),
         prepared_definitions=prepared_definitions,
         definitions=definitions,
         explicit_skill=explicit_skill,
@@ -2600,7 +2587,7 @@ def _recommend_skills_cached(query: str, apply_guardrails: bool) -> tuple[Recomm
     )
 
 
-def scored_field_winner_without_explicit_invocation(query: str, candidate: str = "") -> str:
+def scored_field_winner_without_explicit_invocation(query: str | RoutingQuery, candidate: str = "") -> str:
     """Return the top skill when the typed skill name earns no invocation bonus.
 
     `explicit_skill_invocation()` uses this to decide whether a bare, sigil-free
@@ -2621,16 +2608,14 @@ def scored_field_winner_without_explicit_invocation(query: str, candidate: str =
     the market and competitors for this category.", so the bare-first-word
     invocation this comparison exists to protect could never stand again.
     """
-    routing_query = scrub_diagnostic_status_text(executable_routing_text(query))
-    routing_text = prepare_routing_text(_strip_path_like_fragments(routing_query))
-    normalized_query = normalized_phrase(routing_text.scoring_text)
+    q = RoutingQuery.coerce(query)
     prepared_definitions = _prepared_routable_definitions()
     field = _scored_field(
-        query,
-        routing_query=routing_query,
-        routing_text=routing_text,
-        normalized_query=normalized_query,
-        query_tokens=_tokens(normalized_query),
+        q.raw,
+        routing_query=q.scrubbed,
+        routing_text=q.routing_text,
+        normalized_query=q.normalized,
+        query_tokens=set(q.tokens),
         prepared_definitions=prepared_definitions,
         definitions=[prepared.definition for prepared in prepared_definitions],
         explicit_skill=None,
@@ -2640,7 +2625,7 @@ def scored_field_winner_without_explicit_invocation(query: str, candidate: str =
     return field[0].skill if field else ""
 
 
-def confident_scored_field_winner(query: str) -> str:
+def confident_scored_field_winner(query: str | RoutingQuery) -> str:
     """The unbiased field's top skill when it scores `high`, else "".
 
     The Jev partner swap (`routing/jev_addressing.py`) hands a message to a
@@ -2648,16 +2633,14 @@ def confident_scored_field_winner(query: str) -> str:
     low-confidence top ("jev, is this README clear?" scoring `code-review`
     at `low`) is no partner at all.
     """
-    routing_query = scrub_diagnostic_status_text(executable_routing_text(query))
-    routing_text = prepare_routing_text(_strip_path_like_fragments(routing_query))
-    normalized_query = normalized_phrase(routing_text.scoring_text)
+    q = RoutingQuery.coerce(query)
     prepared_definitions = _prepared_routable_definitions()
     field = _scored_field(
-        query,
-        routing_query=routing_query,
-        routing_text=routing_text,
-        normalized_query=normalized_query,
-        query_tokens=_tokens(normalized_query),
+        q.raw,
+        routing_query=q.scrubbed,
+        routing_text=q.routing_text,
+        normalized_query=q.normalized,
+        query_tokens=set(q.tokens),
         prepared_definitions=prepared_definitions,
         definitions=[prepared.definition for prepared in prepared_definitions],
         explicit_skill=None,
@@ -3916,7 +3899,7 @@ def _normalized_user_trigger_pack_phrases() -> tuple[tuple[str, str, str], ...]:
     )
 
 
-def user_trigger_pack_phrase_match(query: str) -> tuple[str, str]:
+def user_trigger_pack_phrase_match(query: str | RoutingQuery) -> tuple[str, str]:
     """Return (skill, authored phrase) for the user-pack phrase this query contains.
 
     `("", "")` when no user pack recognises the text. Shipped packs are excluded
@@ -3938,10 +3921,7 @@ def user_trigger_pack_phrase_match(query: str) -> tuple[str, str]:
     # caller pays nothing for a question that has no answer here.
     if not phrases:
         return ("", "")
-    routing_text = prepare_routing_text(
-        _strip_path_like_fragments(scrub_diagnostic_status_text(executable_routing_text(query)))
-    )
-    normalized_query = normalized_phrase(routing_text.scoring_text)
+    normalized_query = RoutingQuery.coerce(query).normalized
     if not normalized_query:
         return ("", "")
     for skill, phrase, normalized_trigger in phrases:
