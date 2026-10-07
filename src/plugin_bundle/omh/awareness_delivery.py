@@ -32,11 +32,12 @@ import errno
 import hashlib
 import json
 import os
+import random
 import secrets
 import time
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any, Callable, Iterator
 
 try:
     import fcntl
@@ -217,6 +218,23 @@ def _release_delivery_lock(handle: Any, mechanism: str) -> None:
         msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
 
 
+def _with_windows_retry(operation: Callable[[], None]) -> None:
+    # Windows denies replace/chmod while the target is transiently opened by
+    # a concurrent reader or replacer (WinError 5/32); POSIX never does. The
+    # backoff is jittered: barrier-synchronized writers re-collide in
+    # lockstep on deterministic delays. This is the one definition; the
+    # memory store and `omh.system.local_store` import it.
+    for delay in (0.01, 0.02, 0.05, 0.1, 0.2, 0.4, 0.8):
+        try:
+            operation()
+            return
+        except PermissionError:
+            if os.name != "nt":
+                raise
+            time.sleep(delay * (0.5 + random.random()))
+    operation()
+
+
 @contextmanager
 def _awareness_delivery_lock(
     path: Path, *, timeout_seconds: float = _LOCK_TIMEOUT_SECONDS
@@ -234,10 +252,10 @@ def _awareness_delivery_lock(
     its own refusal; `todo_store` does exactly that.
     """
     path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-    path.parent.chmod(0o700)
+    _with_windows_retry(lambda: path.parent.chmod(0o700))
     lock_path = path.with_name(f".{path.name}.lock")
-    lock_path.touch(mode=0o600, exist_ok=True)
-    lock_path.chmod(0o600)
+    _with_windows_retry(lambda: lock_path.touch(mode=0o600, exist_ok=True))
+    _with_windows_retry(lambda: lock_path.chmod(0o600))
     with lock_path.open("a+", encoding="utf-8") as handle:
         mechanism = _acquire_delivery_lock(handle, lock_path, timeout_seconds)
         try:
@@ -269,8 +287,8 @@ def _write_delivery_record(path: Path, data: dict[str, Any], *, compact: bool = 
             created = True
             handle.write(encoded + "\n")
         tmp.chmod(0o600)
-        tmp.replace(path)
-        path.chmod(0o600)
+        _with_windows_retry(lambda: tmp.replace(path))
+        _with_windows_retry(lambda: path.chmod(0o600))
     except OSError:
         if created and tmp.exists() and not tmp.is_symlink():
             tmp.unlink()
