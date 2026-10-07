@@ -4,6 +4,8 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+## 3.0.1 - 2026-10-07
+
 - **The handoff context pack treats project scopes the way it treats thread
   scopes.** `omh memory pack --scope-kind project --scope-ref <identity>`
   for the resolved identity is now the default project pack under its own
