@@ -127,7 +127,16 @@ FROZEN_HANGUL_TRIGGERS_BY_SKILL: dict[str, int] = {
     # rest) and its Japanese/Chinese packs — new capability reach for a
     # lane the catalog had no trigger for in any language, not padding
     # over a routing miss on an intent already covered.
-    "frontend": 20,
+    # 20 -> 28 (2026-10-07): the design-reference lane (chart styling, footer
+    # design, neobrutalism, logo marquee, split text) arrived with its English
+    # phrases ("chart styling", "footer design", "neobrutalism style", "logo
+    # marquee", "split text animation") and its Japanese/Chinese packs in the
+    # same commit. "네오브루탈리즘 스타일로 바꿔줘" fell back with no candidate
+    # and "차트 스타일 우리 디자인 시스템에 맞춰줘" named award-bar-score:
+    # new capability reach, not padding over a covered intent. The everyday
+    # Korean words inside the phrases (차트, 스타일, 테마, 푸터, 로고, 마키,
+    # 텍스트, 스플릿) are held back to whole-phrase matches in the ko pack.
+    "frontend": 28,
     "gateway-intent-card": 10,
     "github-event-ops": 9,
     "github-issue-intake": 8,

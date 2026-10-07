@@ -1233,6 +1233,61 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
         "answer_clarification",
         "",
     ),
+    # Everyday-word guards for the design-reference lane (2026-10-07). The
+    # frontend phrases are built from "chart", "theme", "footer", "split",
+    # "text", and "marquee", each held back to whole-phrase matches in
+    # `_WHOLE_PHRASE_ONLY_TRIGGER_TOKENS`. These carry `forbidden_candidate`
+    # because frontend is not named for any of them today, so a regression
+    # that merely NAMES frontend in the shortlist fails here, not only one
+    # that dispatches it.
+    RoutingPrecisionCase(
+        "chart-a-course-stays-out-of-frontend",
+        "Charting a course for a migration never names the frontend workflow",
+        "Chart a course for the migration.",
+        "answer_clarification",
+        "",
+        forbidden_candidate="frontend",
+    ),
+    RoutingPrecisionCase(
+        "email-footer-stays-out-of-frontend",
+        "An email footer remark never names the frontend workflow",
+        "The footer of the email says unsubscribe.",
+        "answer_clarification",
+        "",
+        forbidden_candidate="frontend",
+    ),
+    RoutingPrecisionCase(
+        "wrong-chart-numbers-stay-out-of-frontend",
+        "Wrong numbers in a board-deck chart are a data question, not chart styling",
+        "The sales chart in the board deck has the wrong numbers.",
+        "answer_clarification",
+        "",
+        forbidden_candidate="frontend",
+    ),
+    RoutingPrecisionCase(
+        "nlp-split-text-stays-out-of-frontend",
+        "Splitting text into sentences never names the frontend workflow",
+        "Split text into sentences before tokenizing.",
+        "answer_clarification",
+        "",
+        forbidden_candidate="frontend",
+    ),
+    RoutingPrecisionCase(
+        "quarterly-theme-stays-out-of-frontend",
+        "A quarterly theme is planning vocabulary, not chart theming",
+        "The chart theme for the quarter is cost cutting.",
+        "answer_clarification",
+        "",
+        forbidden_candidate="frontend",
+    ),
+    RoutingPrecisionCase(
+        "marquee-signing-stays-out-of-frontend",
+        "A marquee signing in sports never names the frontend workflow",
+        "A marquee signing joined the team this week.",
+        "answer_clarification",
+        "",
+        forbidden_candidate="frontend",
+    ),
     # Infra-cache maintenance guards for the "prompt caching"/"prompt cache"/
     # "cache hygiene" triggers: build- and HTTP-cache work shares the word
     # "cache" but has nothing to do with prompt-prefix placement.
@@ -3673,6 +3728,82 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "frontend",
         "prepare_frontend_handoff",
         "frontend_handoff",
+        "frontend",
+    ),
+    # The design-reference lane (2026-10-07): chart theming, footer design,
+    # a named style preset, and decorative text motion. On origin/main these
+    # fell to clarify with an unrelated candidate (iac-change,
+    # agent-evaluation, award-bar-score) or to the plain fallback.
+    RoutingInterventionCase(
+        "chart-theming-reaches-frontend",
+        "Theming dashboard charts reaches the frontend workflow",
+        "Style the dashboard charts so axis, grid and tooltip match our theme.",
+        "dispatch",
+        "frontend",
+        "prepare_frontend_handoff",
+        "frontend_handoff",
+        "frontend",
+    ),
+    RoutingInterventionCase(
+        "footer-design-reaches-frontend",
+        "A footer design request reaches the frontend workflow",
+        "Design a better footer for the marketing site.",
+        "dispatch",
+        "frontend",
+        "prepare_frontend_handoff",
+        "frontend_handoff",
+        "frontend",
+    ),
+    RoutingInterventionCase(
+        "neobrutalism-style-reaches-frontend",
+        "A neobrutalism style request reaches the frontend workflow",
+        "Make the site neobrutalism style.",
+        "dispatch",
+        "frontend",
+        "prepare_frontend_handoff",
+        "frontend_handoff",
+        "frontend",
+    ),
+    RoutingInterventionCase(
+        "split-text-animation-reaches-frontend",
+        "A split-text animation request reaches the frontend workflow",
+        "Add split text animation to the hero heading.",
+        "dispatch",
+        "frontend",
+        "prepare_frontend_handoff",
+        "frontend_handoff",
+        "frontend",
+    ),
+    RoutingInterventionCase(
+        "korean-neobrutalism-reaches-frontend",
+        "A Korean neobrutalism request reaches the frontend workflow",
+        "네오브루탈리즘 스타일로 바꿔줘.",
+        "dispatch",
+        "frontend",
+        "prepare_frontend_handoff",
+        "frontend_handoff",
+        "frontend",
+    ),
+    RoutingInterventionCase(
+        "korean-chart-style-reaches-frontend",
+        "A Korean chart-style request reaches the frontend workflow",
+        "차트 스타일 우리 디자인 시스템에 맞춰줘.",
+        "dispatch",
+        "frontend",
+        "prepare_frontend_handoff",
+        "frontend_handoff",
+        "frontend",
+    ),
+    # One phrase and nothing else: the Korean marquee request names frontend
+    # as the clarify candidate instead of falling back with no candidate.
+    RoutingInterventionCase(
+        "korean-logo-marquee-names-frontend",
+        "A Korean logo-marquee request names frontend as the clarify candidate",
+        "랜딩에 로고 마키 흐르게 해줘.",
+        "clarify",
+        "oh-my-hermes",
+        "answer_clarification",
+        "clarification",
         "frontend",
     ),
     RoutingInterventionCase(
