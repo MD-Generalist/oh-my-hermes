@@ -9,6 +9,7 @@ the default project pack carried every session's thread records.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any
@@ -83,6 +84,43 @@ class HandoffPackScopeTests(unittest.TestCase):
             self.excluded_reasons(pack),
             {self.own_thread["record_id"]: "scope_mismatch", self.other_thread["record_id"]: "scope_mismatch"},
         )
+
+    def test_an_explicit_pack_for_the_resolved_identity_is_the_default_pack(self) -> None:
+        # The setup, runtime-state and catalog-hint snapshots are labelled
+        # project/default; the wrapper-session snapshot carries a thread scope
+        # and conflicts with the setup profile's executor. A pack asked for the
+        # resolved identity by name must carry all of them, so it reaches the
+        # same included items and the same exclusions -- conflicts included.
+        session_dir = self.paths.runtime_wrapper_sessions_dir / "sess1"
+        session_dir.mkdir(parents=True)
+        (session_dir / "session.json").write_text(
+            json.dumps({"status": "running", "selected_executor_profile": "codex"}), encoding="utf-8"
+        )
+        default = build_handoff_context_pack(self.paths)
+        explicit = build_handoff_context_pack(self.paths, scope_kind="project", scope_ref=PROJECT_IDENTITY)
+        self.assertEqual(explicit["scope"], default["scope"])
+        self.assertEqual(
+            [(item["source"], item["item_id"]) for item in explicit["included_context"]],
+            [(item["source"], item["item_id"]) for item in default["included_context"]],
+        )
+        self.assertEqual(
+            [(item["item_id"], item["reason"]) for item in explicit["excluded_context"]],
+            [(item["item_id"], item["reason"]) for item in default["excluded_context"]],
+        )
+        sources = {item["source"] for item in explicit["included_context"]}
+        self.assertLessEqual({"catalog_hint", "wrapper_session"}, sources)
+        self.assertIn("blocked_by_unresolved_conflict", {item["reason"] for item in explicit["excluded_context"]})
+
+    def test_a_pack_for_another_identity_borrows_no_default_labelled_snapshot(self) -> None:
+        pack = build_handoff_context_pack(self.paths, scope_kind="project", scope_ref="prj:" + "b" * 64)
+        self.assertEqual(pack["included_context"], [])
+        self.assertEqual(pack["excluded_context"], [])
+
+    def test_another_projects_record_is_listed_not_skipped(self) -> None:
+        foreign = approve(self.root, "the other project deploys from release branches", scope_kind="project", scope_ref="elsewhere")
+        pack = build_handoff_context_pack(self.paths, session_id=SESSION)
+        self.assertNotIn(foreign["record_id"], self.included_ids(pack))
+        self.assertEqual(self.excluded_reasons(pack)[foreign["record_id"]], "scope_mismatch")
 
     def test_a_label_only_snapshot_still_matches_on_its_label(self) -> None:
         # Snapshots whose items carry no scope of their own (setup, runtime
