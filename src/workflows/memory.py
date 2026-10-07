@@ -2706,6 +2706,10 @@ def build_handoff_context_pack(
                 artifact = _memory_artifact_for_snapshot_item(paths, item)
                 artifact_scope = artifact.get("scope")
                 if isinstance(artifact_scope, dict) and artifact_scope.get("kind") == "project" and artifact_scope != pack_scope:
+                    # Another project's record: skipped silently, as before this
+                    # rule existed. Listing it like the thread case below would
+                    # change every default pack's excluded_context and is a
+                    # separate decision.
                     continue
                 if (
                     isinstance(artifact_scope, dict)
@@ -2714,9 +2718,11 @@ def build_handoff_context_pack(
                     and str(artifact_scope.get("ref", "")) != str(session_id or "")
                 ):
                     # The recall pack's rule: a thread record travels with its
-                    # own session only. Listed rather than skipped, like the
-                    # perspective exclusion below, because this surface
-                    # enumerates its exclusions.
+                    # own session only. Listed by record id rather than skipped,
+                    # like the perspective exclusion below, because this surface
+                    # enumerates its exclusions. (An empty ref would equal an
+                    # empty session here; the evaluator below refuses such a
+                    # record as `scope_invalid` before it can be included.)
                     excluded.append({"item_id": item_id, "source": source, "reason": "scope_mismatch"})
                     continue
                 # Context packs are executor-facing exactly like recall

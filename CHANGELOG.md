@@ -15,7 +15,9 @@ All notable changes will be documented here.
   session's thread record is listed in `excluded_context` as
   `scope_mismatch`, the recall pack's reason, instead of being included.
   Snapshots whose items carry no scope (setup, runtime state) still match by
-  label.
+  label. `omh memory inspect --scope-kind … --scope-ref …` reads the same
+  filter and now returns the matching records too, inside the
+  `project/default`-labelled snapshot.
 - **The bundle's store lock retries Windows permission denials.** Windows
   refuses `chmod`, `touch` and `replace` while another process transiently
   holds the file open (WinError 5/32); the control plane's `local_store` and
