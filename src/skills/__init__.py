@@ -57,6 +57,10 @@ def __getattr__(name: str) -> object:
     return getattr(module, name)
 
 
+def __dir__() -> list[str]:
+    return sorted(set(globals()) | set(_RENDER_SIDE_EXPORTS))
+
+
 __all__ = [
     "CORE_PROFILE_SKILLS",
     "CORE_SKILLS",

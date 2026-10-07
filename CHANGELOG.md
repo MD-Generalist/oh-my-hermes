@@ -16,8 +16,9 @@ All notable changes will be documented here.
   `workflow_skill`) resolve on first attribute access (PEP 562); every
   `from omh.skills import …` keeps working, `__all__` is unchanged, and the
   catalog names stay eager. `import omh.routing.intent` now loads neither
-  `render` nor `awareness`, and no first-import order makes `awareness`
-  fall into its standalone branch any more.
+  `render` nor `awareness`, and importing any `src/` module first no longer
+  drops `awareness` into its standalone branch; a fresh-interpreter test
+  keeps both properties.
 - **The executor-name and coding-delivery phrase groups are defined once.**
   `src/plugin_bundle/omh/executor_cues.py` owns
   `SUBSTRING_NAMED_CODING_AGENT_PHRASES`, `OMO_RUNTIME_CODING_AGENT_PHRASES`,
