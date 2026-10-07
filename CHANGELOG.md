@@ -4,6 +4,21 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **Importing a router module no longer loads the skill renderer.**
+  `omh.skills/__init__` imported `packaging` and `render` eagerly, so
+  importing any submodule — `routing.intent` imports the dataclass-only
+  `skills.catalog_types` — ran the whole render path and, through it, the
+  plugin bundle's `awareness`, which imports `routing.intent` back. That
+  cycle is what #2013 taught `awareness` to survive; this removes it at the
+  root. The seven render-side names (`builtin_skill_templates`,
+  `builtin_skill_reference_templates`, `SkillTemplate`,
+  `SkillReferenceTemplate`, `router_skill`, `workflow_reference_payload`,
+  `workflow_skill`) resolve on first attribute access (PEP 562); every
+  `from omh.skills import …` keeps working, `__all__` is unchanged, and the
+  catalog names stay eager. `import omh.routing.intent` now loads neither
+  `render` nor `awareness`, and importing any `src/` module first no longer
+  drops `awareness` into its standalone branch; a fresh-interpreter test
+  keeps both properties.
 - **The executor-name and coding-delivery phrase groups are defined once.**
   `src/plugin_bundle/omh/executor_cues.py` owns
   `SUBSTRING_NAMED_CODING_AGENT_PHRASES`, `OMO_RUNTIME_CODING_AGENT_PHRASES`,

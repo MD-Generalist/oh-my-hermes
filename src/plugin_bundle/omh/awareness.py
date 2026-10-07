@@ -487,11 +487,11 @@ except ImportError:  # pragma: no cover - standalone plugin hosts keep the fallb
 def _router_intent_module() -> object | None:
     """`routing.intent` when the router is importable, else None.
 
-    Resolved per call for the reason `_router_policy_module` gives: when
-    `routing.intent` is the module mid-import above this one, a module-level
+    Resolved per call for the reason `_router_policy_module` gives: while
+    `routing.intent` is mid-import above this one, a module-level
     `from ...routing.intent import` raises the same ImportError a standalone
-    host raises, and the bundle's own classifier stayed bound for the rest of
-    the process.
+    host raises, and the bundle's own classifier would stay bound for the rest
+    of the process.
     """
     if _normalized_routing_phrase is None:
         # No router module imported when this module loaded: a standalone
@@ -584,17 +584,21 @@ def _router_policy_module() -> object | None:
     """`routing.policy` when the router is importable, else None.
 
     Resolved at call time, like `_user_trigger_pack_route_decision` below, and
-    for the same reason. `routing.policy` imports `routing.intent`, which
-    reaches this module through `skills.catalog_types` -> `skills` ->
-    `skills.render`; so whenever `policy` or `intent` is the first router
-    import of a process, this module's own `from ...routing.policy import`
-    runs against a half-initialised module. The ImportError that raises is
-    the one the standalone-host fallback catches, so for the rest of that
-    process the two guards stayed None (jit-learn took the literal path,
-    long-document the page-count regex) and the two classifiers stayed the
-    bundle's copies, which rank `/loop …` as `workflow-learning` above
-    `ulw-loop` -- the Windows shard that ran `test_candidate_handoff` before
-    `test_degradation_signal`.
+    for the same reason: a module-level `from ...routing.policy import` that
+    runs while `policy` is half-initialised raises the ImportError the
+    standalone-host fallback catches, and the process then keeps the
+    fallbacks. Until #2015 the package had exactly that cycle --
+    `routing.policy` imported `routing.intent`, which reached this module
+    through `skills.catalog_types` -> `skills` -> `skills.render` -- so in
+    every process whose first router import was `policy` or `intent` the two
+    guards stayed None (jit-learn took the literal path, long-document the
+    page-count regex) and the two classifiers stayed the bundle's copies,
+    which rank `/loop …` as `workflow-learning` above `ulw-loop`; the Windows
+    shard that ran `test_candidate_handoff` before `test_degradation_signal`
+    showed it (#2013). `skills/__init__` no longer imports `render` eagerly,
+    so no single-module first import reaches this module mid-cycle today;
+    call-time resolution stays so the next cycle degrades per call instead of
+    per process.
 
     `_normalized_routing_phrase` is None only when no router module imported
     at load (see `_router_intent_module`); that host keeps its fallbacks.
