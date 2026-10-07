@@ -44,7 +44,10 @@ class SkillsPackageExportTests(unittest.TestCase):
             print(json.dumps({name: name in sys.modules for name in watched}))
             """
         )
-        self.assertEqual(loaded, {name: False for name in loaded})
+        self.assertEqual(
+            loaded,
+            {"omh.skills.render": False, "omh.skills.packaging": False, "omh.plugin_bundle.omh.awareness": False},
+        )
 
     def test_awareness_first_keeps_the_router_classifiers(self) -> None:
         # Awareness is the other end of the former cycle: imported first, its

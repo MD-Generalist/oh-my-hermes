@@ -596,7 +596,7 @@ def _router_policy_module() -> object | None:
     which rank `/loop …` as `workflow-learning` above `ulw-loop`; the Windows
     shard that ran `test_candidate_handoff` before `test_degradation_signal`
     showed it (#2013). `skills/__init__` no longer imports `render` eagerly,
-    so no in-package import order reaches this module mid-cycle today;
+    so no single-module first import reaches this module mid-cycle today;
     call-time resolution stays so the next cycle degrades per call instead of
     per process.
 
