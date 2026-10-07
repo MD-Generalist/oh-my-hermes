@@ -84,6 +84,32 @@ class HandoffPackScopeTests(unittest.TestCase):
             {self.own_thread["record_id"]: "scope_mismatch", self.other_thread["record_id"]: "scope_mismatch"},
         )
 
+    def test_an_explicit_pack_for_the_resolved_identity_is_the_default_pack(self) -> None:
+        # The setup, runtime-state and catalog-hint snapshots are labelled
+        # project/default and carry no item scope; a pack asked for the
+        # resolved identity by name must carry them too, with the same
+        # exclusions.
+        default = build_handoff_context_pack(self.paths)
+        explicit = build_handoff_context_pack(self.paths, scope_kind="project", scope_ref=PROJECT_IDENTITY)
+        self.assertEqual(explicit["scope"], default["scope"])
+        self.assertEqual(
+            [(item["source"], item["item_id"]) for item in explicit["included_context"]],
+            [(item["source"], item["item_id"]) for item in default["included_context"]],
+        )
+        self.assertEqual(self.excluded_reasons(explicit), self.excluded_reasons(default))
+        self.assertIn("catalog_hint", {item["source"] for item in explicit["included_context"]})
+
+    def test_a_pack_for_another_identity_borrows_no_default_labelled_snapshot(self) -> None:
+        pack = build_handoff_context_pack(self.paths, scope_kind="project", scope_ref="prj:" + "b" * 64)
+        self.assertEqual(pack["included_context"], [])
+        self.assertEqual(pack["excluded_context"], [])
+
+    def test_another_projects_record_is_listed_not_skipped(self) -> None:
+        foreign = approve(self.root, "the other project deploys from release branches", scope_kind="project", scope_ref="elsewhere")
+        pack = build_handoff_context_pack(self.paths, session_id=SESSION)
+        self.assertNotIn(foreign["record_id"], self.included_ids(pack))
+        self.assertEqual(self.excluded_reasons(pack)[foreign["record_id"]], "scope_mismatch")
+
     def test_a_label_only_snapshot_still_matches_on_its_label(self) -> None:
         # Snapshots whose items carry no scope of their own (setup, runtime
         # state) keep matching by label, so a project/default pack is unchanged.

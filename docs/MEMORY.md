@@ -1036,12 +1036,14 @@ Thread records travel with their own session only. A handoff context pack
 includes a `thread` record when its ref is the pack's `--session-id` (or the
 pack is that thread's own scope) and lists any other session's thread record
 under `excluded_context` as `scope_mismatch` — the recall pack's reason,
-listed per record id here where recall reports a count. An explicit
+listed per record id here where recall reports a count; another project's
+record is listed the same way. An explicit
 `--scope-kind thread --scope-ref <session>` or
 `--scope-kind project --scope-ref <identity>` matches reviewed records on the
-scope each was captured under; such a pack carries reviewed records only,
-without the setup, runtime-state and catalog-hint snapshots the default
-project pack adds.
+scope each was captured under. Naming the resolved project identity gives the
+default project pack under its own name — the same setup, runtime-state and
+catalog-hint snapshots and the same exclusions; naming another identity gives
+only the records captured under it.
 
 ## Legacy Migration and Reactivation
 

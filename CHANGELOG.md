@@ -4,6 +4,16 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **The handoff context pack treats project scopes the way it treats thread
+  scopes.** `omh memory pack --scope-kind project --scope-ref <identity>`
+  for the resolved identity is now the default project pack under its own
+  name — it carries the setup, runtime-state and catalog-hint snapshots
+  (labelled `project/default`, no item scope) that it used to drop, and the
+  same exclusions; a pack for another identity still carries only the
+  records captured under it. Another project's record in a pack is listed
+  under `excluded_context` as `scope_mismatch`, where it used to be skipped
+  without a trace, matching how another session's thread record has been
+  listed since #2016.
 - **Every shipped skill installs under the Hermes install scanner.**
   `hermes skills install rlaope/oh-my-hermes/skills/omh-routing` was refused
   with `Verdict: DANGEROUS` (#2014): `tools/skills_guard.py` scores a
