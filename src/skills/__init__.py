@@ -27,8 +27,35 @@ from .catalog import (
     surface_exposure_for_skill,
     workflow_reference_definitions,
 )
-from .packaging import builtin_skill_reference_templates, builtin_skill_templates
-from .render import SkillReferenceTemplate, SkillTemplate, router_skill, workflow_reference_payload, workflow_skill
+
+# The render-side exports resolve on first use (PEP 562) instead of at
+# package import. Importing any submodule -- `routing.intent` imports
+# `catalog_types` -- runs this file, and an eager `from .render import` here
+# pulled `render` and, through it, the plugin bundle's `awareness` into every
+# router import; `awareness` imports `routing.intent` back, which is the
+# cycle #2013 worked around. The catalog names above stay eager: `catalog`
+# imports nothing on that path.
+_RENDER_SIDE_EXPORTS: dict[str, str] = {
+    "builtin_skill_reference_templates": "packaging",
+    "builtin_skill_templates": "packaging",
+    "SkillReferenceTemplate": "render",
+    "SkillTemplate": "render",
+    "router_skill": "render",
+    "workflow_reference_payload": "render",
+    "workflow_skill": "render",
+}
+
+
+def __getattr__(name: str) -> object:
+    owner = _RENDER_SIDE_EXPORTS.get(name)
+    if owner is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    if owner == "packaging":
+        from . import packaging as module
+    else:
+        from . import render as module
+    return getattr(module, name)
+
 
 __all__ = [
     "CORE_PROFILE_SKILLS",
