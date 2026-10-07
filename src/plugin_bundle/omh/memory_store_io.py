@@ -115,7 +115,6 @@ def ensure_private_dir(path: Path) -> None:
     _with_windows_retry(lambda: path.chmod(0o700))
 
 
-
 def atomic_write_json(path: Path, data: dict[str, Any]) -> None:
     """Replace ``path`` whole with private permissions; the store's one write shape."""
     ensure_private_dir(path.parent)

@@ -409,9 +409,11 @@ class WindowsRetryTests(unittest.TestCase):
     """The lock's permission calls go through the one jittered backoff.
 
     Windows denies chmod/touch/replace while another process transiently holds
-    the file (WinError 5/32). `local_store` and `memory_store_io` retried;
-    the lock every bundle store takes did not, so a CLI writer and a plugin
-    writer could fail on the lock file's chmod instead of waiting.
+    the file (WinError 5/32). `local_store` and `memory_store_io` retried; the
+    lock every bundle store takes and the delivery ledger's replace did not.
+    The ledger replace under a concurrent reader is the denial Windows
+    produces; the lock's own calls are wrapped so no call on the store path is
+    left unguarded (preventive, not observed on Windows).
     """
 
     def test_the_lock_takes_its_permission_calls_through_the_backoff(self) -> None:

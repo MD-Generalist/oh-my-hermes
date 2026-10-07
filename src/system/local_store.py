@@ -121,7 +121,6 @@ def can_write_dir(path: Path, *, probe_name: str = ".write-test", private: bool 
         return False
 
 
-
 def atomic_write_text(path: Path, text: str, *, private: bool = False) -> None:
     ensure_dir(path.parent, private=private)
     tmp = path.with_name(f".{path.name}.{os.getpid()}-{secrets.token_hex(8)}.tmp")

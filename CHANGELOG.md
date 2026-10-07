@@ -9,9 +9,10 @@ All notable changes will be documented here.
   holds the file open (WinError 5/32); the control plane's `local_store` and
   the bundle's `memory_store_io` already retried with a jittered backoff,
   but `_awareness_delivery_lock` — the lock every bundle store and, since
-  #2012, the memory admission path take — did not, so a concurrent CLI and
-  plugin writer could fail on the lock file's `chmod` instead of waiting.
-  The lock's `chmod`/`touch` and the delivery ledger's `replace`/`chmod` now
+  #2012, the memory admission path take — and the delivery ledger's write did
+  not. The ledger's `replace` under a concurrent reader is the denial Windows
+  produces; the lock's `chmod`/`touch` are wrapped with it so no call on the
+  store path is left unguarded (preventive, not observed). All of them now
   go through the same backoff, which has one definition in
   `awareness_delivery.py`; `memory_store_io` and `omh.system.local_store`
   import it instead of carrying copies. POSIX behaviour is unchanged (the
