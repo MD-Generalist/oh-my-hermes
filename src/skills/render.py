@@ -34,6 +34,7 @@ from .catalog_types import (
     ADVERSARIAL_CONSENSUS_ROUNDS,
     DELEGATION_TRANSPARENCY_RULES,
     EXECUTION_WAIT_DISCIPLINE_RULE,
+    HERMES_SCANNER_EXCLUDED_TERMS,
     LLM_APP_DEV_EVAL_DELIVERABLES,
     LLM_APP_DEV_PUBLIC_BOARD_ACTIONS,
     LLM_APP_DEV_RAILS,
@@ -431,12 +432,30 @@ def _requires_tools_line(definition: SkillDefinition | None, target: str) -> str
     return f"    requires_tools: [{', '.join(definition.host_requires_tools)}]\n"
 
 
+
+def _shipped_triggers(definition: SkillDefinition, limit: int | None = None) -> str:
+    """The routing-signal line of a skill body.
+
+    Every trigger except one that spells a term in `HERMES_SCANNER_EXCLUDED_TERMS`:
+    the Hermes install scanner scores that word as critical wherever it appears,
+    and a `dangerous` verdict blocks `hermes skills install` outright (#2014).
+    The trigger itself stays in the catalog and keeps routing.
+    """
+    phrases = [
+        trigger
+        for trigger in definition.triggers
+        if not set(trigger.casefold().split()) & HERMES_SCANNER_EXCLUDED_TERMS
+    ]
+    if limit is not None:
+        phrases = phrases[:limit]
+    return ", ".join(f"`{trigger}`" for trigger in phrases)
+
 def _trigger_table(definitions: list[SkillDefinition]) -> str:
     lines = []
     for definition in definitions:
         if definition.name == "oh-my-hermes":
             continue
-        triggers = ", ".join(f"`{trigger}`" for trigger in definition.triggers[:WORKFLOW_REGISTRY_TRIGGER_LIMIT])
+        triggers = _shipped_triggers(definition, WORKFLOW_REGISTRY_TRIGGER_LIMIT)
         lines.append(f"- `{definition.name}`: {triggers}")
     return "\n".join(lines)
 
@@ -1056,7 +1075,7 @@ Handoff prompts choose an edit format. Steer it from the profile's declared capa
 - After any accepted edit, require re-grounding: re-read the changed region before the next edit rather than reasoning from the pre-edit copy in context.
 - Prefer narrow reads with search-before-edit — locate the symbol or string, read only the region around it, then edit — over whole-file reads that push the rest of the handoff out of context.
 
-These are capability-conditioned prompt shapes, not performance claims. Do not tell the user an edit format will make an executor faster, cheaper, or more accurate; the profile metadata is descriptive, and only observed run evidence can say what happened.
+These are capability-conditioned prompt shapes, not performance claims. Never present an edit format to the user as making an executor faster, cheaper, or more accurate; the profile metadata is descriptive, and only observed run evidence can say what happened.
 
 ### Resource References In Prepared Handoffs
 
@@ -1186,7 +1205,7 @@ elimination.
 - Only `-U`/`--update-all` writes; `--rewrite` without it prints a read-only
   diff preview.
 - Always spell `ast-grep`, never `sg`: some installs alias `sg` to ast-grep,
-  but on many Linux distributions `sg` is util-linux's setgid tool. The
+  but on many Linux distributions `sg` is util-linux's switch-group command. The
   collision is conditional, so the long name is the only safe spelling.
 
 ## Version Scope
@@ -1502,7 +1521,7 @@ def memory_sync_skill() -> SkillTemplate:
     name = "memory-sync"
     definition = _definitions_by_name()[name]
     title = name.replace("-", " ").title()
-    triggers = ", ".join(f"`{trigger}`" for trigger in definition.triggers)
+    triggers = _shipped_triggers(definition)
     primary_harness = declared_primary_harness(name)
     body = f"""# {title}
 
@@ -1635,7 +1654,7 @@ def deep_interview_skill() -> SkillTemplate:
     name = "deep-interview"
     definition = _definitions_by_name()[name]
     title = name.replace("-", " ").title()
-    triggers = ", ".join(f"`{trigger}`" for trigger in definition.triggers)
+    triggers = _shipped_triggers(definition)
     primary_harness = declared_primary_harness(name)
     max_rounds = DEEP_INTERVIEW_MAX_ROUNDS
     soft_round = DEEP_INTERVIEW_SOFT_CHECK_ROUND
@@ -1737,7 +1756,7 @@ def memory_new_skill() -> SkillTemplate:
     name = "memory-new"
     definition = _definitions_by_name()[name]
     title = name.replace("-", " ").title()
-    triggers = ", ".join(f"`{trigger}`" for trigger in definition.triggers)
+    triggers = _shipped_triggers(definition)
     primary_harness = declared_primary_harness(name)
     body = f"""# {title}
 
@@ -1794,7 +1813,7 @@ def wiki_skill() -> SkillTemplate:
     name = "wiki"
     definition = _definitions_by_name()[name]
     title = name.replace("-", " ").title()
-    triggers = ", ".join(f"`{trigger}`" for trigger in definition.triggers)
+    triggers = _shipped_triggers(definition)
     primary_harness = declared_primary_harness(name)
     body = f"""# {title}
 
@@ -2581,7 +2600,7 @@ def _workflow_full_body(
     """Render the complete catalog contract for ordinary workflow bodies."""
     definition = _target_definition(definition, target)
     title = name.replace("-", " ").title()
-    triggers = ", ".join(f"`{trigger}`" for trigger in definition.triggers)
+    triggers = _shipped_triggers(definition)
     primary_harness = declared_primary_harness(name)
     framing = (
         f"This is a Hermes-native `{name}` workflow skill."
@@ -2615,7 +2634,7 @@ def _workflow_full_body(
 def _progressive_workflow_full_contract(definition: SkillDefinition, name: str) -> str:
     """Render skill-specific detail without copying the compact body's shared rails."""
     title = name.replace("-", " ").title()
-    triggers = ", ".join(f"`{trigger}`" for trigger in definition.triggers)
+    triggers = _shipped_triggers(definition)
     return f"""# {title}
 
 Load this on-demand contract after the compact `{name}` body identifies the
@@ -5064,7 +5083,7 @@ Load this reference when an accepted `ultrawork` plan splits into in-session `de
 
 - Every lane has one `verification_command`, written in the lane's `omh_todo` item as ``check: `<command>` `` before the plan is accepted. Only that field binds, and only to the exact text between the backticks: a command mentioned in prose or a prefix of one is refused as `command_not_in_accepted_plan`.
 - The plan is this session's own `omh_todo` plan with `plan_stage=accepted`. Call `team_start` once without `plan_ref`: it is refused as `plan_ref_mismatch`, starts nothing, asks the person nothing, and carries the accepted plan's reference. Repeat the same call with that `plan_ref`.
-- A check is one plain test command such as `python -m pytest`, `npm test` or `make test`. Refused anywhere in argv: a shell or `env`, inline program text (`python -c`, `node -e`), git options or verbs that change the checkout or a remote, a forge CLI, `sudo`, network tools, package install or publish, and `rm`/`mv`/`chmod`. Hermes' own command floor and the person's `approvals.deny` rules also apply; Hermes' dangerous-pattern check does not, and the person's approval of the exact list stands in for it.
+- A check is one plain test command such as `python -m pytest`, `npm test` or `make test`. Refused anywhere in argv: a shell or `env`, inline program text (`python -c`, `node -e`), git options or verbs that change the checkout or a remote, a forge CLI, privilege elevation, network tools, package install or publish, and `rm`/`mv`/`chmod`. Hermes' own command floor and the person's `approvals.deny` rules also apply; Hermes' dangerous-pattern check does not, and the person's approval of the exact list stands in for it.
 - `team_start` asks the person to approve the exact command list. Where nobody can answer, and in a scheduled run, it is refused; report that instead of retrying. Under `--yolo` or `approvals.mode: off` Hermes approves without asking, so say which commands were frozen.
 
 ## The Loop
@@ -6906,7 +6925,7 @@ def workflow_reference_skill_lines(definition: SkillDefinition) -> list[str]:
             ]
         )
         return lines
-    triggers = ", ".join(f"`{trigger}`" for trigger in definition.triggers)
+    triggers = _shipped_triggers(definition)
     lines.extend(
         [
             f"### {definition.name}",

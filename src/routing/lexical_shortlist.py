@@ -39,7 +39,7 @@ import unicodedata
 from .localization import routing_terms
 from .recommend import held_back_trigger_tokens
 from ..skills.catalog import routable_definitions
-from ..skills.catalog_types import SkillDefinition
+from ..skills.catalog_types import HERMES_SCANNER_EXCLUDED_TERMS, SkillDefinition
 
 
 # Field weights: a word in a skill's name says the most about it, trigger and
@@ -83,7 +83,7 @@ STOPWORDS: frozenset[str] = frozenset(
 # when it is only lexical index data. The explicit multi-word routing phrases
 # remain in `recommend.py`, so removing the standalone token from BM25 neither
 # removes nor weakens that route.
-SIDECAR_EXCLUDED_TERMS: frozenset[str] = frozenset({"monero"})
+SIDECAR_EXCLUDED_TERMS: frozenset[str] = HERMES_SCANNER_EXCLUDED_TERMS
 
 
 # Words whose final s or es is not an inflection.

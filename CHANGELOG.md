@@ -4,6 +4,23 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **Every shipped skill installs under the Hermes install scanner.**
+  `hermes skills install rlaope/oh-my-hermes/skills/omh-routing` was refused
+  with `Verdict: DANGEROUS` (#2014): `tools/skills_guard.py` scores a
+  sentence by regex, and five sentences in generated skill bodies matched a
+  critical or high rule by wording alone — "util-linux's setgid tool",
+  "`<dispatch cwd>/.claude/settings.local.json`" (the `>` reads as a shell
+  redirect into another agent's settings), "do not tell the user", a
+  cryptocurrency name in a routing trigger, and a literal `sudo` in a
+  refusal list. Seven skills were blocked. The producers are reworded (never
+  the generated files), the routing-signal line skips a trigger that spells
+  a scanner-excluded term while the trigger keeps routing
+  (`HERMES_SCANNER_EXCLUDED_TERMS` in `catalog_types` is the one list; the
+  shortlist sidecar from #2000 reads it too), and
+  `tests/test_hermes_install_scan.py` runs the scanner itself — vendored
+  verbatim in `tests/_vendor/hermes_skills_guard.py` — over every directory
+  under `skills/` and `agent-skills/`, so a wording that trips a critical or
+  high rule fails CI before a user hits it.
 - **`omh memory pack` scopes reviewed records the way recall does.** The
   reviewed-records snapshot is labelled `project/default` while each record
   carries the scope it was captured under, and the pack's scope filter
