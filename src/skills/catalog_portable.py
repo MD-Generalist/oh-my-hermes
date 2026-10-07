@@ -356,6 +356,8 @@ PORTABLE_REFERENCE_PATHS = frozenset({
     'frontend/references/screenshot-loop.md',
     'frontend/references/web-vitals-budgets.md',
     'frontend/references/scroll-motion-libraries.md',
+    'frontend/references/component-registry-adoption.md',
+    'frontend/references/chart-styling.md',
     'design-quality-gate/references/design-critique-rubric.md',
     'visual-qa/references/visual-verdict-contract.md',
     'apple-design/references/platform-foundations.md',

@@ -420,7 +420,10 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # and six more that carry the incident phrases themselves (goal
             # drift, redoing work, looping, context lost after compaction) in a
             # human or non-agent sense.
-            expected=428,
+            # The design-reference lane adds six: a migration course, an email
+            # footer, wrong chart numbers, NLP text splitting, a quarterly
+            # theme, and a marquee signing, none of which names frontend.
+            expected=434,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -498,7 +501,10 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # four-candidate clarify it keeps.
             # #1799 adds five: looping, repeated work, goal drift, context loss
             # and unexpected cost in an agent run, each reaching agent-debug.
-            expected=627,
+            # The design-reference lane adds seven: chart theming, footer
+            # design, neobrutalism, split-text animation, two Korean
+            # dispatches, and a Korean logo marquee that names frontend.
+            expected=634,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),

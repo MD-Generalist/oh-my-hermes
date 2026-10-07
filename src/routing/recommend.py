@@ -3817,7 +3817,40 @@ _WHOLE_PHRASE_ONLY_TRIGGER_TOKENS = {
     # scores; `parallax` stays creditable because it is distinctive UI
     # vocabulary rather than everyday words, and `animation` was frontend
     # trigger vocabulary before this lane landed.
-    "frontend": frozenset({"effect", "hero", "scroll", "scrolling", "smooth"}),
+    # The design-reference lane (2026-10-07) builds its phrases from everyday
+    # words too: "chart styling", "dashboard charts", "better footer", "logo
+    # marquee", "split text animation", "component registry". Credited as
+    # tokens, "chart a course", "the footer of the email", and "split text
+    # into sentences" would score this workflow, and "dashboard charts"
+    # would credit every ops dashboard; the intent lives in the
+    # complete phrases. `marquee` is held back because "a marquee signing"
+    # is sports vocabulary; `neobrutalism`, `shadcn`, and `tooltip` stay
+    # creditable as distinctive UI vocabulary.
+    "frontend": frozenset(
+        {
+            "effect",
+            "hero",
+            "scroll",
+            "scrolling",
+            "smooth",
+            "chart",
+            "charts",
+            "dashboard",
+            "theme",
+            "theming",
+            "colors",
+            "footer",
+            "better",
+            "site",
+            "website",
+            "neo",
+            "logo",
+            "marquee",
+            "split",
+            "text",
+            "registry",
+        }
+    ),
 }
 
 

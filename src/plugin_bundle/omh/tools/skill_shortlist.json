@@ -576,17 +576,17 @@
 }
 },
 {
-"anchors":"accessibility ai animation beautiful broken component core dashboard end front frontend generic land layout library lighthous look market motion parallax polish premium react responsiv slop styl system terminal tui ui ux visual vital wcag",
-"hangul":"고급 근성 급스 깨짐 니메 드러 드럽 디자 딩페 랙스 랜딩 러운 럴랙 럽게 레이 려하 론트 메이 반응 부드 스러 스럽 스크 아웃 애니 엔드 연스 응형 이션 이아 이지 자연 자인 접근 크롤 트엔 패럴 페이 프론 하게 화려 화면",
-"hangul_anchors":"고급 근성 급스 깨짐 니메 드러 드럽 디자 딩페 랙스 랜딩 러운 럴랙 럽게 려하 론트 메이 반응 부드 스러 스럽 스크 아웃 애니 엔드 연스 응형 이션 이아 이지 자연 자인 접근 크롤 트엔 패럴 페이 프론 하게 화려 화면",
+"anchors":"accessibility ai animation beautiful broken brutalism component core end front frontend generic land layout library lighthous look market motion neobrutalism neobrutalist parallax polish premium react responsiv shadcn slop styl system terminal tooltip tui ui ux visual vital wcag",
+"hangul":"고급 근성 급스 깨짐 네오 니메 드러 드럽 디자 딩페 랙스 랜딩 러운 럴랙 럽게 레이 려하 로고 론트 루탈 리즘 마키 메이 반응 부드 브루 스러 스럽 스크 스타 스트 스플 아웃 애니 엔드 연스 오브 응형 이션 이아 이지 일링 자연 자인 접근 차트 크롤 타일 탈리 테마 텍스 트엔 패럴 페이 푸터 프론 플릿 하게 화려 화면",
+"hangul_anchors":"고급 근성 급스 깨짐 네오 니메 드러 드럽 디자 딩페 랙스 랜딩 러운 럴랙 럽게 려하 로고 론트 루탈 리즘 마키 메이 반응 부드 브루 스러 스럽 스크 스타 스플 아웃 애니 엔드 연스 오브 응형 이션 이아 이지 일링 자연 자인 접근 차트 크롤 타일 탈리 테마 텍스 트엔 패럴 페이 푸터 프론 플릿 하게 화려 화면",
 "label":"omh-frontend",
 "name":"frontend",
 "situation":"Building or polishing a web or terminal UI",
 "terms":{
 "1":"anti befor creation driven handoff herm implementation improv prepar quality redesign shap stat surfac",
-"2":"add ai animation beautiful broken chang core dashboard end front land library lighthous market parallax performanc premium react set slop smooth ux vital wcag",
+"2":"add ai animation beautiful better broken brutalism chang chart color core end footer front land library lighthous logo market marquee neo neobrutalism neobrutalist parallax performanc premium react registry set shadcn site slop smooth split text them tooltip ux vital wcag websit",
 "3":"build motion polish qa ui",
-"4":"accessibility app component design effect hero look page scroll styl system tui visual web",
+"4":"accessibility app component dashboard design effect hero look page scroll styl system tui visual web",
 "5":"generic layout responsiv",
 "6":"frontend terminal"
 }
@@ -659,7 +659,7 @@
 }
 },
 {
-"anchors":"400 a11y aa accessibility accessibl ada appearanc architect aria background blind color complianc contrast focus hard keyboard launch name navigation order ratio reader reflow role screen screenreader size tab target text touch trap usabl valu wcag websit zoom",
+"anchors":"400 a11y aa accessibility accessibl ada appearanc architect aria background blind color complianc contrast focus hard keyboard launch name navigation order ratio reader reflow role screen screenreader size tab target touch trap usabl valu wcag websit zoom",
 "hangul":"감사 검사 검토 게이 근성 내비 대비 리더 린리 명도 보드 비게 순서 스크 이션 접근 커스 크기 크린 키보 타깃 터치 포커 표시",
 "hangul_anchors":"감사 검사 검토 게이 근성 내비 대비 리더 린리 명도 보드 비게 순서 스크 이션 접근 커스 크기 크린 키보 타깃 터치 포커 표시",
 "label":"omh-accessibility-audit",
@@ -675,7 +675,7 @@
 }
 },
 {
-"anchors":"analyz assuranc broken browser button cjk click clip consol cut dead imag interaction keyboard layout link look mobil navigation network pixel regression render responsiv right screenshot terminal text tui ui viewport visual wrong",
+"anchors":"analyz assuranc broken browser button cjk click clip consol cut dead imag interaction keyboard layout link look mobil navigation network pixel regression render responsiv right screenshot terminal tui ui viewport visual wrong",
 "hangul":"검증 글자 깨짐 레이 렌더 린샷 문제 미널 바꿈 비교 비주 스크 시각 아웃 이아 잘림 주얼 줄바 크린 터미 픽셀 한글 화면",
 "hangul_anchors":"검증 글자 깨짐 렌더 린샷 문제 미널 바꿈 비교 비주 스크 시각 아웃 이아 잘림 주얼 줄바 크린 터미 픽셀 한글 화면",
 "label":"omh-visual-qa",
@@ -1701,7 +1701,7 @@
 }
 },
 {
-"anchors":"option probability rate scal text true typed",
+"anchors":"option probability rate scal true typed",
 "hangul":"",
 "hangul_anchors":"",
 "label":"omh-jev-ask",
@@ -2018,7 +2018,7 @@
 }
 },
 {
-"anchors":"adopt adoption affordabl agentchat agy antigravity assistant audio auth auto awar backend barg behavior blockchain bridg chainlink chat clawsocial cli comparison composio control cost crustocean crypto cryptocurrency demo devic discovery enough evaluat gateway genai generat generation graph handl home identity integration integrity keychain maco mailbox matrix messag microsoft minivers multimodal nextcloud oauth oci onequery oracl pair peer platform plugin privat real realtim receipt reliabl safety screenshot smart social solana spoken sql stack text transaction trial universal video voic weather websocket windy windymail wire workspac wxtrain xmr",
+"anchors":"adopt adoption affordabl agentchat agy antigravity assistant audio auth auto awar backend barg behavior blockchain bridg chainlink chat clawsocial cli comparison composio control cost crustocean crypto cryptocurrency demo devic discovery enough evaluat gateway genai generat generation graph handl home identity integration integrity keychain maco mailbox matrix messag microsoft minivers multimodal nextcloud oauth oci onequery oracl pair peer platform plugin privat real realtim receipt reliabl safety screenshot smart social solana spoken sql stack transaction trial universal video voic weather websocket windy windymail wire workspac wxtrain xmr",
 "hangul":"그인 기기 기준 넥터 데모 도입 라우 러그 리스 마트 멀티 모달 비도 비용 생성 스마 스크 스턴 시스 어시 연동 영상 외부 우팅 인증 자동 제어 제품 준비 채택 커넥 턴트 트홈 티모 플러 홈어",
 "hangul_anchors":"그인 기기 기준 넥터 데모 도입 라우 러그 리스 마트 멀티 모달 비도 비용 생성 스마 스크 스턴 시스 어시 연동 영상 외부 우팅 인증 자동 제어 제품 채택 커넥 턴트 트홈 티모 플러 홈어",
 "label":"omh-external-connector-readiness",
@@ -2071,7 +2071,7 @@
 }
 },
 {
-"anchors":"announcement audienc changelog content copy customer draft email executiv guid land launch linkedin newsletter plain post publish rewrit social text tone voic word",
+"anchors":"announcement audienc changelog content copy customer draft email executiv guid land launch linkedin newsletter plain post publish rewrit social tone voic word",
 "hangul":"가이 객용 고객 공지 글쓰 널별 노트 뉴스 레이 레터 리즈 릴리 메일 문체 스레 쓰기 오퍼 요약 워크 이드 이메 이터 즈노 지문 채널 초안 콘텐 크플 텐츠 퍼레 플로",
 "hangul_anchors":"가이 객용 고객 공지 글쓰 널별 노트 뉴스 레터 리즈 릴리 메일 문체 스레 쓰기 오퍼 워크 이드 이메 이터 즈노 지문 채널 초안 콘텐 크플 텐츠 퍼레 플로",
 "label":"omh-content-operator",
@@ -2087,7 +2087,7 @@
 }
 },
 {
-"anchors":"audio clip extract extraction field graphic imag input media meet ocr pars photo pictur podcast pull receipt say screenshot text timestamp transcrib transcript transcription video webinar youtub",
+"anchors":"audio clip extract extraction field graphic imag input media meet ocr pars photo pictur podcast pull receipt say screenshot timestamp transcrib transcript transcription video webinar youtub",
 "hangul":"녹음 디오 라인 린샷 미지 샷에 수증 스크 스탬 스트 에서 영상 영수 오디 요약 유튜 음성 이미 임라 임스 전사 지에 추출 크린 타임 탬프 텍스 튜브 회의",
 "hangul_anchors":"녹음 디오 라인 린샷 미지 샷에 수증 스크 스탬 에서 영상 영수 오디 유튜 음성 이미 임라 임스 전사 지에 추출 크린 타임 탬프 텍스 튜브 회의",
 "label":"omh-media-input",
