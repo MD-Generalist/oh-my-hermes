@@ -2707,6 +2707,18 @@ def build_handoff_context_pack(
                 artifact_scope = artifact.get("scope")
                 if isinstance(artifact_scope, dict) and artifact_scope.get("kind") == "project" and artifact_scope != pack_scope:
                     continue
+                if (
+                    isinstance(artifact_scope, dict)
+                    and artifact_scope.get("kind") == "thread"
+                    and artifact_scope != pack_scope
+                    and str(artifact_scope.get("ref", "")) != str(session_id or "")
+                ):
+                    # The recall pack's rule: a thread record travels with its
+                    # own session only. Listed rather than skipped, like the
+                    # perspective exclusion below, because this surface
+                    # enumerates its exclusions.
+                    excluded.append({"item_id": item_id, "source": source, "reason": "scope_mismatch"})
+                    continue
                 # Context packs are executor-facing exactly like recall
                 # packs, so they apply the same lens: a record about another
                 # executor is excluded here, not silently skipped, because
@@ -3262,11 +3274,29 @@ def _filter_snapshots_by_scope(
     filtered: list[dict[str, object]] = []
     for snapshot in snapshots:
         scope = _normalize_scope(snapshot.get("scope", _scope("project", "default")))
-        kind_matches = not scope_kind or scope["kind"] == scope_kind
-        ref_matches = not scope_ref or scope["ref"] == scope_ref
-        if kind_matches and ref_matches:
+        if _scope_requested(scope, scope_kind=scope_kind, scope_ref=scope_ref):
             filtered.append(snapshot)
+            continue
+        # The reviewed-records snapshot is labelled project/default while each
+        # item carries the scope its record was captured under, so a pack asked
+        # for one thread or one project identity matched no label and came
+        # back empty. An item that carries a scope is matched on that scope.
+        items = [
+            item
+            for item in (snapshot.get("items", []) if isinstance(snapshot.get("items"), list) else [])
+            if isinstance(item, dict)
+            and isinstance(item.get("scope"), dict)
+            and _scope_requested(_normalize_scope(item["scope"]), scope_kind=scope_kind, scope_ref=scope_ref)
+        ]
+        if items:
+            filtered.append({**snapshot, "items": items})
     return filtered
+
+
+def _scope_requested(scope: dict[str, str], *, scope_kind: str | None, scope_ref: str | None) -> bool:
+    kind_matches = not scope_kind or scope["kind"] == scope_kind
+    ref_matches = not scope_ref or scope["ref"] == scope_ref
+    return kind_matches and ref_matches
 
 
 def _limited_items(items: list[dict[str, object]], limit: int | None) -> list[dict[str, object]]:

@@ -25,9 +25,11 @@ from omh.workflows.memory import (
 )
 
 
-def _legacy_handoff(paths):
-    # Lifecycle fixtures deliberately retain their persisted legacy refs.
-    return build_handoff_context_pack(paths, scope_kind="project", scope_ref="default",
+def _legacy_handoff(paths, *, session_id: str = ""):
+    # Lifecycle fixtures deliberately retain their persisted legacy refs. A
+    # thread-scoped item travels only with its own session, as in recall, so a
+    # test that observes one names the session here.
+    return build_handoff_context_pack(paths, scope_kind="project", scope_ref="default", session_id=session_id,
                                       inspection={"snapshots": _memory_snapshots(paths), "conflicts": []})
 
 
@@ -1523,13 +1525,13 @@ class MemoryBatchTests(TestCase):
             with self.assertRaisesRegex(RuntimeError, "injected named write interruption"):
                 apply_approved_memory_update_batch(paths, staged["batch_id"], write_hook=interrupt_on_second_write)
 
-            interrupted = _legacy_handoff(paths)
+            interrupted = _legacy_handoff(paths, session_id="thread-1")
             self.assertFalse({item["item_id"] for item in interrupted["included_context"]} & {row["item_id"] for row in staged["items"]})
             self.assertEqual(
                 apply_approved_memory_update_batch(paths, staged["batch_id"])["status"],
                 "applied",
             )
-            recovered = _legacy_handoff(paths)
+            recovered = _legacy_handoff(paths, session_id="thread-1")
             ids = [item["item_id"] for item in recovered["included_context"]]
             self.assertTrue({row["item_id"] for row in staged["items"]} <= set(ids))
 
@@ -1577,7 +1579,7 @@ class MemoryBatchTests(TestCase):
                     worker.join(timeout=10)
                     self.assertEqual(worker.exitcode, 0)
                 self.assertCountEqual([queue.get(timeout=2), queue.get(timeout=2)], [("applied", first["batch_id"]), ("applied", second["batch_id"])])
-                ids = {item["item_id"] for item in _legacy_handoff(paths)["included_context"]}
+                ids = {item["item_id"] for item in _legacy_handoff(paths, session_id="thread-2")["included_context"]}
                 self.assertTrue({first["items"][0]["item_id"], second["items"][0]["item_id"]} <= ids)
 
 

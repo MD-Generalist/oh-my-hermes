@@ -1032,6 +1032,14 @@ active lens under `perspective`, each included record carries its own
 `perspective` block, and context packs exclude mismatched records with
 reason `perspective_mismatch`.
 
+Thread records travel with their own session only. A handoff context pack
+includes a `thread` record when its ref is the pack's `--session-id` (or the
+pack is that thread's own scope) and lists any other session's thread record
+under `excluded_context` as `scope_mismatch`, the same reason the recall pack
+uses. An explicit `--scope-kind thread --scope-ref <session>` or
+`--scope-kind project --scope-ref <identity>` matches reviewed records on the
+scope each was captured under.
+
 ## Legacy Migration and Reactivation
 
 Legacy v1 files remain readable in status and review surfaces as
