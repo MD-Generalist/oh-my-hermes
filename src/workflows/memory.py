@@ -2706,8 +2706,10 @@ def build_handoff_context_pack(
                 artifact = _memory_artifact_for_snapshot_item(paths, item)
                 artifact_scope = artifact.get("scope")
                 if isinstance(artifact_scope, dict) and artifact_scope.get("kind") == "project" and artifact_scope != pack_scope:
-                    # Another project's record: listed, like the thread case
-                    # below, because this surface enumerates its exclusions.
+                    # A record or legacy scope item under another project scope
+                    # -- including the unbound `project/default` label once this
+                    # home's identity has resolved -- is listed, like the thread
+                    # case below, because this surface enumerates its exclusions.
                     excluded.append({"item_id": item_id, "source": source, "reason": "scope_mismatch"})
                     continue
                 if (
@@ -3093,15 +3095,15 @@ def _local_snapshots(
     snapshots.extend(memory_snapshots)
     snapshots.extend(_wrapper_session_snapshots(paths, limit=session_limit))
     snapshots.append(_catalog_hint_snapshot())
-    # An explicit request for the resolved project identity is the default
-    # project pack under its own name. The setup, runtime-state and catalog-hint
-    # snapshots are labelled project/default and carry no item scope, so
-    # without this alias such a pack held reviewed records only (#2016).
-    label_aliases: frozenset[tuple[str, str]] = frozenset()
-    if scope_kind == "project" and scope_ref:
-        if _handoff_pack_scope(paths, scope_kind=None, scope_ref=None) == _scope("project", str(scope_ref)):
-            label_aliases = frozenset({("project", "default")})
-    return _filter_snapshots_by_scope(snapshots, scope_kind=scope_kind, scope_ref=scope_ref, label_aliases=label_aliases)
+    # An explicit request for the scope this home resolves to is the default
+    # pack under its own name, so it is not filtered at all: the setup,
+    # runtime-state and catalog-hint snapshots are labelled project/default,
+    # the wrapper-session and target snapshots carry their own scopes, and the
+    # conflicts `_detect_conflicts` finds between them need every one present
+    # (#2016). Another identity keeps only the records captured under it.
+    if scope_kind and scope_ref and _handoff_pack_scope(paths, scope_kind=None, scope_ref=None) == _scope(str(scope_kind), str(scope_ref)):
+        scope_kind = scope_ref = None
+    return _filter_snapshots_by_scope(snapshots, scope_kind=scope_kind, scope_ref=scope_ref)
 
 
 def _setup_snapshot(setup: dict[str, Any]) -> dict[str, object]:
@@ -3281,14 +3283,13 @@ def _filter_snapshots_by_scope(
     *,
     scope_kind: str | None,
     scope_ref: str | None,
-    label_aliases: frozenset[tuple[str, str]] = frozenset(),
 ) -> list[dict[str, object]]:
     if not scope_kind and not scope_ref:
         return snapshots
     filtered: list[dict[str, object]] = []
     for snapshot in snapshots:
         scope = _normalize_scope(snapshot.get("scope", _scope("project", "default")))
-        if _scope_requested(scope, scope_kind=scope_kind, scope_ref=scope_ref) or (scope["kind"], scope["ref"]) in label_aliases:
+        if _scope_requested(scope, scope_kind=scope_kind, scope_ref=scope_ref):
             filtered.append(snapshot)
             continue
         # The reviewed-records snapshot is labelled project/default while each

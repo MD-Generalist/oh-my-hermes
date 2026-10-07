@@ -9,6 +9,7 @@ the default project pack carried every session's thread records.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any
@@ -86,9 +87,15 @@ class HandoffPackScopeTests(unittest.TestCase):
 
     def test_an_explicit_pack_for_the_resolved_identity_is_the_default_pack(self) -> None:
         # The setup, runtime-state and catalog-hint snapshots are labelled
-        # project/default and carry no item scope; a pack asked for the
-        # resolved identity by name must carry them too, with the same
-        # exclusions.
+        # project/default; the wrapper-session snapshot carries a thread scope
+        # and conflicts with the setup profile's executor. A pack asked for the
+        # resolved identity by name must carry all of them, so it reaches the
+        # same included items and the same exclusions -- conflicts included.
+        session_dir = self.paths.runtime_wrapper_sessions_dir / "sess1"
+        session_dir.mkdir(parents=True)
+        (session_dir / "session.json").write_text(
+            json.dumps({"status": "running", "selected_executor_profile": "codex"}), encoding="utf-8"
+        )
         default = build_handoff_context_pack(self.paths)
         explicit = build_handoff_context_pack(self.paths, scope_kind="project", scope_ref=PROJECT_IDENTITY)
         self.assertEqual(explicit["scope"], default["scope"])
@@ -96,8 +103,13 @@ class HandoffPackScopeTests(unittest.TestCase):
             [(item["source"], item["item_id"]) for item in explicit["included_context"]],
             [(item["source"], item["item_id"]) for item in default["included_context"]],
         )
-        self.assertEqual(self.excluded_reasons(explicit), self.excluded_reasons(default))
-        self.assertIn("catalog_hint", {item["source"] for item in explicit["included_context"]})
+        self.assertEqual(
+            [(item["item_id"], item["reason"]) for item in explicit["excluded_context"]],
+            [(item["item_id"], item["reason"]) for item in default["excluded_context"]],
+        )
+        sources = {item["source"] for item in explicit["included_context"]}
+        self.assertLessEqual({"catalog_hint", "wrapper_session"}, sources)
+        self.assertIn("blocked_by_unresolved_conflict", {item["reason"] for item in explicit["excluded_context"]})
 
     def test_a_pack_for_another_identity_borrows_no_default_labelled_snapshot(self) -> None:
         pack = build_handoff_context_pack(self.paths, scope_kind="project", scope_ref="prj:" + "b" * 64)
