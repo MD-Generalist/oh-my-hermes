@@ -4,6 +4,20 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **`omh memory pack` scopes reviewed records the way recall does.** The
+  reviewed-records snapshot is labelled `project/default` while each record
+  carries the scope it was captured under, and the pack's scope filter
+  matched labels only — so `--scope-kind thread --scope-ref <session>` and
+  `--scope-kind project --scope-ref <identity>` both returned an empty pack,
+  while the default project pack carried every session's thread records.
+  Records are now matched on their own scope when the label does not match,
+  and a thread record travels only with its own `--session-id`; another
+  session's thread record is listed in `excluded_context` as
+  `scope_mismatch`, the recall pack's reason, instead of being included.
+  Snapshots whose items carry no scope (setup, runtime state) still match by
+  label. `omh memory inspect --scope-kind … --scope-ref …` reads the same
+  filter and now returns the matching records too, inside the
+  `project/default`-labelled snapshot.
 - **The bundle's store lock retries Windows permission denials.** Windows
   refuses `chmod`, `touch` and `replace` while another process transiently
   holds the file open (WinError 5/32); the control plane's `local_store` and
