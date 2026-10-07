@@ -12,7 +12,8 @@ All notable changes will be documented here.
   "`<dispatch cwd>/.claude/settings.local.json`" (the `>` reads as a shell
   redirect into another agent's settings), "do not tell the user", a
   cryptocurrency name in a routing trigger, and a literal `sudo` in a
-  refusal list. Seven skills were blocked. The producers are reworded (never
+  refusal list. Seven directories under `skills/` and one under `agent-skills/`
+  scanned `dangerous`. The producers are reworded (never
   the generated files), the routing-signal line skips a trigger that spells
   a scanner-excluded term while the trigger keeps routing
   (`HERMES_SCANNER_EXCLUDED_TERMS` in `catalog_types` is the one list; the

@@ -432,6 +432,12 @@ def _requires_tools_line(definition: SkillDefinition | None, target: str) -> str
     return f"    requires_tools: [{', '.join(definition.host_requires_tools)}]\n"
 
 
+def _spells_scanner_excluded_term(trigger: str) -> bool:
+    # Substring, not whole word: the scanner's `crypto_mining` rule is a
+    # case-insensitive substring match, so `monero-gateway` must go too.
+    lowered = trigger.casefold()
+    return any(term in lowered for term in HERMES_SCANNER_EXCLUDED_TERMS)
+
 
 def _shipped_triggers(definition: SkillDefinition, limit: int | None = None) -> str:
     """The routing-signal line of a skill body.
@@ -441,14 +447,11 @@ def _shipped_triggers(definition: SkillDefinition, limit: int | None = None) -> 
     and a `dangerous` verdict blocks `hermes skills install` outright (#2014).
     The trigger itself stays in the catalog and keeps routing.
     """
-    phrases = [
-        trigger
-        for trigger in definition.triggers
-        if not set(trigger.casefold().split()) & HERMES_SCANNER_EXCLUDED_TERMS
-    ]
+    phrases = [trigger for trigger in definition.triggers if not _spells_scanner_excluded_term(trigger)]
     if limit is not None:
         phrases = phrases[:limit]
     return ", ".join(f"`{trigger}`" for trigger in phrases)
+
 
 def _trigger_table(definitions: list[SkillDefinition]) -> str:
     lines = []

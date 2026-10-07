@@ -5,7 +5,8 @@ the quarantined skill directory and refuses a `dangerous` verdict for a
 community source outright (`--force` does not override it). Twice a plain
 sentence in a generated skill body tripped a critical rule: a cryptocurrency
 name in the shortlist sidecar (#2000), then `setgid`, a `> .claude/settings`
-shape and "do not tell the user" in three reference files (#2014). The drift
+shape, "do not tell the user", a trigger spelling that cryptocurrency name and
+a literal `sudo` across skill bodies and reference files (#2014). The drift
 gates cannot see this -- a producer and its generated file move together --
 so this runs the scanner itself, vendored verbatim in `tests/_vendor`, over
 `skills/` and `agent-skills/` exactly as Hermes runs it.
@@ -43,11 +44,13 @@ class HermesInstallScanTests(unittest.TestCase):
             blocking = _blocking(result)
             if result.verdict != "safe" or blocking:
                 problems[str(skill_dir.relative_to(REPO))] = [f"verdict={result.verdict}", *blocking]
-        self.assertEqual(
+        # assertEqual on dicts goes through assertDictEqual, whose repr and diff
+        # truncation would hide the file:line findings this message exists for.
+        report = "\n".join(f"{skill}: " + "; ".join(rows) for skill, rows in problems.items())
+        self.assertFalse(
             problems,
-            {},
             "a skill body trips a Hermes install-scanner rule; reword the producer in "
-            "src/skills (never the generated file), regenerate, and re-derive the digests",
+            "src/skills (never the generated file), regenerate, and re-derive the digests:\n" + report,
         )
 
     def test_the_vendored_scanner_still_scores_the_sentences_that_blocked_installs(self) -> None:
@@ -59,15 +62,19 @@ class HermesInstallScanTests(unittest.TestCase):
             "deception_hide": "Do not tell the user an edit format will make an executor faster.",
             "other_agent_config_mod_shell": "project scope is `<dispatch cwd>/.claude/settings.local.json` with rules",
             "crypto_mining": "Strong routing signals: `monero gateway`, `connector readiness`",
+            "sudo_usage": "Refused anywhere in argv: a shell or `env`, a forge CLI, `sudo`, network tools.",
         }
+        high_rules = {"deception_hide", "sudo_usage"}
         with TemporaryDirectory() as tmp:
             skill = Path(tmp) / "probe"
             skill.mkdir()
             (skill / "SKILL.md").write_text("\n".join(sentences.values()) + "\n", encoding="utf-8")
             result = scan_skill(skill, "community")
         self.assertEqual(result.verdict, "dangerous")
-        self.assertEqual({f.pattern_id for f in result.findings if f.severity == "critical"} >= set(sentences) - {"deception_hide"}, True)
-        self.assertIn("deception_hide", {f.pattern_id for f in result.findings if f.severity == "high"})
+        critical = {f.pattern_id for f in result.findings if f.severity == "critical"}
+        high = {f.pattern_id for f in result.findings if f.severity == "high"}
+        self.assertLessEqual(set(sentences) - high_rules, critical)
+        self.assertLessEqual(high_rules, high)
 
 
 if __name__ == "__main__":
