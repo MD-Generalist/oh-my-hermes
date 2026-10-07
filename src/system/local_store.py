@@ -3,7 +3,6 @@ from __future__ import annotations
 import errno
 import json
 import os
-import random
 import secrets
 import shutil
 import time
@@ -12,6 +11,8 @@ from datetime import datetime, timezone
 from json import JSONDecodeError
 from pathlib import Path
 from typing import Any, Callable, Iterator
+
+from ..plugin_bundle.omh.awareness_delivery import _with_windows_retry
 
 try:
     import fcntl
@@ -119,21 +120,6 @@ def can_write_dir(path: Path, *, probe_name: str = ".write-test", private: bool 
     except OSError:
         return False
 
-
-def _with_windows_retry(operation: Callable[[], None]) -> None:
-    # Windows denies replace/chmod while the target is transiently opened by
-    # a concurrent reader or replacer (WinError 5/32); POSIX never does. The
-    # backoff is jittered: barrier-synchronized writers re-collide in
-    # lockstep on deterministic delays.
-    for delay in (0.01, 0.02, 0.05, 0.1, 0.2, 0.4, 0.8):
-        try:
-            operation()
-            return
-        except PermissionError:
-            if os.name != "nt":
-                raise
-            time.sleep(delay * (0.5 + random.random()))
-    operation()
 
 
 def atomic_write_text(path: Path, text: str, *, private: bool = False) -> None:

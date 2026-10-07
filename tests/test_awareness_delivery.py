@@ -15,6 +15,7 @@ from _local_package import load_local_package
 load_local_package()
 from omh.maintenance.doctor import _awareness_delivery_check
 from omh.paths import resolve_paths
+from omh.plugin_bundle.omh import awareness_delivery
 from omh.plugin_bundle.omh.awareness_delivery import (
     AWARENESS_DELIVERY_SCHEMA_VERSION,
     _awareness_delivery_lock,
@@ -402,6 +403,67 @@ class AwarenessDeliveryLedgerTests(unittest.TestCase):
                         observed_at="2026-07-26T04:30:00Z", omh_home=tmp,
                     )
                 )
+
+
+class WindowsRetryTests(unittest.TestCase):
+    """The lock's permission calls go through the one jittered backoff.
+
+    Windows denies chmod/touch/replace while another process transiently holds
+    the file (WinError 5/32). `local_store` and `memory_store_io` retried;
+    the lock every bundle store takes did not, so a CLI writer and a plugin
+    writer could fail on the lock file's chmod instead of waiting.
+    """
+
+    def test_the_lock_takes_its_permission_calls_through_the_backoff(self) -> None:
+        calls: list[object] = []
+
+        def recording(operation):
+            calls.append(operation)
+            operation()
+
+        with TemporaryDirectory() as tmp, patch.object(awareness_delivery, "_with_windows_retry", side_effect=recording):
+            with _awareness_delivery_lock(Path(tmp) / "store" / "ledger.json"):
+                pass
+        # parent chmod, lock touch, lock chmod -- each a call Windows can deny.
+        self.assertEqual(len(calls), 3)
+
+    def test_the_ledger_write_takes_replace_and_chmod_through_the_backoff(self) -> None:
+        calls: list[object] = []
+
+        def recording(operation):
+            calls.append(operation)
+            operation()
+
+        with TemporaryDirectory() as tmp, patch.object(awareness_delivery, "_with_windows_retry", side_effect=recording):
+            path = Path(tmp) / "ledger.json"
+            awareness_delivery._write_delivery_record(path, {"schema_version": "x/v1"})
+            self.assertEqual(json.loads(path.read_text(encoding="utf-8")), {"schema_version": "x/v1"})
+        self.assertEqual(len(calls), 2)
+
+    def test_the_backoff_retries_permission_errors_only_on_windows(self) -> None:
+        attempts = {"count": 0}
+
+        def flaky() -> None:
+            attempts["count"] += 1
+            if attempts["count"] < 3:
+                raise PermissionError("[WinError 32] The process cannot access the file")
+
+        with patch.object(awareness_delivery.os, "name", "nt"), patch.object(awareness_delivery.time, "sleep") as sleep:
+            awareness_delivery._with_windows_retry(flaky)
+        self.assertEqual((attempts["count"], sleep.call_count), (3, 2))
+
+        attempts["count"] = 0
+        with patch.object(awareness_delivery.os, "name", "posix"), patch.object(awareness_delivery.time, "sleep") as sleep:
+            with self.assertRaises(PermissionError):
+                awareness_delivery._with_windows_retry(flaky)
+        self.assertEqual((attempts["count"], sleep.call_count), (1, 0))
+
+    def test_the_backoff_has_one_definition(self) -> None:
+        from omh.plugin_bundle.omh import memory_store_io
+        from omh.system import local_store
+
+        self.assertIs(memory_store_io._with_windows_retry, awareness_delivery._with_windows_retry)
+        self.assertIs(local_store._with_windows_retry, awareness_delivery._with_windows_retry)
 
 
 if __name__ == "__main__":
