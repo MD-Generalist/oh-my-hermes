@@ -39,7 +39,7 @@ import unicodedata
 from .localization import routing_terms
 from .recommend import held_back_trigger_tokens
 from ..skills.catalog import routable_definitions
-from ..skills.catalog_types import SkillDefinition
+from ..skills.catalog_types import HERMES_SCANNER_EXCLUDED_TERMS, SkillDefinition
 
 
 # Field weights: a word in a skill's name says the most about it, trigger and
@@ -78,12 +78,13 @@ STOPWORDS: frozenset[str] = frozenset(
 
 # Terms that carry routing meaning in the source catalog but cannot be copied
 # into the generated plugin sidecar. Hermes scans every bundled JSON string
-# with the same critical threat patterns it applies to executable files; the
-# cryptocurrency name below is therefore classified as crypto-mining code even
-# when it is only lexical index data. The explicit multi-word routing phrases
-# remain in `recommend.py`, so removing the standalone token from BM25 neither
-# removes nor weakens that route.
-SIDECAR_EXCLUDED_TERMS: frozenset[str] = frozenset({"monero"})
+# with the same critical threat patterns it applies to executable files, so a
+# cryptocurrency name is classified as crypto-mining code even when it is only
+# lexical index data. The one list is `HERMES_SCANNER_EXCLUDED_TERMS` in
+# `skills/catalog_types.py`; the SKILL.md routing-signal line reads it too. The
+# explicit multi-word routing phrases remain in `recommend.py`, so removing
+# the standalone token from BM25 neither removes nor weakens that route.
+SIDECAR_EXCLUDED_TERMS: frozenset[str] = HERMES_SCANNER_EXCLUDED_TERMS
 
 
 # Words whose final s or es is not an inflection.

@@ -128,9 +128,12 @@ class DuplicateContentSuppressionTests(unittest.TestCase):
             f"unallowlisted cross-surface duplicates found: {profile['duplicates']}",
         )
         # The one known, deliberate duplicate (delegation transparency rules,
-        # commit ad62b9a1) stays allowlisted and accounted for.
+        # commit ad62b9a1) stays allowlisted and accounted for. Its size moved
+        # 2466 -> 2470 when #2018 reworded the permission preflight rule's
+        # settings path so the Hermes install scanner stops reading it as a
+        # shell redirect.
         self.assertEqual(profile["duplicate_count"], 1)
-        self.assertEqual(profile["allowlisted_bytes"], 2466)
+        self.assertEqual(profile["allowlisted_bytes"], 2470)
         self.assertEqual(profile["bytes_saved"], 0)
         self.assertEqual(
             profile["surface_kinds"],
