@@ -45,15 +45,11 @@ def _memory_items(pack: dict[str, Any], key: str) -> list[dict[str, Any]]:
 
 class HandoffPackScopeTests(unittest.TestCase):
     def setUp(self) -> None:
-        self._tmp = TemporaryDirectory()
-        self.root = Path(self._tmp.name)
+        self.root = Path(self.enterContext(TemporaryDirectory()))
         self.paths = resolve_paths(self.root / ".omh", self.root / ".hermes")
         self.project = approve(self.root, "the project deploys from the main branch")
         self.own_thread = approve(self.root, "this session prefers the staging bucket", scope_kind="thread", scope_ref=SESSION)
         self.other_thread = approve(self.root, "another session prefers the canary bucket", scope_kind="thread", scope_ref=OTHER_SESSION)
-
-    def tearDown(self) -> None:
-        self._tmp.cleanup()
 
     def included_ids(self, pack: dict[str, Any]) -> set[str]:
         return {str(item["item_id"]) for item in _memory_items(pack, "included_context")}
