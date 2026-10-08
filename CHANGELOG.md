@@ -18,6 +18,19 @@ All notable changes will be documented here.
   temporary directory (and, on Windows, the system and profile variables git
   needs to start); it has no fence to deny the network with. Checks run for
   the unit keep the unit's network and environment.
+- **Diagnostics analyzers run fenced to their snapshot.** `--diagnostics`
+  ran pyright, basedpyright and ruff on the host, with the operator's write
+  access and network, against a snapshot of a tree the unit committed, and
+  pyright/basedpyright read their configuration from that tree (#2036). Each
+  analyzer now runs inside a fence whose only write root is the private
+  snapshot directory, with network denied and its temporary directory inside
+  the snapshot. A host that cannot prove the fence reports the provider as
+  crashed unless the operator passed `--allow-unconfined`, as the
+  diagnostics git calls already do. Measured on basedpyright 1.39.10
+  (pyright 1.1.412): a planted `venvPath`/`venv` interpreter is never
+  executed, and the PATH interpreter pyright runs drops the working directory
+  from `sys.path` before importing anything; a test pins both where an
+  analyzer is installed.
 - **File activity fails closed on symlink escapes.** `omh quality-evidence
   file-activity` judged workspace containment by a path's spelling only, so a
   symlink inside the workspace that points outside it, such as `linked/notes.md`

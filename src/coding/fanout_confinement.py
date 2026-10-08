@@ -659,6 +659,28 @@ def prepare_dispatcher_git_fence(worktree: Path, *, allow_unconfined: bool = Fal
     return replace(fence, allow_network=False)
 
 
+def prepare_diagnostic_analyzer_fence(
+    snapshot: Path,
+    executable: str,
+    environment: Mapping[str, str],
+    *,
+    allow_unconfined: bool = False,
+) -> FanoutFilesystemConfinement:
+    """A fence for one `--diagnostics` analyzer run over a revision snapshot (#2036).
+
+    The snapshot is a tree the unit committed, and pyright/basedpyright read
+    their configuration from it. Its only write root is the snapshot itself, a
+    private temporary directory removed after the run, and its commands run
+    with network denied. `command` wraps only `executable`, the absolute path
+    of the analyzer the runner resolved. Not enforced and not opted in
+    (`unconfined_allowed`) means the caller runs nothing.
+    """
+    fence = prepare_fanout_filesystem_confinement(
+        snapshot, environment, ((executable,),), allow_unconfined=allow_unconfined,
+    )
+    return replace(fence, allow_network=False)
+
+
 def _prepare_fanout_filesystem_confinement(
     worktree: Path,
     environment: Mapping[str, str],

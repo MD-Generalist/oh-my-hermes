@@ -15,7 +15,12 @@ from typing import Iterator
 
 from .diagnostic_execution import CancellationSignal, ProviderObservation
 from .diagnostic_providers import GLOBAL_MAX_DIAGNOSTICS_PER_CHECK
-from .fanout_confinement import FanoutFilesystemConfinement, dispatcher_git_environment, prepare_dispatcher_git_fence
+from .fanout_confinement import (
+    FanoutFilesystemConfinement,
+    dispatcher_git_environment,
+    prepare_diagnostic_analyzer_fence,
+    prepare_dispatcher_git_fence,
+)
 from .local_diagnostic_capture import DiagnosticPipeDrainer
 from .local_diagnostic_parsing import parse_local_diagnostics
 from .local_diagnostic_process_owner import ProcessTreeOwner, start_owned_process
@@ -153,10 +158,23 @@ class LocalDiagnosticProviderRunner:
         timeout_ms: int,
         cancelled: CancellationSignal | None,
     ) -> ProviderObservation:
+        # The analyzer reads configuration from a tree the unit committed, so
+        # it runs inside a fence whose only write root is the snapshot, with
+        # network denied (#2036). No fence and no `--allow-unconfined` is
+        # reported the way the git paths report it: a crashed diagnostic.
+        environment = _diagnostic_environment()
+        fence = prepare_diagnostic_analyzer_fence(
+            snapshot, argv[0], environment, allow_unconfined=self.git.allow_unconfined,
+        )
+        command = fence.command(argv)
+        if command is not None:
+            environment = fence.command_environment(environment)
+        elif not fence.unconfined_allowed:
+            raise OSError("local diagnostics found no write fence for the analyzer over the snapshot")
         process, process_owner = start_owned_process(
-            argv,
+            argv if command is None else command,
             cwd=snapshot,
-            env=_diagnostic_environment(),
+            env=environment,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
         )

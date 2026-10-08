@@ -23,6 +23,8 @@ from omh.coding.local_diagnostic_process_owner import start_owned_process  # noq
 
 
 class LocalDiagnosticProcessCleanupTests(unittest.TestCase):
+    _CHILD_TOKEN = f"omh-diagnostic-child-{os.getpid()}"
+
     @requires_posix
     def test_successful_provider_reaps_background_child_group(self) -> None:
         with TemporaryDirectory() as raw:
@@ -48,24 +50,22 @@ class LocalDiagnosticProcessCleanupTests(unittest.TestCase):
                 )
             )
 
-            pids = [
-                int(value)
-                for value in (root / "diagnostic-children.pid")
-                .read_text(encoding="utf-8")
-                .splitlines()
+            # The provider runs fenced to its snapshot (#2036), so its
+            # children are found by the token in their argv, not a pid file.
+            listing = subprocess.run(
+                ["ps", "-Ao", "pid=,command="], check=True, capture_output=True, text=True
+            ).stdout
+            alive = [
+                int(line.split(None, 1)[0])
+                for line in listing.splitlines()
+                if self._CHILD_TOKEN in line
             ]
-            alive: list[int] = []
-            for pid in pids:
-                try:
-                    os.kill(pid, 0)
-                except ProcessLookupError:
-                    continue
-                alive.append(pid)
             for pid in alive:
                 os.kill(pid, signal.SIGKILL)
 
+            # The fixture exits 2 unless its child was running, so "ok"
+            # means both revisions started a background child.
             self.assertEqual(result.status, "ok")
-            self.assertEqual(len(pids), 2)
             self.assertEqual(alive, [])
 
     @requires_windows
@@ -142,18 +142,18 @@ class LocalDiagnosticProcessCleanupTests(unittest.TestCase):
             "\n".join(
                 (
                     f"#!{sys.executable}",
-                    "from pathlib import Path",
                     "import subprocess",
                     "import sys",
+                    "import time",
                     "child = subprocess.Popen(",
-                    "    [sys.executable, '-c', 'import time; time.sleep(60)'],",
+                    f"    [sys.executable, '-c', 'import time; time.sleep(60)', {self._CHILD_TOKEN!r}],",
                     "    stdin=subprocess.DEVNULL,",
                     "    stdout=subprocess.DEVNULL,",
                     "    stderr=subprocess.DEVNULL,",
                     ")",
-                    "pid_file = Path(__file__).with_name('diagnostic-children.pid')",
-                    "with pid_file.open('a', encoding='utf-8') as stream:",
-                    "    stream.write(f'{child.pid}\\n')",
+                    "time.sleep(0.2)",
+                    "if child.poll() is not None:",
+                    "    sys.exit(2)",
                     "print('[]')",
                     "",
                 )
