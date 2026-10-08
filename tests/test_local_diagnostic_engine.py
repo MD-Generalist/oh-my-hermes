@@ -16,6 +16,7 @@ from _local_package import load_local_package
 load_local_package()
 
 from omh.coding.diagnostic_execution import DiagnosticExecutionRequest  # noqa: E402
+from omh.coding.local_diagnostic_process import WorkspaceGitFences  # noqa: E402
 from omh.coding.local_diagnostic_engine import (  # noqa: E402
     LocalDiagnosticProviderRunner,
     build_local_diagnostic_engine,
@@ -110,7 +111,7 @@ class LocalDiagnosticEngineTests(unittest.TestCase):
             )
             runner = LocalDiagnosticProviderRunner(
                 {"ruff": sys.executable},
-                allow_unconfined=host_cannot_fence_fanout(),
+                git=WorkspaceGitFences(allow_unconfined=host_cannot_fence_fanout()),
             )
 
             observation = runner.run(

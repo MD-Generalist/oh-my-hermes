@@ -17,7 +17,7 @@ from .diagnostic_providers import (
     DiagnosticProviderConfig,
     ProviderCapability,
 )
-from .local_diagnostic_process import LocalDiagnosticProviderRunner, workspace_git_command
+from .local_diagnostic_process import LocalDiagnosticProviderRunner, WorkspaceGitFences
 
 
 SUPPORTED_LOCAL_PROVIDERS = ("pyright", "basedpyright", "ruff")
@@ -32,8 +32,8 @@ class GitChangedFileResolver:
     The worktree is the unit's, so git runs there inside a fence (#1999).
     """
 
-    def __init__(self, *, allow_unconfined: bool = False) -> None:
-        self.allow_unconfined = allow_unconfined
+    def __init__(self, *, git: WorkspaceGitFences | None = None) -> None:
+        self.git = WorkspaceGitFences() if git is None else git
 
     def resolve(
         self,
@@ -42,7 +42,7 @@ class GitChangedFileResolver:
         end_revision: str,
     ) -> tuple[str, ...]:
         completed = subprocess.run(
-            workspace_git_command(
+            self.git.command(
                 workspace_id,
                 [
                     "git",
@@ -54,7 +54,6 @@ class GitChangedFileResolver:
                     end_revision,
                     "--",
                 ],
-                allow_unconfined=self.allow_unconfined,
             ),
             cwd=workspace_id,
             check=True,
@@ -81,15 +80,14 @@ class GitRevisionReader:
     The worktree is the unit's, so git runs there inside a fence (#1999).
     """
 
-    def __init__(self, *, allow_unconfined: bool = False) -> None:
-        self.allow_unconfined = allow_unconfined
+    def __init__(self, *, git: WorkspaceGitFences | None = None) -> None:
+        self.git = WorkspaceGitFences() if git is None else git
 
     def read(self, workspace_id: str, revision: str) -> str:
         completed = subprocess.run(
-            workspace_git_command(
+            self.git.command(
                 workspace_id,
                 ["git", "rev-parse", "--verify", f"{revision}^{{commit}}"],
-                allow_unconfined=self.allow_unconfined,
             ),
             cwd=workspace_id,
             check=True,
@@ -102,7 +100,7 @@ class GitRevisionReader:
             raise OSError("local diagnostics revision did not resolve to a fixed commit")
         if revision == "HEAD":
             status = subprocess.run(
-                workspace_git_command(
+                self.git.command(
                     workspace_id,
                     [
                         "git",
@@ -110,7 +108,6 @@ class GitRevisionReader:
                         "--porcelain",
                         "--untracked-files=normal",
                     ],
-                    allow_unconfined=self.allow_unconfined,
                 ),
                 cwd=workspace_id,
                 check=True,
@@ -132,6 +129,8 @@ def build_local_diagnostic_engine(
     `allow_unconfined` is the dispatch's `--allow-unconfined`: without it, git
     in a unit worktree that no fence can be proven for is not run (#1999).
     """
+    # One fence per unit worktree, shared by the three adapters.
+    git = WorkspaceGitFences(allow_unconfined=allow_unconfined)
     executables = {
         provider_id: executable
         for provider_id in SUPPORTED_LOCAL_PROVIDERS
@@ -144,9 +143,9 @@ def build_local_diagnostic_engine(
     )
     return DiagnosticExecutionEngine(
         config=DiagnosticProviderConfig(capabilities),
-        resolver=GitChangedFileResolver(allow_unconfined=allow_unconfined),
-        revisions=GitRevisionReader(allow_unconfined=allow_unconfined),
-        runner=LocalDiagnosticProviderRunner(executables, allow_unconfined=allow_unconfined),
+        resolver=GitChangedFileResolver(git=git),
+        revisions=GitRevisionReader(git=git),
+        runner=LocalDiagnosticProviderRunner(executables, git=git),
         settings=DiagnosticExecutionSettings(
             max_global_concurrency=2,
             max_provider_concurrency=1,

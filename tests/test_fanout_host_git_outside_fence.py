@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import ast
 import json
+import os
 from pathlib import Path
 import re
 import shlex
@@ -220,6 +221,7 @@ class DiagnosticsGitFenceTests(unittest.TestCase):
 
     def test_a_host_that_cannot_fence_reads_nothing_unless_the_operator_opts_in(self) -> None:
         from omh.coding.local_diagnostic_engine import GitRevisionReader
+        from omh.coding.local_diagnostic_process import WorkspaceGitFences
 
         with TemporaryDirectory() as temporary:
             root = Path(temporary).resolve()
@@ -228,7 +230,7 @@ class DiagnosticsGitFenceTests(unittest.TestCase):
             with mock.patch("omh.coding.fanout_confinement.backend_available", return_value=False):
                 with self.assertRaises(OSError):
                     GitRevisionReader().read(str(worktree), "HEAD")
-                self.assertEqual(GitRevisionReader(allow_unconfined=True).read(str(worktree), "HEAD"), head)
+                self.assertEqual(GitRevisionReader(git=WorkspaceGitFences(allow_unconfined=True)).read(str(worktree), "HEAD"), head)
 
 
 @unittest.skipUnless(sys.platform == "darwin", "sandbox-exec confinement is exercised on macOS")
@@ -367,6 +369,121 @@ class PreFenceWiringTests(unittest.TestCase):
         for name in ("_intake_unit_result", "_intake_stdout_unit_result"):
             (head,) = self._calls(self.functions[name], "reported_producer_head")
             self.assertEqual(self._keyword(head, "confinement"), "confinement", name)
+
+
+@unittest.skipUnless(os.name == "posix", "O_NOFOLLOW scratch creation is a POSIX path")
+class ScratchIgnoreLinkTests(unittest.TestCase):
+    """Fence preparation writes `.omh/confinement-tmp/.gitignore` on the host, in a unit's worktree."""
+
+    def _plants(self, root: Path) -> dict[str, tuple[Path, Path]]:
+        """Each case: a worktree with one planted link, and the host file it must not touch."""
+        cases: dict[str, tuple[Path, Path]] = {}
+        for name in ("file_symlink", "hard_link", "omh_dir_symlink", "scratch_dir_symlink"):
+            worktree = root / name / "worktree"
+            host = root / name / "host"
+            worktree.mkdir(parents=True)
+            host.mkdir()
+            victim = host / (".gitignore" if name.endswith("dir_symlink") else "authorized_keys")
+            victim.write_text("ssh-ed25519 operator\n", encoding="utf-8")
+            scratch = worktree / ".omh" / "confinement-tmp"
+            if name == "omh_dir_symlink":
+                (host / "confinement-tmp").mkdir()
+                victim = host / "confinement-tmp" / ".gitignore"
+                victim.write_text("ssh-ed25519 operator\n", encoding="utf-8")
+                (worktree / ".omh").symlink_to(host, target_is_directory=True)
+            elif name == "scratch_dir_symlink":
+                (worktree / ".omh").mkdir()
+                scratch.symlink_to(host, target_is_directory=True)
+            else:
+                scratch.mkdir(parents=True)
+                if name == "file_symlink":
+                    (scratch / ".gitignore").symlink_to(victim)
+                else:
+                    os.link(victim, scratch / ".gitignore")
+            cases[name] = (worktree, victim)
+        return cases
+
+    def test_a_planted_link_is_never_written_through(self) -> None:
+        from omh.coding.fanout_confinement import _write_scratch_ignore
+
+        with TemporaryDirectory() as temporary:
+            for name, (worktree, victim) in self._plants(Path(temporary).resolve()).items():
+                with self.subTest(name=name):
+                    self.assertFalse(_write_scratch_ignore(worktree))
+                    self.assertEqual(victim.read_text(encoding="utf-8"), "ssh-ed25519 operator\n")
+
+    def test_an_ordinary_worktree_gets_its_ignore_file(self) -> None:
+        from omh.coding.fanout_confinement import _write_scratch_ignore
+
+        with TemporaryDirectory() as temporary:
+            worktree = Path(temporary).resolve()
+            self.assertTrue(_write_scratch_ignore(worktree))
+            self.assertTrue(_write_scratch_ignore(worktree))
+            self.assertEqual((worktree / ".omh" / "confinement-tmp" / ".gitignore").read_text(encoding="utf-8"), "*\n")
+
+    @unittest.skipUnless(sys.platform == "darwin", "sandbox-exec confinement is exercised on macOS")
+    def test_the_fence_is_not_enforced_over_a_planted_link(self) -> None:
+        from omh.coding.fanout_confinement import prepare_dispatcher_git_fence
+
+        with TemporaryDirectory() as temporary:
+            for name, (worktree, victim) in self._plants(Path(temporary).resolve()).items():
+                with self.subTest(name=name):
+                    fence = prepare_dispatcher_git_fence(worktree)
+                    self.assertFalse(fence.receipt["enforced"])
+                    self.assertEqual(fence.receipt["reason_code"], "sandbox_scratch_unsafe")
+                    self.assertIsNone(fence.dispatcher_command(("git", "status")))
+                    self.assertEqual(victim.read_text(encoding="utf-8"), "ssh-ed25519 operator\n")
+
+
+class SnapshotMemberFilterTests(unittest.TestCase):
+    """The diagnostics snapshot extracts a tree the unit committed."""
+
+    def test_only_regular_files_and_directories_are_materialized(self) -> None:
+        import io
+        import tarfile
+
+        from omh.coding.local_diagnostic_process import _snapshot_member
+
+        buffer = io.BytesIO()
+        with tarfile.open(fileobj=buffer, mode="w") as archive:
+            directory = tarfile.TarInfo("pkg")
+            directory.type = tarfile.DIRTYPE
+            archive.addfile(directory)
+            data = b"value = 1\n"
+            regular = tarfile.TarInfo("pkg/seed.py")
+            regular.size = len(data)
+            archive.addfile(regular, io.BytesIO(data))
+            for name, kind, target in (
+                ("pkg/escape", tarfile.SYMTYPE, "../../outside"),
+                ("pkg/inside-link", tarfile.SYMTYPE, "seed.py"),
+                ("pkg/hard", tarfile.LNKTYPE, "pkg/seed.py"),
+                ("pkg/device", tarfile.CHRTYPE, ""),
+                ("pkg/pipe", tarfile.FIFOTYPE, ""),
+            ):
+                member = tarfile.TarInfo(name)
+                member.type = kind
+                member.linkname = target
+                archive.addfile(member)
+        buffer.seek(0)
+        with TemporaryDirectory() as temporary:
+            destination = Path(temporary) / "checkout"
+            destination.mkdir()
+            with tarfile.open(fileobj=buffer, mode="r|") as stream:
+                stream.extractall(destination, filter=_snapshot_member)
+            found = sorted(str(path.relative_to(destination)) for path in destination.rglob("*"))
+            self.assertEqual([part.replace(os.sep, "/") for part in found], ["pkg", "pkg/seed.py"])
+            self.assertEqual((destination / "pkg" / "seed.py").read_bytes(), data)
+
+    def test_a_python_without_the_data_filter_reports_the_provider_unavailable(self) -> None:
+        import tarfile
+
+        from omh.coding.local_diagnostic_process import LocalDiagnosticProviderRunner
+
+        with mock.patch.object(tarfile, "data_filter", None):
+            observation = LocalDiagnosticProviderRunner({"ruff": sys.executable}).run(
+                "ruff", "/nonexistent/worktree", "0" * 40, ("seed.py",), 1_000, None,
+            )
+        self.assertEqual(observation.state, "unavailable")
 
 
 if __name__ == "__main__":

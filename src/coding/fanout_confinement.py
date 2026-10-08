@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 import re
 import shutil
+import stat
 import subprocess
 from typing import cast
 from uuid import uuid4
@@ -296,6 +297,54 @@ def _real_dir_chain(base: Path, parts: tuple[str, ...], *, create: bool) -> bool
                 nfd = os.open(part, flags, dir_fd=fd)
             os.close(fd)
             fd = nfd
+        return True
+    except OSError:
+        return False
+    finally:
+        os.close(fd)
+
+
+def _write_scratch_ignore(worktree: Path) -> bool:
+    """Create `.omh/confinement-tmp/.gitignore` (`*`) in the worktree without following a link.
+
+    The worktree is the unit's, and this runs on the host: a symlinked `.omh`,
+    `confinement-tmp` or `.gitignore`, or a `.gitignore` hard-linked to a host
+    file, would turn this write into one outside the worktree (#1999 review).
+    Each component is opened with O_NOFOLLOW relative to its verified parent;
+    anything that is not a real directory, or a single-link regular file at the
+    end, fails the preparation instead.
+    """
+    nofollow = getattr(os, "O_NOFOLLOW", 0)
+    directory_flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | nofollow | getattr(os, "O_CLOEXEC", 0)
+    if not nofollow or not getattr(os, "O_DIRECTORY", 0):
+        return False
+    try:
+        fd = os.open(str(worktree), directory_flags)
+    except OSError:
+        return False
+    try:
+        for part in _FANOUT_TOOLCHAIN_TEMP_DIRECTORY.parts:
+            try:
+                os.mkdir(part, 0o755, dir_fd=fd)
+            except FileExistsError:
+                pass
+            child = os.open(part, directory_flags, dir_fd=fd)
+            os.close(fd)
+            fd = child
+        ignore = os.open(
+            ".gitignore",
+            os.O_WRONLY | os.O_CREAT | os.O_NONBLOCK | nofollow | getattr(os, "O_CLOEXEC", 0),
+            0o644,
+            dir_fd=fd,
+        )
+        try:
+            info = os.fstat(ignore)
+            if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+                return False
+            os.ftruncate(ignore, 0)
+            _ = os.write(ignore, b"*\n")
+        finally:
+            os.close(ignore)
         return True
     except OSError:
         return False
@@ -594,12 +643,11 @@ def _prepare_fanout_filesystem_confinement(
     # while still reading the whole host tree (#1602). The macOS probe keeps its
     # narrow read layout, so such a directory is readable to the probe; it is
     # the directory the same executable is about to run from under broad read.
-    if selected in {"sandbox-exec", "bwrap"}:
-        scratch_directory = worktree / _FANOUT_TOOLCHAIN_TEMP_DIRECTORY
-        scratch_directory.mkdir(parents=True, exist_ok=True)
-        gitignore = scratch_directory / ".gitignore"
-        if not gitignore.is_file() or gitignore.read_text(encoding="utf-8") != "*\n":
-            _ = gitignore.write_text("*\n", encoding="utf-8")
+    if selected in {"sandbox-exec", "bwrap"} and not _write_scratch_ignore(worktree):
+        return _unconfined(
+            worktree, selected, environment, "sandbox_scratch_unsafe",
+            write_roots=write_roots, write_literals=write_literals,
+        )
     child = ChildContext(
         worktree,
         worktree,
