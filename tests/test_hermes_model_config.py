@@ -33,6 +33,9 @@ import signal
 import sys
 from threading import Event
 
+# Like Hermes itself (hermes_cli/__init__.py), write UTF-8 whatever the
+# locale codec is, so Windows exercises the bytes a real Hermes emits.
+sys.stdout.reconfigure(encoding="utf-8")
 home = Path(os.environ["HERMES_HOME"])
 state_path = home / "config.yaml"
 log_path = home / "commands.jsonl"

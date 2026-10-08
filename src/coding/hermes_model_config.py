@@ -363,9 +363,15 @@ def _run(
     if commands is not None:
         commands.append(command)
     try:
+        # Hermes forces its stdout to UTF-8 on every platform
+        # (hermes_cli/__init__.py), and `auth list` marks the current
+        # credential with `←`; the locale codec (cp1252 on Windows) cannot
+        # decode those bytes.
         return subprocess.run(
             _platform_command(command),
             text=True,
+            encoding="utf-8",
+            errors="replace",
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             check=False,
