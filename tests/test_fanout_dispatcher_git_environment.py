@@ -174,6 +174,26 @@ class UnfencedOptInEnvironmentTests(_PlantedWorktree):
         self.assertIsNotNone(observe_session_workspace(str(self.worktree), confinement=self._opted_in_fence()))
         self._assert_planted_program_saw_nothing(fenced=False)
 
+    def test_the_dispatchers_git_in_a_unit_worktree_run_unfenced(self) -> None:
+        """`unit_git_runner` for a unit the operator let run unfenced: the reuse preflight and a status read."""
+        from omh.coding.fanout_dispatch import _fenced_dispatcher_runner, _git_text, signal_safe_unit_runner
+        from omh.coding.workspace_preflight import probe_workspace
+
+        with mock.patch("omh.coding.fanout_confinement.backend_available", return_value=False):
+            confinement = prepare_fanout_filesystem_confinement(
+                self.worktree, {}, (("/bin/sh", "-c", "exit 0"),), unit_branch="agent/unit",
+                repo_root=self.root / "repo", allow_unconfined=True,
+            )
+        self.assertTrue(confinement.unconfined_allowed)
+        runner = _fenced_dispatcher_runner(signal_safe_unit_runner, confinement, self.worktree)
+        base = _git(self.worktree, "rev-parse", "HEAD")
+        preflight = probe_workspace(self.worktree, base_ref=base, target_ref=None, runner=runner)
+        # The preflight's temporary index still reaches git through GIT_INDEX_FILE.
+        self.assertTrue(preflight["ok"], preflight)
+        status = _git_text(runner, self.worktree, ["git", "status", "--porcelain=v1", "--untracked-files=all"])
+        self.assertEqual(status, " M seed\n")
+        self._assert_planted_program_saw_nothing(fenced=False)
+
     def test_the_diagnostics_revision_reader(self) -> None:
         from omh.coding.local_diagnostic_engine import GitRevisionReader
         from omh.coding.local_diagnostic_process import WorkspaceGitFences

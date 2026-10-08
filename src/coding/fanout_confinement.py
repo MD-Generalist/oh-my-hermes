@@ -224,10 +224,7 @@ class FanoutFilesystemConfinement:
         if located is None:
             return None
         assert self.child is not None
-        git_environment = dispatcher_git_environment(self.child.work / _FANOUT_TOOLCHAIN_TEMP_DIRECTORY)
-        index_file = None if environment is None else environment.get("GIT_INDEX_FILE")
-        if index_file:
-            git_environment["GIT_INDEX_FILE"] = index_file
+        git_environment = dispatcher_git_environment(self.child.work / _FANOUT_TOOLCHAIN_TEMP_DIRECTORY, environment)
         # The unit's own fence keeps the network for the unit and its checks;
         # only this command is built without it.
         return replace(self, allow_network=False)._fenced(located, argv), git_environment
@@ -300,7 +297,9 @@ _DISPATCHER_GIT_WINDOWS_ENVIRONMENT_KEYS = (
 )
 
 
-def dispatcher_git_environment(temporary_directory: Path | None = None) -> dict[str, str]:
+def dispatcher_git_environment(
+    temporary_directory: Path | None = None, caller_environment: Mapping[str, str] | None = None
+) -> dict[str, str]:
     """The whole environment of git the dispatcher runs in a unit's worktree (#2035).
 
     Fenced or not: a run the operator let go unfenced (`--allow-unconfined`)
@@ -308,6 +307,9 @@ def dispatcher_git_environment(temporary_directory: Path | None = None) -> dict[
     fence's scratch directory, since the operator's own is outside every write
     root; unfenced, the operator's is kept. No lazy fetch: a dispatcher read
     has no reason to reach a remote, and inside a fence it has no network.
+    Of `caller_environment`, the environment the caller built for this spawn,
+    only `GIT_INDEX_FILE` is carried over: the workspace preflight names its
+    temporary index there.
     """
     keys = _DISPATCHER_GIT_ENVIRONMENT_KEYS
     if os.name == "nt":
@@ -319,6 +321,9 @@ def dispatcher_git_environment(temporary_directory: Path | None = None) -> dict[
     if temporary_directory is not None:
         environment["TMPDIR"] = str(temporary_directory)
     environment.update(GIT_OPTIONAL_LOCKS="0", GIT_TERMINAL_PROMPT="0", GIT_NO_LAZY_FETCH="1")
+    index_file = None if caller_environment is None else caller_environment.get("GIT_INDEX_FILE")
+    if index_file:
+        environment["GIT_INDEX_FILE"] = index_file
     return environment
 
 

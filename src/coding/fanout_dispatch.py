@@ -112,6 +112,7 @@ from .fanout_health_events import (
 from .fanout_confinement import (
     FanoutFilesystemConfinement,
     confinement_receipt,
+    dispatcher_git_environment,
     owner_state_directories,
     git_roots_skip_reason,
     planned_fanout_filesystem_confinement,
@@ -5982,14 +5983,18 @@ def _fenced_dispatcher_runner(
     raises rather than running outside it: the git helpers report that as a
     failed read. That includes a cwd BELOW the worktree, which the fence cannot
     keep (bwrap starts every command at the worktree itself). A call whose cwd
-    is outside the worktree passes through, as does every call when no fence
-    was enforced, because the unit then ran unfenced as well. A wrapped call has
-    no network and only the environment git needs (#2035): every caller here
-    runs git to read or measure the worktree, which needs neither.
+    is outside the worktree passes through. A wrapped call has no network and
+    only the environment git needs (#2035): every caller here runs git to read
+    or measure the worktree, which needs neither. Where the operator let the
+    unit run unfenced (`--allow-unconfined`), a call in the worktree runs
+    unfenced too, but still with only that environment: the worktree is the
+    unit's either way. With no confinement at all (an injected runner), the
+    runner is returned unchanged.
     """
-    if confinement is None or confinement.receipt.get("enforced") is not True:
+    if confinement is None:
         return runner
     fenced_cwd = worktree.resolve()
+    enforced = confinement.receipt.get("enforced") is True
 
     def run(argv: Sequence[str], **kwargs: Any) -> Any:
         cwd = kwargs.get("cwd")
@@ -5998,6 +6003,8 @@ def _fenced_dispatcher_runner(
         resolved = Path(cwd).resolve()
         if resolved != fenced_cwd and not resolved.is_relative_to(fenced_cwd):
             return runner(argv, **kwargs)
+        if not enforced:
+            return runner(argv, **{**kwargs, "env": dispatcher_git_environment(None, kwargs.get("env"))})
         fenced = confinement.dispatcher_git_command(argv, kwargs.get("env")) if resolved == fenced_cwd else None
         if fenced is None:
             raise OSError("the command could not be placed inside the unit's write fence")

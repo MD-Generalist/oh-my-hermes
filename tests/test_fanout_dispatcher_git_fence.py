@@ -78,12 +78,19 @@ def _fence(*, enforced: bool = True, wraps: bool = True) -> SimpleNamespace:
 class FencedDispatcherRunnerTests(unittest.TestCase):
     """The wrapper's own decisions, with no sandbox involved, so every job runs them."""
 
-    def test_without_an_enforced_fence_the_runner_is_returned_unchanged(self) -> None:
+    def test_without_an_enforced_fence_the_call_runs_unwrapped_with_gits_environment(self) -> None:
         runner = _Recorder()
         with TemporaryDirectory() as temporary:
             worktree = Path(temporary)
             self.assertIs(_fenced_dispatcher_runner(runner, None, worktree), runner)
-            self.assertIs(_fenced_dispatcher_runner(runner, _fence(enforced=False), worktree), runner)  # type: ignore[arg-type]
+            unfenced = _fenced_dispatcher_runner(runner, _fence(enforced=False), worktree)  # type: ignore[arg-type]
+            _ = unfenced(["git", "status"], cwd=str(worktree), env={"GIT_INDEX_FILE": "index.tmp", "SECRET": "x"})
+        # Unfenced by the operator's opt-in: not wrapped, but given only git's environment (#2035).
+        (argv, kwargs), = runner.calls
+        self.assertEqual(argv, ["git", "status"])
+        self.assertNotIn("confinement_command", kwargs)
+        self.assertEqual(kwargs["env"]["GIT_INDEX_FILE"], "index.tmp")
+        self.assertNotIn("SECRET", kwargs["env"])
 
     def test_a_call_in_the_unit_worktree_is_wrapped_in_the_fence(self) -> None:
         runner = _Recorder()
