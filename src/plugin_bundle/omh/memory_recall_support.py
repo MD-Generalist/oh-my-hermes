@@ -652,9 +652,19 @@ def _memory_recall_score(record: dict[str, Any], query: str) -> int:
     tag_overlap = query_tokens & set(_normalize_tags(record.get("tags", [])))
     return len(overlap) * 10 + len(tag_overlap) * 5
 
-_MEMORY_ASCII_TOKEN = re.compile(r"[a-z0-9_/-]{3,}")
+# Latin letters past ASCII: Latin-1 letters (minus the multiplication and
+# division signs), Latin Extended-A/B and Latin Extended Additional, plus the
+# combining marks NFC leaves uncomposed. They are word characters, not
+# separators: without them "déploiement" indexed as "ploiement". Other
+# alphabets (Cyrillic, Greek, ...) are deliberately not added here and keep the
+# no-indexable-tokens fallback.
+_MEMORY_LATIN_EXTRA = "\u00c0-\u00d6\u00d8-\u00f6\u00f8-\u024f\u1e00-\u1eff\u0300-\u036f"
 
-_MEMORY_SHORT_ASCII_TOKEN = re.compile(r"(?<![a-z0-9_/-])[a-z0-9]{2}(?![a-z0-9_/-])")
+_MEMORY_WORD_TOKEN = re.compile(rf"[a-z0-9_/{_MEMORY_LATIN_EXTRA}-]{{3,}}")
+
+_MEMORY_SHORT_ASCII_TOKEN = re.compile(
+    rf"(?<![a-z0-9_/{_MEMORY_LATIN_EXTRA}-])[a-z0-9]{{2}}(?![a-z0-9_/{_MEMORY_LATIN_EXTRA}-])"
+)
 
 _MEMORY_SHORT_STOPWORDS = frozenset(
     {
@@ -684,9 +694,19 @@ def _memory_tokens(value: str) -> set[str]:
     The previous ASCII-only split tokenized any CJK query to the empty set,
     which excluded every record as no_query_overlap and silently emptied
     recall packs for projects that chat in Korean, Japanese, or Chinese.
+
+    Accented Latin words ("déploiement") are indexed whole and, beside that,
+    accent-folded ("deploiement"), so a query typed with or without accents
+    overlaps the same record. Tokens are computed per call and never stored.
     """
     lowered = unicodedata.normalize("NFC", value).lower()
-    tokens = set(_MEMORY_ASCII_TOKEN.findall(lowered))
+    tokens = set()
+    for word in _MEMORY_WORD_TOKEN.findall(lowered):
+        tokens.add(word)
+        if not word.isascii():
+            folded = "".join(char for char in unicodedata.normalize("NFKD", word) if not unicodedata.combining(char))
+            if len(folded) >= 3:
+                tokens.add(folded)
     tokens.update(token for token in _MEMORY_SHORT_ASCII_TOKEN.findall(lowered) if token not in _MEMORY_SHORT_STOPWORDS)
     for run in _MEMORY_CJK_RUN.findall(lowered):
         if len(run) >= 2:
@@ -993,7 +1013,6 @@ __all__ = [
     "_FRESHNESS_NEXT_ACTION",
     "_FRESHNESS_REASON_TEXT",
     "_FRESHNESS_WARNING_LIMIT",
-    "_MEMORY_ASCII_TOKEN",
     "_MEMORY_ATTENTION_RANK",
     "_MEMORY_CADENCE_DEFAULTS",
     "_MEMORY_CADENCE_MAX",
@@ -1001,6 +1020,7 @@ __all__ = [
     "_MEMORY_PINS_LIMIT",
     "_MEMORY_SHORT_ASCII_TOKEN",
     "_MEMORY_SHORT_STOPWORDS",
+    "_MEMORY_WORD_TOKEN",
     "_OPEN_ASK_DAYS",
     "_OPEN_MAX_DAYS",
     "_RECALL_RRF_K",

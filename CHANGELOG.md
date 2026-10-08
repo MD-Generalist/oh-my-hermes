@@ -4,6 +4,18 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **Memory reads French.** Recall tokenization treated every accented Latin
+  letter as a separator, so `déploiement` indexed as `ploiement` and
+  `préférence` as `pr` + `rence`; a query typed without accents never
+  overlapped, and the `pr` fragment matched unrelated records about PRs
+  (#2027). Accented Latin words now index whole, plus an accent-folded form,
+  so `deploiement` and `déploiement` find the same record. Cyrillic, Greek and
+  other alphabets are unchanged and keep the no-indexable-tokens fallback.
+  The admission gates gained French cues for the same categories: prompt
+  injection and temporary progress (matched with accents and case folded
+  away, each needing two or more words so ordinary narration stays safe), and
+  relative-time phrases such as `dans 3 semaines`, `la semaine prochaine`,
+  `demain`, and `d'ici vendredi`. Safe French content still auto-approves.
 - **Codex starts inside the macOS fanout fence.** Codex CLI reads
   administrator-managed configuration through CFPreferences and stops at
   startup with `Failed to synchronize managed preferences (code -32600)`

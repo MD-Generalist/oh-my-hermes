@@ -170,6 +170,8 @@ class RetrievalCorpusCoverageTests(unittest.TestCase):
             "age_tie_breaks_deterministically_by_record_id",
             "record_limit_truncation_reports_over_budget",
             "character_budget_truncation_is_reported_separately",
+            "accent_folded_query_matches_an_accented_record",
+            "accented_word_is_not_split_into_fragments",
         }
 
         self.assertEqual(required - {case["case_id"] for case in RETRIEVAL_CASES}, set())

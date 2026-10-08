@@ -1065,6 +1065,48 @@ class MemoryContractTests(unittest.TestCase):
         self.assertNotIn("ci", _memory_tokens("circular"))
         self.assertNotIn("db", _memory_tokens("dbname"))
 
+    def test_accented_latin_words_index_whole_and_accent_folded(self) -> None:
+        """Diacritics used to act as separators: "déploiement" indexed as "ploiement".
+
+        Accented Latin letters stay inside the word, and the accent-folded
+        spelling is indexed beside it so a query typed without accents still
+        overlaps. Non-Latin alphabets (Cyrillic, Greek) are deliberately not
+        indexed by this change and keep the no-indexable-tokens fallback.
+        """
+        import unicodedata
+
+        from omh.workflows.memory import _memory_tokens
+
+        tokens = _memory_tokens("préférence déploiement Mac Studio")
+        self.assertEqual(tokens, {"préférence", "preference", "déploiement", "deploiement", "mac", "studio"})
+        # Decomposed input (macOS) reads the same as composed input.
+        self.assertEqual(_memory_tokens(unicodedata.normalize("NFD", "préférence")), {"préférence", "preference"})
+        # No ASCII fragment of an accented word leaks into the index.
+        self.assertNotIn("pr", _memory_tokens("préférence"))
+        self.assertNotIn("rence", _memory_tokens("préférence"))
+        # A two-letter whole word next to accented text is still a whole word.
+        self.assertIn("ci", _memory_tokens("le ci échoue"))
+        # CJK runs keep their whole-run plus bigram indexing.
+        self.assertEqual(_memory_tokens("배포는"), {"배포는", "배포", "포는"})
+
+    def test_project_memory_recall_finds_a_french_record_by_one_accented_word(self) -> None:
+        with TemporaryDirectory() as tmp:
+            paths = resolve_paths(Path(tmp) / ".omh", Path(tmp) / ".hermes")
+            write_setup_profile(paths, memory_mode="auto-safe")
+            first = capture_project_memory_candidate(paths, "Le déploiement passe par le Mac Studio le vendredi")
+            second = capture_project_memory_candidate(paths, "Le thème sombre reste le choix par défaut")
+            # Safe French content still auto-approves under the auto-safe default.
+            self.assertTrue(first["auto_approved"])
+            self.assertTrue(second["auto_approved"])
+
+            for query in ("déploiement du vendredi", "deploiement"):
+                with self.subTest(query=query):
+                    recall = build_project_memory_recall_pack(paths, query)
+                    self.assertEqual([item["summary"] for item in recall["included_records"]],
+                                     ["Le déploiement passe par le Mac Studio le vendredi"])
+                    self.assertNotIn("query_fallback", recall)
+                    self.assertEqual(validate_project_memory_recall_pack(recall), [])
+
     def test_project_memory_recall_treats_nfd_and_nfc_queries_alike(self) -> None:
         """macOS pipelines hand over decomposed Hangul; ranking must not differ."""
         import unicodedata
