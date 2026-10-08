@@ -852,6 +852,16 @@ class RelativeTimeProseTests(unittest.TestCase):
                 "livrer le correctif d'ici vendredi",
                 "décision prise aujourd’hui",
                 "renouvellement dans 2 années",
+                "we migrated 3 days ago",
+                "decided last week",
+                "last month we switched",
+                "the cert was rotated a year ago",
+                "we talked about it the other day",
+                "on a migré il y a 3 jours",
+                "décidé la semaine dernière",
+                "le mois dernier on a changé",
+                "décidé l’année dernière",
+                "déploiement fait avant-hier",
             ):
                 with self.subTest(summary=summary):
                     captured = capture_project_memory_candidate(paths, summary)
@@ -881,6 +891,15 @@ class RelativeTimeProseTests(unittest.TestCase):
                 # German "hier" means "here": the French "hier" (yesterday)
                 # is deliberately not a cue, so this stays untouched.
                 "Die Konfiguration liegt hier im Repo",
+                # Past-relative cues need a number plus unit or a bound noun.
+                "the last step is to merge",
+                "last but not least, run the linter",
+                "last-mile delivery is out of scope",
+                "the agoraphobic user prefers dark mode",
+                "migrated on 2026-10-05",
+                "the other branch is stale",
+                "il y a des cas limites",
+                "le dernier commit est sur main",
             ):
                 with self.subTest(summary=summary):
                     captured = capture_project_memory_candidate(paths, summary)
