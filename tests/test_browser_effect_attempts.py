@@ -63,7 +63,6 @@ class EffectAdapter:
         self.pending = None
         self.confirmation = None
         self.resume_entered = Event()
-        self.resume_proceed: Event | None = None
         self.during_resume = None
 
     def preview(self, lease_id, handle, operation):
@@ -84,8 +83,6 @@ class EffectAdapter:
         assert any(r['attempt_id'] == attempt_id and r['row_type'] == 'attempt' for r in rows)
         assert self.engine.store.result(self.key)['attempt_id'] == attempt_id
         self.resume_entered.set()
-        if self.resume_proceed is not None and not self.resume_proceed.wait(5):
-            raise TimeoutError('barrier')
         # Mid-resume seam: the durable attempt and its unknown binding are committed,
         # and this send has not yet been permitted. A caller hooking here reaches that
         # window by construction rather than by winning a race against a barrier.
