@@ -535,6 +535,28 @@ RETRIEVAL_CASES: tuple[dict[str, object], ...] = (
         excluded_reasons=(("mem_rc2", "over_budget"), ("mem_rc3", "over_budget")),
         truncated=True,
     ),
+    _case(
+        "accent_folded_query_matches_an_accented_record",
+        "A query typed without accents overlaps the accented word it spells, so a French record is found, not fallen back to.",
+        records=(
+            _record("mem_rd1_deploy", "Le déploiement passe par le Mac Studio le vendredi", approved_at=_YOUNG, tags=("deploy",)),
+            _record("mem_rd2_theme", "Le thème sombre reste le choix par défaut", approved_at=_YOUNGER, tags=("ui",)),
+        ),
+        query="deploiement",
+        included_order=("mem_rd1_deploy",),
+        excluded_reasons=(("mem_rd2_theme", "no_query_overlap"),),
+    ),
+    _case(
+        "accented_word_is_not_split_into_fragments",
+        "An accented query word matches whole: its ASCII fragments never reach an unrelated record that shares one.",
+        records=(
+            _record("mem_re1_preference", "La préférence d'affichage reste le thème sombre", approved_at=_YOUNG, tags=("ui",)),
+            _record("mem_re2_pr", "Every PR needs one approving review", approved_at=_YOUNGER, tags=("review",)),
+        ),
+        query="préférence",
+        included_order=("mem_re1_preference",),
+        excluded_reasons=(("mem_re2_pr", "no_query_overlap"),),
+    ),
 )
 
 

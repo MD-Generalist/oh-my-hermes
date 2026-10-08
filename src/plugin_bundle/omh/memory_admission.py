@@ -1314,7 +1314,16 @@ _RELATIVE_TIME_PATTERN = re.compile(
     r"|\b(?:yesterday|today|tomorrow|next\s+(?:week|month|year)|in\s+\d{1,4}\s+(?:days?|weeks?|months?|years?|hours?|minutes?))\b"
     r"|(?<!\d)\d{1,4}\s*(?:日|週間|ヶ月|か月|年)\s*(?:後|以内)"
     r"|(?<!\d)\d{1,4}\s*(?:天|周|個月|个月|年)\s*(?:后|後|以内|以內|内|內)"
-    r"|明日|昨日|来週|来月|明天|昨天|下周(?!期)|下個月|下个月",
+    r"|明日|昨日|来週|来月|明天|昨天|下周(?!期)|下個月|下个月"
+    # French: a number plus a time unit after "dans"/"d'ici", a deictic word,
+    # or "prochain(e)" bound to a time noun. Bare "semaine", "mois" and
+    # "prochaine" ("la prochaine version") never match, and neither does
+    # "hier": it is German for "here", and German prose must not lose
+    # auto-approval to a French cue.
+    r"|\b(?:(?:dans|d['’]ici)\s+\d{1,4}\s+(?:jours?|semaines?|mois|ann[ée]es?|ans?|heures?|minutes?)"
+    r"|(?:la\s+)?semaine\s+prochaine|(?:le\s+)?mois\s+prochain|(?:l['’])?ann[ée]e\s+prochaine"
+    r"|demain|aujourd['’]hui|avant-hier"
+    r"|d['’]ici\s+(?:lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche|demain|la\s+fin\s+(?:de\s+la\s+semaine|du\s+mois)))\b",
     re.IGNORECASE,
 )
 

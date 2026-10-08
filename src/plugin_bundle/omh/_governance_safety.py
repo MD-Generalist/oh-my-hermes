@@ -21,6 +21,7 @@ openings, and an anchored role marker.
 from __future__ import annotations
 
 import re
+import unicodedata
 from collections.abc import Iterator, Mapping
 
 
@@ -69,6 +70,27 @@ _NEEDS_REVIEW_PATTERNS = (
     # as an opaque value while keeping this gate deterministic.
     _CREDENTIAL_REVIEW_PATTERN,
 )
+# French cues for the same two review categories (prompt injection, temporary
+# progress), matched on `_folded_text`: accents and case are gone, so
+# "précédentes", "PRECEDENTES" and "precedentes" read alike. Every cue names
+# the act with at least two words -- a bare "temporaire" or "ignore les
+# instructions" is ordinary narration ("le fichier temporaire est supprimé",
+# "le linter ignore les instructions de formatage") and stays safe.
+_FRENCH_NEEDS_REVIEW_PATTERNS = (
+    re.compile(r"\b(?:ignor|oubli)\w*\s+(?:toutes\s+)?(?:les|tes|vos)\s+(?:instructions|consignes)\s+(?:precedentes|anterieures)"),
+    re.compile(r"\brevel\w*\s+(?:(?:ton|votre)\s+prompt|le\s+prompt\s+systeme)"),
+    re.compile(r"\b(?:c'est|ceci\s+est)\s+temporaire"),
+    re.compile(r"\b(?:workaround|contournement|correctif|solution|fix|hack|bricolage|rustine|patch)\s+(?:provisoire|temporaire)"),
+    re.compile(r"\bcontournement\s+en\s+attendant"),
+)
+
+
+def _folded_text(content: str) -> str:
+    """Lowercase, accent-free, straight-apostrophe form for locale cues."""
+    decomposed = unicodedata.normalize("NFKD", content.replace("\u2019", "'"))
+    return "".join(char for char in decomposed if not unicodedata.combining(char)).lower()
+
+
 _OPAQUE_TOKEN_PATTERN = re.compile(r"(?<![A-Za-z0-9])[A-Za-z0-9+/=_-]{32,}(?![A-Za-z0-9])")
 _HEX_DIGEST_PATTERN = re.compile(
     r"(?:[0-9A-Fa-f]{32}|[0-9A-Fa-f]{40}|[0-9A-Fa-f]{56}|[0-9A-Fa-f]{64}|[0-9A-Fa-f]{96}|[0-9A-Fa-f]{128})"
@@ -666,6 +688,10 @@ def classify_memory_admission(content: str) -> dict[str, object]:
 
     for pattern in _NEEDS_REVIEW_PATTERNS:
         if pattern.search(content):
+            return {"status": "needs_review"}
+    folded = _folded_text(content)
+    for pattern in _FRENCH_NEEDS_REVIEW_PATTERNS:
+        if pattern.search(folded):
             return {"status": "needs_review"}
 
     if _looks_like_opaque_token(content):

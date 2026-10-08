@@ -845,6 +845,13 @@ class RelativeTimeProseTests(unittest.TestCase):
                 "2년 뒤 갱신 예정",
                 "3日後にリリースする",
                 "3天后发布新版本",
+                "renouveler le certificat dans 3 semaines",
+                "le contrat expire la semaine prochaine",
+                "migration prévue demain",
+                "gel du code le mois prochain",
+                "livrer le correctif d'ici vendredi",
+                "décision prise aujourd’hui",
+                "renouvellement dans 2 années",
             ):
                 with self.subTest(summary=summary):
                     captured = capture_project_memory_candidate(paths, summary)
@@ -866,6 +873,14 @@ class RelativeTimeProseTests(unittest.TestCase):
                 "3개의 서비스로 구성된다",
                 "오늘의집 스타일 UI를 참고한다",
                 "下周期性任务由调度器管理",
+                # French: a number without a time unit, and the cue nouns
+                # "semaine"/"mois"/"prochaine" in ordinary use.
+                "Le déploiement couvre 3 environnements",
+                "La prochaine version ajoute le mode sombre",
+                "Le rapport compare chaque semaine au mois précédent",
+                # German "hier" means "here": the French "hier" (yesterday)
+                # is deliberately not a cue, so this stays untouched.
+                "Die Konfiguration liegt hier im Repo",
             ):
                 with self.subTest(summary=summary):
                     captured = capture_project_memory_candidate(paths, summary)
