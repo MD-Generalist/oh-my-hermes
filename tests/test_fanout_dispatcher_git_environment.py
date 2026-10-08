@@ -127,6 +127,7 @@ class PlantedProgramEnvironmentTests(unittest.TestCase):
 
         fence = prepare_dispatcher_git_fence(self.worktree)
         self.assertTrue(fence.receipt["enforced"])
+        self.assertFalse(fence.allow_network)
         snapshot = observe_session_workspace(str(self.worktree), confinement=fence)
         self.assertIsNotNone(snapshot)
         self._assert_planted_program_saw_nothing()
@@ -200,6 +201,7 @@ class DispatcherGitCommandTests(unittest.TestCase):
         # A check the dispatcher runs for the unit keeps the unit's network.
         self.assertIn("(allow network*)", check[2])
         self.assertIn("--unshare-net", bwrap[0])
+        self.assertTrue(fence.allow_network)
 
     def test_no_command_without_an_enforced_fence(self) -> None:
         with TemporaryDirectory() as temporary:

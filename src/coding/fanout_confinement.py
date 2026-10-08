@@ -172,6 +172,9 @@ class FanoutFilesystemConfinement:
     # whose receipt is not enforced; it is what lets a caller run a command
     # `command` returned None for, and nothing else may (#1982).
     unconfined_allowed: bool = False
+    # Off only for a fence whose commands have no reason to leave the host:
+    # a diagnostics analyzer reading a snapshot the unit wrote (#2036).
+    allow_network: bool = True
 
     def command(self, argv: Sequence[str]) -> tuple[str, ...] | None:
         """Return the same-root sandbox command, or None when no receipt proved it."""
@@ -225,7 +228,9 @@ class FanoutFilesystemConfinement:
         index_file = None if environment is None else environment.get("GIT_INDEX_FILE")
         if index_file:
             git_environment["GIT_INDEX_FILE"] = index_file
-        return self._fenced(located, argv, allow_network=False), git_environment
+        # The unit's own fence keeps the network for the unit and its checks;
+        # only this command is built without it.
+        return replace(self, allow_network=False)._fenced(located, argv), git_environment
 
     def _dispatcher_executable(self, argv: Sequence[str], path: str | None) -> str | None:
         if self.receipt.get("enforced") is not True or not argv or self.child is None:
@@ -244,14 +249,14 @@ class FanoutFilesystemConfinement:
             located = shutil.which(name, path=anchored)
         return None if located is None else str(Path(located).resolve())
 
-    def _fenced(self, executable: str, argv: Sequence[str], *, allow_network: bool = True) -> tuple[str, ...]:
+    def _fenced(self, executable: str, argv: Sequence[str]) -> tuple[str, ...]:
         assert self.child is not None
         return sandbox_command(
             (executable, *[str(argument) for argument in argv[1:]]),
             self.selected,
             self.roots,
             self.child,
-            allow_network,
+            self.allow_network,
             self.environment,
             self.backend_digest,
             allow_broad_process_exec=True,
@@ -632,9 +637,11 @@ def prepare_dispatcher_git_fence(worktree: Path, *, allow_unconfined: bool = Fal
     # A program name for the preparation to resolve, not an argv: each caller
     # spells its own git subcommand as a literal for the no-remote-mutation gate.
     git_program = "git"
-    return prepare_fanout_filesystem_confinement(
+    fence = prepare_fanout_filesystem_confinement(
         worktree, dict(os.environ), ((git_program,),), allow_unconfined=allow_unconfined,
     )
+    # Only dispatcher git runs in this fence, and it reads local state (#2035).
+    return replace(fence, allow_network=False)
 
 
 def _prepare_fanout_filesystem_confinement(
