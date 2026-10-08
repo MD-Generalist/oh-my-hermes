@@ -132,6 +132,68 @@ class ExitCodeTruthfulnessPolicyTests(unittest.TestCase):
                         f"{module_stem}.{function_name} reported success over a unit the {status} gate refused",
                     )
 
+    def test_a_unit_refused_before_spawn_is_never_reported_as_success(self) -> None:
+        """Every pre-spawn refusal the dispatcher produces for a live run grades non-zero.
+
+        The rows are the dispatcher's own, one per refusal that reaches the
+        journal as a failed unit (#2029): an executor that is not ready (both
+        an absent CLI and any other readiness verdict), a child environment
+        that is not ready, and a worktree that could not be created. A new
+        refusal row that drops the failure signal fails here rather than in a
+        wrapper's shell. Only the dispatch mapper grades unit rows; other
+        mappers keep their own vocabulary.
+        """
+        import tempfile
+
+        from omh.coding.fanout import build_fanout_contract
+        from omh.coding.fanout_artifacts import write_fanout_contract
+        from omh.coding.fanout_dispatch import dispatch_fanout
+        from omh.commands.coding import _fanout_dispatch_exit_code
+        from omh.system.paths import OmhPaths
+        from test_fanout_dispatch import _GOAL, _UNITS, _make_repo, _ready
+
+        def not_ready(verdict: str):
+            return lambda _paths, profile, **_kwargs: {"status": verdict, "profile": profile}
+
+        scenarios = (
+            ("executor_not_ready", "executor missing", {"readiness": not_ready("missing")}),
+            ("executor_not_ready", "executor stale", {"readiness": not_ready("stale")}),
+            (
+                "environment_not_ready",
+                "child environment",
+                {
+                    "env": {"PATH": "/usr/bin"},
+                    "environment_policy": {"owner_capabilities": {"codex": ["MISSING_CAPABILITY_TOKEN"]}},
+                },
+            ),
+            ("worktree_failed", "worktree exists", {"occupy_worktree": True}),
+        )
+        for status, label, options in scenarios:
+            with self.subTest(status=status, case=label), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                paths = OmhPaths(omh_home=root / ".omh", hermes_home=root / ".hermes")
+                repo, sha = _make_repo(root)
+                contract = write_fanout_contract(paths, build_fanout_contract(_GOAL, _UNITS))
+                if options.pop("occupy_worktree", False):
+                    (repo.parent / "repo-fanout-core").mkdir()
+                options.setdefault("readiness", _ready)
+                summary = dispatch_fanout(
+                    paths,
+                    contract,
+                    goal_text=_GOAL,
+                    repo_root=repo,
+                    base_sha=sha,
+                    only_units=["core"],
+                    **options,
+                )
+                entry = summary["units"][0]
+                self.assertEqual(entry["status"], status)
+                self.assertNotEqual(
+                    _fanout_dispatch_exit_code({"units": [entry]}),
+                    0,
+                    f"_fanout_dispatch_exit_code reported success over a unit refused as {status}",
+                )
+
     def test_a_unit_skipped_while_another_dispatch_holds_it_is_never_success(self) -> None:
         """Every dispatch skip status is classified, and a deferred one is not 0.
 

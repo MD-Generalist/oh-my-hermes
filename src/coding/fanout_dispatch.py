@@ -67,6 +67,8 @@ from .dispatch_failure_recovery import (
     ON_FAILURE_REPORT,
     ON_FAILURE_WAIT,
     FAILURE_KIND_AUTH_SHAPED,
+    FAILURE_KIND_BINARY_MISSING,
+    FAILURE_KIND_CRASH,
     FAILURE_KIND_LIMIT_SHAPED,
     FAILURE_KIND_WORKSPACE_BLOCKED,
     FAILURE_RECOVERY_CLAIM_BOUNDARY,
@@ -4187,6 +4189,15 @@ def _dispatch_unit(
             "readiness_status": str(probe.get("status", "unknown")),
             **_dispatch_status_ladder(),
         }
+        # The unit never spawned, so a live dispatch carries the failure
+        # signal the exit mapper reads (#2029); a dry run keeps its exit code.
+        # An owner CLI that is absent is the binary_missing kind; any other
+        # readiness status has no process to classify, and its repair card
+        # (below) names the prerequisite that actually moved.
+        if not dry_run:
+            not_ready["failure_kind"] = (
+                FAILURE_KIND_BINARY_MISSING if str(probe.get("status", "")) == "missing" else FAILURE_KIND_CRASH
+            )
         repair_card = probe.get("repair_card")
         if isinstance(repair_card, Mapping):
             not_ready["repair_card"] = dict(repair_card)
@@ -4265,6 +4276,17 @@ def _dispatch_unit(
             "verification_environment_policy": verification_environment.receipt,
             **_dispatch_status_ladder(),
             "reason": "required child environment capabilities are missing or denied",
+            # Refused before the spawn like a workspace blocker, so it carries
+            # the same failure signal the exit mapper reads (#2029). A dry run
+            # asked for a plan, not for work, so it keeps its exit code.
+            **(
+                {}
+                if dry_run
+                else {
+                    "failure_kind": FAILURE_KIND_WORKSPACE_BLOCKED,
+                    "unit_state": UNIT_STATE_PERMISSION_BLOCKED,
+                }
+            ),
         }
     if dry_run:
         from .executor_skill_discovery import skill_selection_card, suggested_skill_sequence
@@ -4334,6 +4356,7 @@ def _dispatch_unit(
             "status": "worktree_failed",
             "attempt_id": attempt_id,
             "reason_code": REPAIR_WORKTREE_MISSING,
+            "failure_kind": FAILURE_KIND_WORKSPACE_BLOCKED,
             "reason": f"the unit worktree no longer exists, so repair attempt {repair['attempt']} cannot continue it",
             **_dispatch_status_ladder(),
         }
@@ -4436,6 +4459,7 @@ def _dispatch_unit(
                if "failure_diagnostic" in worktree_record else {}),
             "refusal": str(worktree_record.get("refusal", "")),
             "reason": str(worktree_record.get("reason", "")),
+            "failure_kind": FAILURE_KIND_WORKSPACE_BLOCKED,
             **_dispatch_status_ladder(),
         }
     worktree = Path(str(worktree_record["worktree_path"]))
@@ -6063,6 +6087,7 @@ def _dependency_failed(result: dict[str, Any] | None) -> bool:
         "failed",
         "input_required",
         "blocked_by_dependency",
+        "environment_not_ready",
         # A cancelled dependency produced nothing a dependent can build on. It
         # is admitted as a prerequisite by neither this predicate's opposite
         # (`_dependency_satisfied`, which requires an observed exit-0) nor by

@@ -5148,6 +5148,57 @@ class FanoutSpawnGuardTests(unittest.TestCase):
         self.assertIn("UNRELATED_PROVIDER_TOKEN", receipt["removed"])
         self.assertNotIn("spawn-sentinel", str(summary))
 
+    def test_a_unit_refused_for_a_missing_environment_capability_exits_nonzero(self) -> None:
+        # #2029: the unit never spawns, so the work did not happen. The refusal
+        # carries the same pre-spawn failure signal a workspace blocker does,
+        # or the exit mapper falls through to 0.
+        with TemporaryDirectory() as tmp:
+            paths, repo, sha, contract = self._setup(tmp, self._TWO_UNITS[:1])
+            runner = _env_capturing_runner()
+            summary = dispatch_fanout(
+                paths,
+                contract,
+                goal_text=_GOAL,
+                repo_root=repo,
+                base_sha=sha,
+                only_units=["core"],
+                runner=runner,
+                readiness=_ready,
+                env={"PATH": "/usr/bin"},
+                environment_policy={"owner_capabilities": {"codex": ["MISSING_CAPABILITY_TOKEN"]}},
+            )
+
+        core = summary["units"][0]
+        self.assertEqual(core["status"], "environment_not_ready")
+        self.assertEqual(core["failure_kind"], "workspace_blocked")
+        self.assertEqual(core["unit_state"], "permission_blocked")
+        self.assertEqual(runner.envs, [])
+        self.assertEqual(_fanout_dispatch_exit_code(summary), 1)
+
+    def test_a_dry_run_environment_refusal_keeps_its_exit_code(self) -> None:
+        # A dry run asked for a plan, not for work, so the refusal is reported
+        # in the plan without the failure signal.
+        with TemporaryDirectory() as tmp:
+            paths, repo, sha, contract = self._setup(tmp, self._TWO_UNITS[:1])
+            summary = dispatch_fanout(
+                paths,
+                contract,
+                goal_text=_GOAL,
+                repo_root=repo,
+                base_sha=sha,
+                only_units=["core"],
+                dry_run=True,
+                runner=_env_capturing_runner(),
+                readiness=_ready,
+                env={"PATH": "/usr/bin"},
+                environment_policy={"owner_capabilities": {"codex": ["MISSING_CAPABILITY_TOKEN"]}},
+            )
+
+        core = summary["units"][0]
+        self.assertEqual(core["status"], "environment_not_ready")
+        self.assertNotIn("failure_kind", core)
+        self.assertEqual(_fanout_dispatch_exit_code(summary), 0)
+
     def test_a_nested_lineage_is_appended_not_replaced(self) -> None:
         # Depth 0 with an inherited lineage is the shape a wrapper produces
         # when it stamps provenance itself; the chain must extend so a later
