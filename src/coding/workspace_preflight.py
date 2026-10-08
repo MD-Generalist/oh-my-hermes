@@ -213,7 +213,8 @@ def _run_git(
     raising: every caller is deciding whether a blocker is present, and an
     unanswerable question is a blocker, not a crash. `stdin`, when given, is
     passed as the runner's `input`; it is omitted otherwise, so a runner that
-    does not take `input` still serves every other call.
+    does not take `input` still serves every other call, and the one call that
+    needs it reports `_GIT_UNRUNNABLE` instead of raising.
     """
     try:
         completed = runner(
@@ -227,6 +228,11 @@ def _run_git(
         )
     except (OSError, subprocess.SubprocessError) as exc:
         return _GIT_UNRUNNABLE, "", f"{type(exc).__name__}: {exc}"
+    except TypeError as exc:
+        # Only a call that hands git stdin can meet a runner without `input`.
+        if stdin is None:
+            raise
+        return _GIT_UNRUNNABLE, "", f"the runner could not hand git its stdin: {exc}"
     code = getattr(completed, "returncode", None)
     # A runner that reports no usable exit code answered nothing; treating that
     # as success would let an unchecked blocker through.

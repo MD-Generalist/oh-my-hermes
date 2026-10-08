@@ -235,6 +235,21 @@ class WorkspacePreflightIndexWriteTests(unittest.TestCase):
 
             self.assertTrue(_by_name(report)[CHECK_GIT_INDEX_WRITE]["ok"], report)
 
+    def test_a_runner_that_cannot_take_stdin_is_a_blocker_not_an_exception(self) -> None:
+        with TemporaryDirectory() as tmp:
+            repo, sha = _make_repo(Path(tmp))
+
+            def runner(argv, *, cwd, text, capture_output, timeout, env):
+                return subprocess.run(
+                    argv, cwd=cwd, text=text, capture_output=capture_output, timeout=timeout, env=env
+                )
+
+            report = probe_workspace(repo, base_ref=sha, target_ref=None, runner=runner)
+
+            self.assertEqual(report["blocking"], [CHECK_GIT_INDEX_WRITE])
+            self.assertIn("stdin", str(_by_name(report)[CHECK_GIT_INDEX_WRITE]["detail"]))
+            self.assertEqual(workspace_preflight_unit_state(report), UNIT_STATE_PERMISSION_BLOCKED)
+
     def test_a_runner_with_a_non_numeric_exit_code_is_treated_as_a_blocker(self) -> None:
         # An unanswerable question is a blocker, never a pass: a probe that
         # cannot observe the index write must not report that it observed one.
