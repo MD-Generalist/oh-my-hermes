@@ -6,6 +6,23 @@ import json
 
 from ..orchestration_say import board_say, with_say
 
+# Bound when Hermes imports this module, not on each call. Hermes may drop a
+# plugin's modules from `sys.modules` while the handler it registered stays
+# live (its loader evicts `hermes_plugins.<slug>.*` on a reload or a failed
+# load), and a relative import made at call time then has no parent package
+# to resolve against. Tools that hold their siblings from module scope keep
+# working in that state; this one looked the bridge up per call and reported
+# the board core missing on a host that had it (#1979).
+# The guard stays: a host without the bridge must still register this tool
+# and report the absence instead of failing to load (#1623).
+try:
+    from .. import agent_board_bridge as _bridge_module
+except ImportError as exc:
+    _bridge_module = None
+    _BRIDGE_IMPORT_FAILURE = exc.name or "agent_board_bridge"
+else:
+    _BRIDGE_IMPORT_FAILURE = ""
+
 OMH_AGENT_BOARD_SCHEMA = {
     "name": "omh_agent_board",
     "description": "Prepare a durable native Kanban action or inspect its metadata-only receipt. Preparation is not authorization or execution; invoke the returned native tool through Hermes' normal tool loop. A durable create may state lane_role (builder, verifier, reviewer, docs or qa): OMH fills that lane's skills and workspace_kind from the role, refuses a verifier or reviewer that declares no parents, and removes the role before the native action. Bounded child research uses delegation instead. No uploads, downloads, dispatch or JSON grants. Relay any `say` field to the user once, in their language and your own words.",
@@ -29,19 +46,21 @@ OMH_AGENT_BOARD_SCHEMA = {
 
 
 def omh_agent_board_handler(args: Mapping[str, object], **kwargs: object) -> str:
-    # Lazy import permits a standalone bundle without the OMH command package
-    # to register and report the exact missing component, not disappear. The
-    # catch is `ImportError`, not `ModuleNotFoundError` with a name check: a
-    # bundle module Hermes could not exec stays cached as a stub, and the
-    # import then fails on the NAME with the bundle's own dotted path rather
-    # than on `omh` (#1623). Either way this host has no board engine, which
-    # is what the reason below says.
+    module = _bridge_module
+    if module is None:
+        return _unavailable("omh_agent_board_core_unavailable",
+                            detail=f"board_bridge_unimportable:{_BRIDGE_IMPORT_FAILURE}")
+    # A bridge Hermes could not exec can sit in `sys.modules` as a stub with
+    # none of its names (#1623); taking the names by attribute keeps that a
+    # missing component rather than an AttributeError.
     try:
-        from ..agent_board_bridge import (
-            BoardCoreUnavailable, handler_identity, host_capabilities, installed_bridge, installed_status,
-        )
-    except ImportError:
-        return _unavailable("omh_agent_board_core_unavailable")
+        BoardCoreUnavailable = module.BoardCoreUnavailable
+        handler_identity = module.handler_identity
+        host_capabilities = module.host_capabilities
+        installed_bridge = module.installed_bridge
+        installed_status = module.installed_status
+    except AttributeError:
+        return _unavailable("omh_agent_board_core_unavailable", detail="board_bridge_incomplete")
     try:
         identity = handler_identity(args, kwargs)
         if args.get("action") == "status":
@@ -58,13 +77,21 @@ def omh_agent_board_handler(args: Mapping[str, object], **kwargs: object) -> str
     except BoardCoreUnavailable:
         # The module imported, but this host cannot import the engine behind
         # it; that is a missing component, not an invalid request.
-        return _unavailable("omh_agent_board_core_unavailable")
+        missing = getattr(module, "BOARD_CORE_IMPORT_FAILURE", "") or "unknown"
+        return _unavailable("omh_agent_board_core_unavailable", detail=f"board_engine_unimportable:{missing}")
     except (ValueError, OSError):
         # Never echo exception strings, arguments, root paths or native output.
         return _unavailable("invalid_request_or_board_store")
 
 
-def _unavailable(reason: str) -> str:
-    return json.dumps({"schema_version": "agent_board_tool_result/v1", "state": "unavailable",
-                       "reason": reason, "native_action": None, "observed_receipts": [],
-                       "claim_boundary": "Unavailable preparation is not authorization or execution."}, sort_keys=True)
+def _unavailable(reason: str, *, detail: str = "") -> str:
+    # `detail` names which import failed -- a module name, never an exception
+    # string or a path -- so one reason no longer hides different faults.
+    payload: dict[str, object] = {
+        "schema_version": "agent_board_tool_result/v1", "state": "unavailable",
+        "reason": reason, "native_action": None, "observed_receipts": [],
+        "claim_boundary": "Unavailable preparation is not authorization or execution.",
+    }
+    if detail:
+        payload["detail"] = detail
+    return json.dumps(payload, sort_keys=True)

@@ -44,6 +44,17 @@ All notable changes will be documented here.
   the receipt, and lists the unit under the summary's new `unconfined_units`.
   This changes Windows, which has no fence (#1357): a Windows dispatch now
   needs `--allow-unconfined`, as does a Linux host without a trusted bwrap.
+- **`omh_agent_board` keeps reaching its core after Hermes drops the
+  bundle's modules.** Hermes evicts `hermes_plugins.<slug>` and every
+  submodule from `sys.modules` on a reload or a failed load while the
+  handlers and hooks it registered stay callable. The board tool imported
+  its bridge relative to its package on each call, so in that state it
+  answered `omh_agent_board_core_unavailable` on a host whose `omh` package
+  imported fine, while the tools that bind their siblings at import kept
+  working (#1979). The tool and the tool-call hooks now bind the bridge when
+  Hermes imports them. An unavailable board also carries a `detail` naming
+  the import that failed — the bundle bridge, an incomplete bridge stub, or
+  the engine module — where one reason used to cover all three.
 
 ## 3.0.1 - 2026-10-07
 
