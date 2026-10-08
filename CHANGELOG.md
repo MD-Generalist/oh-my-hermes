@@ -54,7 +54,14 @@ All notable changes will be documented here.
   working (#1979). The tool and the tool-call hooks now bind the bridge when
   Hermes imports them. An unavailable board also carries a `detail` naming
   the import that failed — the bundle bridge, an incomplete bridge stub, or
-  the engine module — where one reason used to cover all three.
+  the engine module — where one reason used to cover all three. The same
+  call-time imports are gone from the rest of the bundle: `omh_team` (which
+  raised `ModuleNotFoundError` in that state, and now names an unimportable
+  sibling in `detail`), the `omh_jev_ask` availability check, and the
+  memory-governance, engagement-nudge, egress, browser and team-observer
+  helpers its callbacks reach. A gate in
+  `tests/test_plugin_bundle_standalone.py` reads every function body in the
+  bundle and fails on a relative sibling import made at call time.
 
 ## 3.0.1 - 2026-10-07
 

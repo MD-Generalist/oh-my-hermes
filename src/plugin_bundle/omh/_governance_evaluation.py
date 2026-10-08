@@ -13,14 +13,12 @@ from ._governance_overrides import validate_stale_override
 
 def stable_artifact_identity(artifact: dict[str, object]) -> dict[str, object]:
     """Compute stable identity: schema_version + id + revision + scope."""
-    from .memory_governance import (
-        MEMORY_BLOCK_SCHEMA_VERSION,
-        MEMORY_SCOPE_SCHEMA_VERSION,
-        PRINCIPAL_MEMORY_SCOPE_SCHEMA_VERSION,
-        PRINCIPAL_PROJECT_MEMORY_RECORD_SCHEMA_VERSION,
-        PROJECT_MEMORY_RECORD_SCHEMA_VERSION,
-        canonical_memory_scope,
-    )
+    MEMORY_BLOCK_SCHEMA_VERSION = _memory_governance.MEMORY_BLOCK_SCHEMA_VERSION
+    MEMORY_SCOPE_SCHEMA_VERSION = _memory_governance.MEMORY_SCOPE_SCHEMA_VERSION
+    PRINCIPAL_MEMORY_SCOPE_SCHEMA_VERSION = _memory_governance.PRINCIPAL_MEMORY_SCOPE_SCHEMA_VERSION
+    PRINCIPAL_PROJECT_MEMORY_RECORD_SCHEMA_VERSION = _memory_governance.PRINCIPAL_PROJECT_MEMORY_RECORD_SCHEMA_VERSION
+    PROJECT_MEMORY_RECORD_SCHEMA_VERSION = _memory_governance.PROJECT_MEMORY_RECORD_SCHEMA_VERSION
+    canonical_memory_scope = _memory_governance.canonical_memory_scope
     
     schema_version = artifact.get("schema_version")
     
@@ -72,16 +70,14 @@ def evaluate_memory_replay(
     
     Returns metadata-only dict with eligible/reason_code.
     """
-    from .memory_governance import (
-        PROJECT_MEMORY_RECORD_SCHEMA_VERSION,
-        PRINCIPAL_PROJECT_MEMORY_RECORD_SCHEMA_VERSION,
-        MEMORY_SCOPE_SCHEMA_VERSION,
-        PRINCIPAL_MEMORY_SCOPE_SCHEMA_VERSION,
-        MEMORY_BLOCK_SCHEMA_VERSION,
-        canonical_memory_scope,
-        canonical_payload_digest,
-        contains_credential_like_material,
-    )
+    PROJECT_MEMORY_RECORD_SCHEMA_VERSION = _memory_governance.PROJECT_MEMORY_RECORD_SCHEMA_VERSION
+    PRINCIPAL_PROJECT_MEMORY_RECORD_SCHEMA_VERSION = _memory_governance.PRINCIPAL_PROJECT_MEMORY_RECORD_SCHEMA_VERSION
+    MEMORY_SCOPE_SCHEMA_VERSION = _memory_governance.MEMORY_SCOPE_SCHEMA_VERSION
+    PRINCIPAL_MEMORY_SCOPE_SCHEMA_VERSION = _memory_governance.PRINCIPAL_MEMORY_SCOPE_SCHEMA_VERSION
+    MEMORY_BLOCK_SCHEMA_VERSION = _memory_governance.MEMORY_BLOCK_SCHEMA_VERSION
+    canonical_memory_scope = _memory_governance.canonical_memory_scope
+    canonical_payload_digest = _memory_governance.canonical_payload_digest
+    contains_credential_like_material = _memory_governance.contains_credential_like_material
     
     if now is None:
         now = datetime.now(timezone.utc)
@@ -156,7 +152,7 @@ def evaluate_memory_replay(
     
     admission_state = admission.get("state")
 
-    from .memory_governance import ADMISSION_STATES
+    ADMISSION_STATES = _memory_governance.ADMISSION_STATES
     if admission_state not in ADMISSION_STATES:
         result["reason_code"] = "admission_state_invalid"
         return result
@@ -322,3 +318,8 @@ def evaluate_memory_replay(
     result["reason_code"] = "eligible"
     
     return result
+
+
+# Module scope, not call time: Hermes can evict the bundle from sys.modules
+# while its callbacks stay live (#1979). Last, so an import cycle finds every name.
+from . import memory_governance as _memory_governance

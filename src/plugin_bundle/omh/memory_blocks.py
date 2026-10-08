@@ -281,7 +281,7 @@ def delete_memory_block(omh_home: str | Path, label: str, tier: str) -> bool:
 
 def select_memory_blocks(*args: Any, **kwargs: Any) -> Any:
     """Evaluate a block collection at the final replay boundary."""
-    from .memory_block_replay import select_memory_blocks as select
+    select = _memory_block_replay.select_memory_blocks
 
     return select(*args, **kwargs)
 
@@ -541,3 +541,8 @@ _V2_KEYS = {
     "schema_version", "block_id", "revision", "label", "description", "value", "limit", "tier", "scope",
     "source_class", "admission", "retention", "revalidation", "source_record_identity", "superseded_by",
 }
+
+
+# Module scope, not call time: Hermes can evict the bundle from sys.modules
+# while its callbacks stay live (#1979). Last, so an import cycle finds every name.
+from . import memory_block_replay as _memory_block_replay

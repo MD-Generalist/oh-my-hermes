@@ -119,7 +119,7 @@ def register(ctx, config):
         try:
             lifecycle = get_manager()
             if args["operation"].startswith("effect_"):
-                from .browser_effects_bridge import handle
+                handle = _browser_effects_bridge.handle
 
                 result = handle(ctx, lifecycle, current, available, args)
             elif args["operation"] == "acquire":
@@ -155,7 +155,7 @@ def register(ctx, config):
                   "role": {"type": "string"}, "name": {"type": "string", "maxLength": 2048},
                   "action": {"type": "string", "enum": ["read"]}}}}
     if effects_enabled:
-        from .browser_effects_bridge import extend_schema
+        extend_schema = _browser_effects_bridge.extend_schema
 
         extend_schema(schema)
     # True is possible only with Hermes' request-bound bypass of BOTH caches.
@@ -171,3 +171,8 @@ def register(ctx, config):
     ctx.register_hook("pre_tool_call", pre_tool_call)
     ctx.register_hook("on_session_end", on_session_end)
     return browser_task
+
+
+# Module scope, not call time: Hermes can evict the bundle from sys.modules
+# while its callbacks stay live (#1979). Last, so an import cycle finds every name.
+from . import browser_effects_bridge as _browser_effects_bridge

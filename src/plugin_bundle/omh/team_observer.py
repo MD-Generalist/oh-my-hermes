@@ -61,9 +61,14 @@ def observe_team_return(kwargs: dict[str, object]) -> bool:
 
 
 def _parent(kwargs: dict[str, object]) -> tuple[object, str]:
-    from .runtime_reader import reading_session_id
+    reading_session_id = _runtime_reader.reading_session_id
 
     home = runtime_paths.plugin_home(kwargs.get("omh_home"))
     hermes = runtime_paths.plugin_home(kwargs.get("hermes_home"), hermes=True)
     parent = kwargs.get("parent_session_id")
     return home, reading_session_id(hermes, parent) if isinstance(parent, str) else ""
+
+
+# Module scope, not call time: Hermes can evict the bundle from sys.modules
+# while its callbacks stay live (#1979). Last, so an import cycle finds every name.
+from . import runtime_reader as _runtime_reader

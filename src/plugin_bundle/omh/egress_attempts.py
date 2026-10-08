@@ -152,7 +152,7 @@ class Guard:
         try:
             destination = forwarded[live.target.destination_arg]
             payload = forwarded[live.target.payload_arg]
-            from .egress_attempt_receipts import AttemptStore
+            AttemptStore = _egress_attempt_receipts.AttemptStore
             opened = AttemptStore(self.home).open_attempt(
                 session_id=live.session_id,
                 tool_call_id=live.tool_call_id,
@@ -201,7 +201,7 @@ class Guard:
             attempt_id = live.attempt_id
         terminal = {"blocked": "blocked", "cancelled": "cancelled", "error": "error", "ok": "returned"}.get(status, "unknown")
         try:
-            from .egress_attempt_receipts import AttemptStore
+            AttemptStore = _egress_attempt_receipts.AttemptStore
             AttemptStore(self.home).record_terminal(attempt_id, terminal)
         except (OSError, ValueError, RuntimeError):
             with self.lock:
@@ -256,3 +256,8 @@ def register(ctx: RegistrationContext, raw: object) -> None:
         except (PermissionError, RuntimeError, TypeError, ValueError):
             # Do not roll the hook back: the configured target remains blocked.
             guard.invalid[name] = "configured egress wrapper is inactive"
+
+
+# Module scope, not call time: Hermes can evict the bundle from sys.modules
+# while its callbacks stay live (#1979). Last, so an import cycle finds every name.
+from . import egress_attempt_receipts as _egress_attempt_receipts
