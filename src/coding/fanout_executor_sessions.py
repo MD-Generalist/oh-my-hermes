@@ -421,12 +421,16 @@ def observe_session_workspace(
     `confinement` is the unit's enforced write fence when the caller holds one.
     Git reads its configuration from the worktree, which the unit wrote, so each
     probe then runs inside that fence (#1990); a probe that cannot be placed in
-    it observes nothing rather than running outside it.
+    it observes nothing rather than running outside it. A fence that was not
+    proven observes nothing either, unless the operator opted in to running
+    unconfined (#1999).
     """
     root = Path(path)
     environment = {key: value for key, value in os.environ.items() if not key.startswith('GIT_')}
     environment.update(GIT_OPTIONAL_LOCKS='0', GIT_TERMINAL_PROMPT='0')
     fenced = confinement is not None and confinement.receipt.get('enforced') is True
+    if confinement is not None and not fenced and not confinement.unconfined_allowed:
+        return None
 
     def probe(argv: list[str]) -> tuple[bytes | None, str]:
         if fenced:

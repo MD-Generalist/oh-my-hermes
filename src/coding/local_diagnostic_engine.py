@@ -17,7 +17,7 @@ from .diagnostic_providers import (
     DiagnosticProviderConfig,
     ProviderCapability,
 )
-from .local_diagnostic_process import LocalDiagnosticProviderRunner
+from .local_diagnostic_process import LocalDiagnosticProviderRunner, WorkspaceGitFences
 
 
 SUPPORTED_LOCAL_PROVIDERS = ("pyright", "basedpyright", "ruff")
@@ -27,7 +27,13 @@ _OVER_LIMIT_CHANGED_PATHS = 201
 
 
 class GitChangedFileResolver:
-    """Resolve changed paths from the Git worktree named by the request."""
+    """Resolve changed paths from the Git worktree named by the request.
+
+    The worktree is the unit's, so git runs there inside a fence (#1999).
+    """
+
+    def __init__(self, *, git: WorkspaceGitFences | None = None) -> None:
+        self.git = WorkspaceGitFences() if git is None else git
 
     def resolve(
         self,
@@ -36,16 +42,19 @@ class GitChangedFileResolver:
         end_revision: str,
     ) -> tuple[str, ...]:
         completed = subprocess.run(
-            [
-                "git",
-                "diff",
-                "--name-only",
-                "-z",
-                "--diff-filter=ACDMR",
-                baseline_revision,
-                end_revision,
-                "--",
-            ],
+            self.git.command(
+                workspace_id,
+                [
+                    "git",
+                    "diff",
+                    "--name-only",
+                    "-z",
+                    "--diff-filter=ACDMR",
+                    baseline_revision,
+                    end_revision,
+                    "--",
+                ],
+            ),
             cwd=workspace_id,
             check=True,
             capture_output=True,
@@ -66,11 +75,20 @@ class GitChangedFileResolver:
 
 
 class GitRevisionReader:
-    """Resolve fixed revisions in the Git worktree named by the request."""
+    """Resolve fixed revisions in the Git worktree named by the request.
+
+    The worktree is the unit's, so git runs there inside a fence (#1999).
+    """
+
+    def __init__(self, *, git: WorkspaceGitFences | None = None) -> None:
+        self.git = WorkspaceGitFences() if git is None else git
 
     def read(self, workspace_id: str, revision: str) -> str:
         completed = subprocess.run(
-            ["git", "rev-parse", "--verify", f"{revision}^{{commit}}"],
+            self.git.command(
+                workspace_id,
+                ["git", "rev-parse", "--verify", f"{revision}^{{commit}}"],
+            ),
             cwd=workspace_id,
             check=True,
             capture_output=True,
@@ -82,12 +100,15 @@ class GitRevisionReader:
             raise OSError("local diagnostics revision did not resolve to a fixed commit")
         if revision == "HEAD":
             status = subprocess.run(
-                [
-                    "git",
-                    "status",
-                    "--porcelain",
-                    "--untracked-files=normal",
-                ],
+                self.git.command(
+                    workspace_id,
+                    [
+                        "git",
+                        "status",
+                        "--porcelain",
+                        "--untracked-files=normal",
+                    ],
+                ),
                 cwd=workspace_id,
                 check=True,
                 capture_output=True,
@@ -101,8 +122,15 @@ class GitRevisionReader:
 def build_local_diagnostic_engine(
     *,
     executable_lookup: Callable[[str], str | None] = shutil.which,
+    allow_unconfined: bool = False,
 ) -> DiagnosticExecutionEngine:
-    """Discover allowlisted local providers and build the bounded engine."""
+    """Discover allowlisted local providers and build the bounded engine.
+
+    `allow_unconfined` is the dispatch's `--allow-unconfined`: without it, git
+    in a unit worktree that no fence can be proven for is not run (#1999).
+    """
+    # One fence per unit worktree, shared by the three adapters.
+    git = WorkspaceGitFences(allow_unconfined=allow_unconfined)
     executables = {
         provider_id: executable
         for provider_id in SUPPORTED_LOCAL_PROVIDERS
@@ -115,9 +143,9 @@ def build_local_diagnostic_engine(
     )
     return DiagnosticExecutionEngine(
         config=DiagnosticProviderConfig(capabilities),
-        resolver=GitChangedFileResolver(),
-        revisions=GitRevisionReader(),
-        runner=LocalDiagnosticProviderRunner(executables),
+        resolver=GitChangedFileResolver(git=git),
+        revisions=GitRevisionReader(git=git),
+        runner=LocalDiagnosticProviderRunner(executables, git=git),
         settings=DiagnosticExecutionSettings(
             max_global_concurrency=2,
             max_provider_concurrency=1,

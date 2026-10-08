@@ -1036,12 +1036,28 @@ Rules, all applied at freeze time:
   nothing, and any other worktree is recorded as unmeasured, with a count of
   the tracked paths seen in place of the path list.
 
-  What still runs on the host in a worktree a unit has written: everything
-  before the fence is prepared on a reused worktree (the workspace
-  preflight, the git-path decision itself, the clarification and reuse
-  probes), post-green diagnostics (`--diagnostics`), which spawn their own
-  git, and the paths outside a dispatch (`fanout status`, the Hermes
-  recovery dispatch).
+  A unit can point that configuration at programs of its own: its gitdir's
+  `commondir` file names where git reads `config`, so a `core.fsmonitor`, a
+  `core.hooksPath` or a filter driver the unit planted runs in any later git
+  call there. Git that runs in such a worktree before or outside the unit's
+  fence therefore runs inside a fence of its own, whose one write root is the
+  worktree (#1999). That covers the claim and capacity-reuse probes of a
+  reused worktree, `fanout status`'s workspace probe, and `--diagnostics`,
+  which now materializes a revision with a fenced `git archive` extracted by
+  the dispatcher rather than a `git worktree add` that ran the unit's
+  post-checkout hook and smudge filters on the host. A reused worktree's
+  workspace preflight waits for the unit's own fence, so a unit that
+  redirected its git directory, and so lost its git paths, is blocked there
+  with `git_index_write`. Where no fence can be proven these calls do not run
+  without `--allow-unconfined`: dispatch refuses the reused worktree's unit
+  as above, diagnostics are recorded as crashed, and `fanout status` reports
+  the resume as `workspace_unfenced` (`fanout status --allow-unconfined`
+  observes it anyway; wrapper status surfaces take no opt-in). The git-path
+  decision itself still runs on the host, before any fence can exist; its
+  `symbolic-ref` and `rev-parse` reads load no index and run no hook or
+  filter, and `tests/test_fanout_host_git_outside_fence.py` pins that with
+  the same plant. The Hermes recovery dispatch runs no dispatcher git in the
+  worktree.
 
   That cover is one socket, not the class. A read-only mount stops writes, not
   `connect()`, so any socket still reachable by a well-known path remains a way

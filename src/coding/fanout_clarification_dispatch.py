@@ -5,7 +5,7 @@ from dataclasses import asdict
 import json
 from pathlib import Path
 from collections.abc import Mapping
-from typing import TypedDict
+from typing import TYPE_CHECKING, TypedDict
 
 from ..system.local_store import atomic_write_json, file_lock
 from ..system.paths import OmhPaths
@@ -20,6 +20,9 @@ from .fanout_executor_sessions import observe_session_workspace
 from .fanout_clarification_records import ClarificationRecord, ClarificationLineage
 from .fanout_failure_diagnostics import is_object_list, is_string_map
 
+if TYPE_CHECKING:
+    from .fanout_confinement import FanoutFilesystemConfinement
+
 
 class ResumeContext(TypedDict):
     journal: Mapping[str, object] | None
@@ -28,12 +31,14 @@ class ResumeContext(TypedDict):
     only_units: list[str]
 
 
-def bind_clarification(paths: OmhPaths, result: Mapping[str, object], lineage: ClarificationLineage) -> ClarificationRecord:
+def bind_clarification(paths: OmhPaths, result: Mapping[str, object], lineage: ClarificationLineage,
+                       *, confinement: FanoutFilesystemConfinement | None = None) -> ClarificationRecord:
+    """Bind a unit's decision request to its worktree, observed inside `confinement` (#1999)."""
     request = parse_input_required(result["input_required"], lineage["unit_id"])
     # A child can describe its own decision, never select sibling execution.
     if request["affected_unit_ids"] != [lineage["unit_id"]]:
         raise ClarificationError("affected_unit_ids outside reporting unit authority")
-    workspace = observe_session_workspace(lineage["worktree_path"])
+    workspace = observe_session_workspace(lineage["worktree_path"], confinement=confinement)
     if workspace is None:
         raise ClarificationError("clarification_workspace_unavailable")
     return prepare_clarification(paths, {**lineage, "input_required": request,
@@ -81,8 +86,13 @@ def clarification_resume_journal(paths: OmhPaths, contract: Mapping[str, object]
     return {**journal, "units": rows}
 
 
-def claim_answered_worktree(paths: OmhPaths, fanout_id: str, identity: Mapping[str, str]) -> ClarificationRecord:
-    """Reserve an answer once; unchanged dirty work is preserved, never rebuilt."""
+def claim_answered_worktree(paths: OmhPaths, fanout_id: str, identity: Mapping[str, str],
+                            *, confinement: FanoutFilesystemConfinement | None = None) -> ClarificationRecord:
+    """Reserve an answer once; unchanged dirty work is preserved, never rebuilt.
+
+    The worktree is the one the asking attempt wrote, observed before this
+    attempt's own fence exists, so `confinement` is a fence for that probe (#1999).
+    """
     path = clarification_path(paths, fanout_id, identity["unit_id"])
     with file_lock(path, private=True) as lock:
         if not lock["enforced"]:
@@ -97,7 +107,7 @@ def claim_answered_worktree(paths: OmhPaths, fanout_id: str, identity: Mapping[s
             raise ClarificationError("clarification_answer_unobserved")
         if any(record.get(key) != value for key, value in identity.items()):
             raise ClarificationError("clarification_lineage_changed")
-        snapshot = observe_session_workspace(record["worktree_path"])
+        snapshot = observe_session_workspace(record["worktree_path"], confinement=confinement)
         if snapshot is None or asdict(snapshot) != record["workspace"]:
             raise ClarificationError("clarification_workspace_changed")
         record["state"] = "redispatch_reserved"
@@ -127,7 +137,8 @@ def parent_decision_prompt(record: ClarificationRecord) -> str:
         "goal_attempt_id": record["goal_attempt_id"]}, sort_keys=True)
 
 
-def reported_producer_head(_result: Mapping[str, object], worktree: Path) -> str | None:
+def reported_producer_head(_result: Mapping[str, object], worktree: Path,
+                           *, confinement: FanoutFilesystemConfinement | None = None) -> str | None:
     """A decision request may preserve uncommitted work; success still requires a clean HEAD."""
-    workspace = observe_session_workspace(str(worktree))
+    workspace = observe_session_workspace(str(worktree), confinement=confinement)
     return workspace.head if workspace is not None else None

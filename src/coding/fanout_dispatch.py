@@ -115,6 +115,7 @@ from .fanout_confinement import (
     owner_state_directories,
     git_roots_skip_reason,
     planned_fanout_filesystem_confinement,
+    prepare_dispatcher_git_fence,
     prepare_fanout_filesystem_confinement,
 )
 from .fanout_environment import (
@@ -4420,12 +4421,26 @@ def _dispatch_unit(
     prior = project_run_executor_session(read_observation_events(paths, run_id=run_ref), run_id=run_ref)
     previous_receipt = read_session_receipt(prior.get('executor_session')).receipt
     predecessor_attempt_id = previous_receipt.binding.attempt_id if previous_receipt is not None else None
+    # A worktree that exists already was written by an earlier attempt, and this
+    # attempt's fence is not prepared yet: the claim and reuse probes below read
+    # it from inside a fence of their own (#1999).
+    probe_fence = (
+        prepare_dispatcher_git_fence(worktree, allow_unconfined=allow_unconfined)
+        if runner is signal_safe_unit_runner and worktree.is_dir()
+        else None
+    )
+    if (
+        probe_fence is not None
+        and probe_fence.receipt.get("enforced") is not True
+        and not probe_fence.unconfined_allowed
+    ):
+        return _unfenced_unit_refusal(unit_id, run_ref, owner, attempt_id, worktree, probe_fence.receipt)
     if clarification is not None:
         clarification = claim_answered_worktree(paths, fanout_id, {
             "unit_id": unit_id, "run_ref": run_ref, "base_sha": base_sha,
             "contract_digest": session_contract_digest, "goal_attempt_id": review_budget.attempt_id,
             "worktree_path": str(worktree), "attempt_id": clarification["attempt_id"],
-        })
+        }, confinement=probe_fence)
         # The early read is not authority: serialize only the atomically validated claim.
         assembled = _assemble_prompt(sidecar_path, clarification)
         prompt = assembled.text
@@ -4447,6 +4462,7 @@ def _dispatch_unit(
         failure_diagnostic_context={**diagnostic_context, "known_secrets": known_secrets},
         capacity_resume=(capacity_resume_rows or {}).get(unit_id),
         contract_digest=session_contract_digest,
+        confinement=probe_fence,
     ))
     if not worktree_record.get("created") and not worktree_record.get('reused'):
         return {
@@ -4475,31 +4491,16 @@ def _dispatch_unit(
     #
     # `target_ref` is deliberately None: the worktree was just created at
     # `base_sha`, so the unit has no head of its own yet and HEAD is the only
-    # other commit there is to check.
-    workspace_preflight = probe_workspace(
-        worktree, base_ref=base_sha or None, target_ref=None, runner=runner
-    )
-    if not workspace_preflight["ok"]:
-        # `worktree_failed` rather than a new status word: the closed status
-        # vocabulary is a wire contract external wrappers gate on, and this IS
-        # a setup-phase failure of the worktree. `reason_code` is what
-        # separates "the worktree could not be created" from "the worktree was
-        # created and cannot be worked in"; `workspace_preflight` carries which
-        # check failed and why. The worktree is left exactly as it is -- the
-        # repair happens at the preparation step, on what is on disk.
-        return {
-            "unit_id": unit_id,
-            "run_ref": run_ref,
-            "owner": owner,
-            "status": "worktree_failed",
-            "attempt_id": attempt_id,
-            "reason_code": "workspace_preflight_blocked",
-            "failure_kind": FAILURE_KIND_WORKSPACE_BLOCKED,
-            "unit_state": workspace_preflight_unit_state(workspace_preflight),
-            "workspace_preflight": workspace_preflight,
-            "reason": workspace_preflight_reason(workspace_preflight),
-            **_dispatch_status_ladder(),
-        }
+    # other commit there is to check. A REUSED worktree holds what an earlier
+    # attempt wrote, git config included, so its preflight waits for this
+    # attempt's fence below (#1999); a fresh one holds only the checkout.
+    reused_worktree = bool(worktree_record.get("reused"))
+    if not reused_worktree:
+        workspace_preflight = probe_workspace(
+            worktree, base_ref=base_sha or None, target_ref=None, runner=runner
+        )
+        if not workspace_preflight["ok"]:
+            return _workspace_preflight_refusal(unit_id, run_ref, owner, attempt_id, workspace_preflight)
     session_capability = (negotiate_session_capability(owner, argv[0], env=child_env)
                           if argv and getattr(runner, 'accepts_output_capture', False) else None)
     if session_capability is not None:
@@ -4547,29 +4548,18 @@ def _dispatch_unit(
         # same setup-phase shape as a workspace preflight blocker: the next
         # attempt on this host inherits the same missing fence, and only a
         # host with a backend or the operator's `--allow-unconfined` clears it.
-        reason_code = str(filesystem_confinement.get("reason_code") or "sandbox_command_not_fenced")
-        return {
-            "unit_id": unit_id,
-            "run_ref": run_ref,
-            "owner": owner,
-            "status": "worktree_failed",
-            "attempt_id": attempt_id,
-            "reason_code": "filesystem_confinement_unavailable",
-            "failure_kind": FAILURE_KIND_WORKSPACE_BLOCKED,
-            "unit_state": UNIT_STATE_PERMISSION_BLOCKED,
-            "worktree_path": str(worktree),
-            "filesystem_confinement": filesystem_confinement,
-            "reason": (
-                f"no filesystem write fence could be proven for this unit ({reason_code}), so it was not "
-                "spawned; pass --allow-unconfined to run it with the operator's full write access"
-            ),
-            **_dispatch_status_ladder(),
-        }
+        return _unfenced_unit_refusal(unit_id, run_ref, owner, attempt_id, worktree, filesystem_confinement)
     if confinement is not None:
         child_env = confinement.command_environment()
     # From here on, git the dispatcher runs in this worktree runs inside the
     # unit's own fence (#1990).
     unit_git_runner = _fenced_dispatcher_runner(runner, confinement, worktree)
+    if reused_worktree:
+        workspace_preflight = probe_workspace(
+            worktree, base_ref=base_sha or None, target_ref=None, runner=unit_git_runner
+        )
+        if not workspace_preflight["ok"]:
+            return _workspace_preflight_refusal(unit_id, run_ref, owner, attempt_id, workspace_preflight)
     # After the worktree exists and before anything else touches it: a linked
     # artifact must be in place before the unit's process spawns to be worth
     # anything, and re-checking from inside the worktree (see
@@ -5028,6 +5018,7 @@ def _dispatch_unit(
     unit_result = _intake_unit_result(
         paths,
         runner=unit_git_runner,
+        confinement=confinement,
         sidecar_path=sidecar_path,
         run_ref=run_ref,
         unit_id=unit_id,
@@ -5046,7 +5037,7 @@ def _dispatch_unit(
             "attempt_id": attempt_id, "goal_attempt_id": review_budget.attempt_id,
             "base_sha": base_sha, "contract_digest": session_contract_digest,
             "worktree_path": str(worktree),
-        })
+        }, confinement=confinement)
     append_journal_observation(paths, {
         "target_type": "run", "target_id": run_ref, "run_id": run_ref,
         "event": "worker_result", "status": "blocked" if input_required else status,
@@ -5413,6 +5404,7 @@ def _intake_unit_result(
     paths: OmhPaths,
     *,
     runner: Callable[..., Any],
+    confinement: FanoutFilesystemConfinement | None = None,
     sidecar_path: Path | None,
     run_ref: str,
     unit_id: str,
@@ -5444,6 +5436,7 @@ def _intake_unit_result(
                 worktree=worktree,
                 owner=owner,
                 runner=runner,
+                confinement=confinement,
                 known_secrets=known_secrets,
             )
             if fallback is not None:
@@ -5471,7 +5464,7 @@ def _intake_unit_result(
             fanout_id=fanout_id,
             base_sha=base_sha,
         )
-        producer_head_sha = (reported_producer_head(validated, worktree)
+        producer_head_sha = (reported_producer_head(validated, worktree, confinement=confinement)
             if validated['process_status'] == 'input_required' else _observed_clean_producer_head(runner, worktree))
         if producer_head_sha is None:
             raise ValueError("dispatcher could not observe a clean committed producer HEAD")
@@ -5544,6 +5537,7 @@ def _intake_stdout_unit_result(
     paths: OmhPaths,
     *,
     runner: Callable[..., Any],
+    confinement: FanoutFilesystemConfinement | None = None,
     stdout_text: str,
     run_ref: str,
     unit_id: str,
@@ -5573,7 +5567,7 @@ def _intake_stdout_unit_result(
             fanout_id=fanout_id,
             base_sha=base_sha,
         )
-        producer_head_sha = (reported_producer_head(validated, worktree)
+        producer_head_sha = (reported_producer_head(validated, worktree, confinement=confinement)
             if validated['process_status'] == 'input_required' else _observed_clean_producer_head(runner, worktree))
         if producer_head_sha is None:
             raise ValueError("dispatcher could not observe a clean committed producer HEAD")
@@ -5915,6 +5909,65 @@ def _same_directory(reported: str, worktree: Path) -> bool:
         return Path(reported).resolve(strict=False) == worktree.resolve(strict=False)
     except OSError:
         return False
+
+
+def _workspace_preflight_refusal(
+    unit_id: str, run_ref: str, owner: str, attempt_id: str, workspace_preflight: dict[str, Any],
+) -> dict[str, Any]:
+    """A blocked workspace preflight, as the unit's setup-phase refusal.
+
+    `worktree_failed` rather than a new status word: the closed status
+    vocabulary is a wire contract external wrappers gate on, and this IS a
+    setup-phase failure of the worktree. `reason_code` is what separates "the
+    worktree could not be created" from "the worktree was created and cannot be
+    worked in"; `workspace_preflight` carries which check failed and why. The
+    worktree is left exactly as it is -- the repair happens at the preparation
+    step, on what is on disk.
+    """
+    return {
+        "unit_id": unit_id,
+        "run_ref": run_ref,
+        "owner": owner,
+        "status": "worktree_failed",
+        "attempt_id": attempt_id,
+        "reason_code": "workspace_preflight_blocked",
+        "failure_kind": FAILURE_KIND_WORKSPACE_BLOCKED,
+        "unit_state": workspace_preflight_unit_state(workspace_preflight),
+        "workspace_preflight": workspace_preflight,
+        "reason": workspace_preflight_reason(workspace_preflight),
+        **_dispatch_status_ladder(),
+    }
+
+
+def _unfenced_unit_refusal(
+    unit_id: str, run_ref: str, owner: str, attempt_id: str, worktree: Path, receipt: Mapping[str, object],
+) -> dict[str, Any]:
+    """No proven fence and no `--allow-unconfined`: refused before anything runs in the worktree.
+
+    The spawn would run the owner CLI with the operator's full write access
+    (#1982), and a reused worktree's probes would run git the unit configured
+    (#1999). The same setup-phase shape as a workspace preflight blocker: the
+    next attempt on this host inherits the same missing fence, and only a host
+    with a backend or the operator's `--allow-unconfined` clears it.
+    """
+    reason_code = str(receipt.get("reason_code") or "sandbox_command_not_fenced")
+    return {
+        "unit_id": unit_id,
+        "run_ref": run_ref,
+        "owner": owner,
+        "status": "worktree_failed",
+        "attempt_id": attempt_id,
+        "reason_code": "filesystem_confinement_unavailable",
+        "failure_kind": FAILURE_KIND_WORKSPACE_BLOCKED,
+        "unit_state": UNIT_STATE_PERMISSION_BLOCKED,
+        "worktree_path": str(worktree),
+        "filesystem_confinement": receipt,
+        "reason": (
+            f"no filesystem write fence could be proven for this unit ({reason_code}), so it was not "
+            "spawned; pass --allow-unconfined to run it with the operator's full write access"
+        ),
+        **_dispatch_status_ladder(),
+    }
 
 
 def _fenced_dispatcher_runner(

@@ -10,6 +10,7 @@ import sys
 from tempfile import TemporaryDirectory
 import unittest
 
+from _fanout_host_fence import host_cannot_fence_fanout
 from _local_package import load_local_package
 from _platform_support import requires_posix, requires_windows
 
@@ -29,6 +30,7 @@ class LocalDiagnosticProcessCleanupTests(unittest.TestCase):
             repo, baseline, end = self._repository(root)
             ruff = self._orphaning_ruff(root)
             engine = build_local_diagnostic_engine(
+                allow_unconfined=host_cannot_fence_fanout(),
                 executable_lookup=lambda provider: (
                     str(ruff)
                     if provider == "ruff"

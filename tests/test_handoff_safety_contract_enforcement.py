@@ -168,7 +168,7 @@ PROCESS_SPAWN_ALLOWLIST: dict[str, str] = {
     ),
     "src/coding/local_diagnostic_process.py": (
         "provider bridge reached only after explicit `omh coding fanout dispatch --diagnostics`; "
-        "materializes/removes detached fixed-revision worktrees and starts only the closed local "
+        "materializes fixed revisions through a fenced `git archive` and starts only the closed local "
         "pyright/basedpyright/ruff command map with bounded output, time, and environment."
     ),
     "src/coding/local_diagnostic_process_owner.py": (
@@ -1047,13 +1047,10 @@ GIT_ARGV_ALLOWLIST: dict[tuple[str, tuple[str, ...]], str] = {
         "`git status --porcelain --untracked-files=normal` refuses a dirty diagnostic execution "
         "workspace instead of claiming fresh evidence; read-only and local-only"
     ),
-    ("src/coding/local_diagnostic_process.py", ("worktree", "add")): (
-        "creates one disposable detached checkout of a fixed diagnostic revision under the "
-        "explicit `--diagnostics` boundary; local-only and names no remote"
-    ),
-    ("src/coding/local_diagnostic_process.py", ("worktree", "remove")): (
-        "removes only the disposable diagnostic checkout created by the same provider call; "
-        "local-only and names no remote"
+    ("src/coding/local_diagnostic_process.py", ("archive",)): (
+        "`git archive --format=tar <fixed revision>` streams one fixed diagnostic revision, inside "
+        "the unit worktree's write fence, into a private directory this process extracts under the "
+        "explicit `--diagnostics` boundary; writes no repository state, local-only and names no remote"
     ),
     ("src/coding/final_review_worktree.py", ("rev-parse", "HEAD^{tree}")): (
         "reads the integrated and isolated checkout tree identities so final-review lanes cannot "

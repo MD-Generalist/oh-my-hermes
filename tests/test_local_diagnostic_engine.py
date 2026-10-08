@@ -10,11 +10,13 @@ from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
 
+from _fanout_host_fence import host_cannot_fence_fanout
 from _local_package import load_local_package
 
 load_local_package()
 
 from omh.coding.diagnostic_execution import DiagnosticExecutionRequest  # noqa: E402
+from omh.coding.local_diagnostic_process import WorkspaceGitFences  # noqa: E402
 from omh.coding.local_diagnostic_engine import (  # noqa: E402
     LocalDiagnosticProviderRunner,
     build_local_diagnostic_engine,
@@ -30,6 +32,7 @@ class LocalDiagnosticEngineTests(unittest.TestCase):
                 self._fake_ruff_source(),
             )
             engine = build_local_diagnostic_engine(
+                allow_unconfined=host_cannot_fence_fanout(),
                 executable_lookup=lambda provider: (
                     sys.executable
                     if provider == "ruff"
@@ -72,6 +75,7 @@ class LocalDiagnosticEngineTests(unittest.TestCase):
         with TemporaryDirectory() as raw:
             repo, baseline, end = self._repository(Path(raw))
             result = build_local_diagnostic_engine(
+                allow_unconfined=host_cannot_fence_fanout(),
                 executable_lookup=lambda _provider: None
             ).execute(
                 DiagnosticExecutionRequest(
@@ -106,7 +110,8 @@ class LocalDiagnosticEngineTests(unittest.TestCase):
                 self._blocking_ruff_source(),
             )
             runner = LocalDiagnosticProviderRunner(
-                {"ruff": sys.executable}
+                {"ruff": sys.executable},
+                git=WorkspaceGitFences(allow_unconfined=host_cannot_fence_fanout()),
             )
 
             observation = runner.run(
@@ -136,6 +141,7 @@ class LocalDiagnosticEngineTests(unittest.TestCase):
                 self._noisy_ruff_source(),
             )
             engine = build_local_diagnostic_engine(
+                allow_unconfined=host_cannot_fence_fanout(),
                 executable_lookup=lambda provider: (
                     sys.executable
                     if provider == "ruff"
