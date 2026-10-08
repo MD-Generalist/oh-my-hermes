@@ -206,16 +206,56 @@ class OptInIsForHostCapabilityTests(unittest.TestCase):
     def test_every_unenforced_reason_is_classified(self) -> None:
         import ast
         import inspect
-        import textwrap
+
+        # Every reason code a fence builder can put on a receipt (#2042): the
+        # module-level functions the three public builders reach, and in each,
+        # every string the reason argument of `_unconfined` or `_receipt` can
+        # take -- a literal, a conditional over literals, or a local name bound
+        # to literals -- whatever its prefix.
+        module = ast.parse(inspect.getsource(fanout_confinement))
+        functions = {node.name: node for node in module.body if isinstance(node, ast.FunctionDef)}
+        reached: set[str] = set()
+        pending = [
+            "prepare_fanout_filesystem_confinement", "prepare_dispatcher_git_fence", "prepare_diagnostic_analyzer_fence",
+        ]
+        while pending:
+            name = pending.pop()
+            if name in reached:
+                continue
+            reached.add(name)
+            pending.extend(
+                node.func.id for node in ast.walk(functions[name])
+                if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in functions
+            )
+
+        def strings(expression: ast.AST, function: ast.FunctionDef) -> set[str]:
+            if isinstance(expression, ast.Name):
+                bound = [
+                    node.value for node in ast.walk(function)
+                    if isinstance(node, ast.Assign)
+                    and any(isinstance(target, ast.Name) and target.id == expression.id for target in node.targets)
+                ]
+                return set().union(*(strings(value, function) for value in bound))
+            return {
+                node.value for node in ast.walk(expression)
+                if isinstance(node, ast.Constant) and isinstance(node.value, str) and node.value
+            }
 
         found: set[str] = set()
-        for function in (fanout_confinement._prepare_fanout_filesystem_confinement, fanout_confinement._probe):
-            tree = ast.parse(textwrap.dedent(inspect.getsource(function)))
-            found.update(
-                node.value for node in ast.walk(tree)
-                if isinstance(node, ast.Constant) and isinstance(node.value, str)
-                and (node.value.startswith("sandbox_") or node.value.startswith("no_os_"))
-            )
+        for name in reached:
+            function = functions[name]
+            for call in ast.walk(function):
+                if not (isinstance(call, ast.Call) and isinstance(call.func, ast.Name)):
+                    continue
+                if call.func.id not in {"_unconfined", "_receipt"}:
+                    continue
+                arguments = [keyword.value for keyword in call.keywords if keyword.arg == "reason_code"]
+                if call.func.id == "_unconfined" and len(call.args) > 3:
+                    arguments.append(call.args[3])
+                for argument in arguments:
+                    found |= strings(argument, function)
+        self.assertIn("_probe", reached)
+        self.assertIn("worktree_missing", found)
         self.assertEqual(found, set(fanout_confinement.UNCONFINED_REASON_SOURCES))
         self.assertLessEqual(set(fanout_confinement.UNCONFINED_REASON_SOURCES.values()), {"host", "content"})
 
@@ -259,6 +299,68 @@ class OptInIsForHostCapabilityTests(unittest.TestCase):
         self.assertEqual(fence.receipt["reason_code"], "sandbox_scratch_unsafe")
         self.assertFalse(fence.unconfined_allowed)
         self.assertIsNone(fence.dispatcher_command(["git", "status"]))
+
+    @unittest.skipUnless(sys.platform == "darwin", "sandbox-exec confinement is exercised on macOS")
+    def test_a_tree_made_unenterable_for_the_preflight_refuses_dispatcher_git_despite_the_opt_in(self) -> None:
+        # A unit still running in its own fence may chmod its root between the
+        # scratch write and the preflight, and restore it afterwards (#2042).
+        # Patched in at that exact step, so the race is won every run.
+        scratch = fanout_confinement._write_scratch_ignore
+
+        def scratch_then_lock(worktree: Path) -> bool:
+            written = scratch(worktree)
+            worktree.chmod(0)
+            return written
+
+        with TemporaryDirectory() as temporary:
+            worktree = Path(temporary).resolve() / "worktree"
+            worktree.mkdir()
+            try:
+                with mock.patch.object(fanout_confinement, "_write_scratch_ignore", side_effect=scratch_then_lock):
+                    fence = fanout_confinement.prepare_dispatcher_git_fence(worktree, allow_unconfined=True)
+            finally:
+                worktree.chmod(0o700)
+        self.assertEqual(fence.receipt["reason_code"], "sandbox_preflight_failed_in_tree")
+        self.assertFalse(fence.unconfined_allowed)
+        self.assertIsNone(fence.dispatcher_command(["git", "status"]))
+
+    def test_a_preflight_that_passes_outside_the_tree_is_the_tree_s_failure(self) -> None:
+        from omh.quality import cross_harness_adapter_sandbox
+
+        with TemporaryDirectory() as temporary:
+            worktree = Path(temporary).resolve()
+            children: list[Any] = []
+            for neutral_ready, reason, honoured in (
+                (True, "sandbox_preflight_failed_in_tree", False),
+                (False, "sandbox_preflight_failed", True),
+            ):
+                children.clear()
+
+                def preflight(selected: str, roots: Any, child: Any, *_args: Any, **_keywords: Any) -> tuple[bool, str]:
+                    children.append(child)
+                    return (child.work != worktree and neutral_ready), "digest"
+
+                with self.subTest(neutral_ready=neutral_ready), mock.patch.object(
+                    fanout_confinement, "backend", return_value="sandbox-exec"
+                ), mock.patch.object(fanout_confinement, "backend_available", return_value=True), mock.patch.object(
+                    fanout_confinement, "_write_scratch_ignore", return_value=True
+                ), mock.patch.object(fanout_confinement, "preflight", side_effect=preflight):
+                    fence = fanout_confinement.prepare_fanout_filesystem_confinement(
+                        worktree, {}, ((sys.executable,),), allow_unconfined=True,
+                    )
+                    self.assertEqual([child.work for child in children], [worktree, Path("/")])
+                    self.assertEqual({child.root for child in children}, {worktree})
+                    self.assertEqual(fence.receipt["reason_code"], reason)
+                    self.assertEqual(fence.unconfined_allowed, honoured)
+            # The bwrap retry enters the neutral directory, not the tree, and
+            # still binds the tree as the preflight in it does.
+            with mock.patch.object(cross_harness_adapter_sandbox, "_trusted_bwrap", return_value="/usr/bin/bwrap"):
+                argv = cross_harness_adapter_sandbox.sandbox_command(
+                    ("/usr/bin/true",), "bwrap", (worktree,), children[-1], True, {}, "digest",
+                    allow_broad_file_read=True, inherit_environment=True,
+                )
+            self.assertEqual(argv[argv.index("--chdir") + 1], "/")
+            self.assertIn(("--bind", str(worktree), str(worktree)), tuple(zip(argv, argv[1:], argv[2:])))
 
     def test_a_host_without_a_backend_keeps_the_opt_in(self) -> None:
         with TemporaryDirectory() as temporary:
