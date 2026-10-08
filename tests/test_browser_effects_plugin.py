@@ -1,17 +1,19 @@
 """Registered browser consumer contracts; real stores and held-byte adapter."""
-from contextlib import ExitStack
+from contextlib import ExitStack, contextmanager
 from contextvars import ContextVar, copy_context
 from datetime import datetime, timezone
 import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from threading import Event, Thread
+from threading import current_thread, Event, Thread
 from types import SimpleNamespace
 import unittest
+from unittest.mock import patch
 
 from _browser_adapter_support import HostContext, host_session, request
-from test_browser_effect_attempts import EffectAdapter
+from test_browser_effect_attempts import EffectAdapter, run_on_second_thread
 from omh.plugin_bundle.omh import register
+from omh.workflows import browser_lease_store
 from omh.workflows.approval_receipts import build_approval_receipt
 from omh.workflows.browser_adapter import digest
 from omh.workflows.browser_effect_attempts_contract import approval_scope, OPERATIONS
@@ -322,37 +324,90 @@ class BrowserEffectsPluginTests(unittest.TestCase):
             row = json.loads((self.home / 'runtime/browser/leases.json').read_text())['leases'][lease['lease_id']]
             self.assertEqual(row['action_count'], 1)
 
-    def test_concurrent_registered_replays_share_one_attempt(self):
+    def test_concurrent_registered_replay_waits_for_the_shared_attempt(self):
+        """A replay contending for the lease boundary mid-resume returns the shared terminal result.
+
+        The registered path serializes every effect call on the lease store's lock
+        (`effect_boundary`), so the replay must wait for the first attempt to finish and
+        then read its stored result. That wait is bounded by the store's own lock budget;
+        how long the first attempt's remaining work takes is runner load, not contract,
+        so only the replay's deadline is removed here. The bound itself is pinned by the
+        next test. The replay is started from the mid-resume seam and the first send is
+        held until the replay is contending, so the interleaving is reached by
+        construction, and both outcomes are keyed by caller, never by completion order.
+        """
         self.acquire()
         preview = self.preview()
         self.approve(preview)
-        self.adapter.resume_proceed = Event()
-        replay_entered = Event()
-        results = []
-        first_context, second_context = copy_context(), copy_context()
-        first = Thread(target=lambda: results.append(first_context.run(self.execute, preview)))
+        replay_context = copy_context()
+        contending = Event()
+        outcome = {}
 
         def replay():
-            replay_entered.set()
-            results.append(second_context.run(self.execute, preview))
+            try:
+                outcome['replay'] = replay_context.run(self.execute, preview)
+            finally:
+                contending.set()  # A replay that never reaches the lock still releases the first.
 
-        second = Thread(target=replay)
-        first.start()
-        try:
-            self.assertTrue(self.adapter.resume_entered.wait(5))
-            second.start()
-            self.assertTrue(replay_entered.wait(5))
-        finally:
-            self.adapter.resume_proceed.set()
-            first.join(5)
-            if second.ident is not None:
-                second.join(5)
-        self.assertFalse(first.is_alive())
-        self.assertFalse(second.is_alive())
-        self.assertEqual(len(results), 2)
-        self.assertEqual(results[0]['status'], 'succeeded')
-        self.assertEqual(results[0], results[1])
+        replay_thread = Thread(target=replay)
+        real_lock = browser_lease_store.file_lock
+
+        @contextmanager
+        def replay_lock_without_deadline(path, **kwargs):
+            if current_thread() is replay_thread:
+                kwargs['timeout_seconds'] = float('inf')
+                contending.set()
+            with real_lock(path, **kwargs) as held:
+                yield held
+
+        def start_replay_mid_resume():
+            self.adapter.during_resume = None
+            replay_thread.start()
+            contending.wait()  # No deadline: set by the replay on contention or on exit.
+
+        self.adapter.during_resume = start_replay_mid_resume
+        with patch.object(browser_lease_store, 'file_lock', replay_lock_without_deadline):
+            try:
+                outcome['first'] = self.execute(preview)
+            finally:
+                if replay_thread.ident is not None:
+                    replay_thread.join()
+        self.assertEqual(outcome['first']['status'], 'succeeded', outcome['first'])
+        self.assertEqual(outcome['replay'], outcome['first'])
         self.assertEqual(self.adapter.send_count, 1)
+        attempts = [row for row in AttemptStore(self.home).public_rows(limit=200) if row['row_type'] == 'attempt']
+        self.assertEqual([row['attempt_id'] for row in attempts], [outcome['first']['attempt_id']])
+
+    def test_registered_replay_past_the_lease_lock_budget_is_closed_unknown(self):
+        """A replay whose bounded boundary wait expires fails closed and opens no attempt.
+
+        The replay is run from inside `resume` and joined there, so the first call holds
+        the lease lock for the replay's whole budget: expiry is reached by construction.
+        The documented answer is a closed `unknown` that forbids a retry, before any send;
+        the first attempt still completes once, and a later replay reads its result.
+        """
+        self.acquire()
+        preview = self.preview()
+        self.approve(preview)
+        replay_context = copy_context()
+        replays = []
+
+        def replay_mid_resume():
+            self.adapter.during_resume = None
+            replays.append(dict(sends_before=self.adapter.send_count,
+                                result=run_on_second_thread(lambda: replay_context.run(self.execute, preview))))
+
+        self.adapter.during_resume = replay_mid_resume
+        result = self.execute(preview)
+        self.assertEqual(len(replays), 1)
+        self.assertEqual(replays[0]['sends_before'], 0)
+        self.assertEqual(replays[0]['result'],
+                         {'status': 'unknown', 'reason': 'effect_boundary_unknown', 'retry_allowed': False})
+        self.assertEqual(result['status'], 'succeeded', result)
+        self.assertEqual(self.execute(preview), result)
+        self.assertEqual(self.adapter.send_count, 1)
+        attempts = [row for row in AttemptStore(self.home).public_rows(limit=200) if row['row_type'] == 'attempt']
+        self.assertEqual([row['attempt_id'] for row in attempts], [result['attempt_id']])
 
     def test_copied_context_and_foreign_task_do_not_retain_authority(self):
         with self.ctx.browser_task('task'):
