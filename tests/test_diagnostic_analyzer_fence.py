@@ -54,8 +54,8 @@ def _repository(root: Path, files: dict[str, str]) -> tuple[Path, str]:
 class _HostGit(WorkspaceGitFences):
     """Git of a test-owned repository, unfenced, so only the analyzer path is under test."""
 
-    def command(self, workspace: str | Path, argv: Any) -> list[str]:
-        return list(argv)
+    def command(self, workspace: str | Path, argv: Any) -> tuple[list[str], dict[str, str]]:
+        return list(argv), fanout_confinement.dispatcher_git_environment()
 
 
 @unittest.skipUnless(sys.platform == "darwin", "sandbox-exec confinement is exercised on macOS")
