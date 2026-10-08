@@ -962,13 +962,12 @@ GIT_ARGV_ALLOWLIST: dict[tuple[str, tuple[str, ...]], str] = {
     ),
     ("src/coding/workspace_preflight.py", ("rev-parse",)): (
         "`git rev-parse --absolute-git-dir` locates the git directory of the unit's own worktree so "
-        "the index-write probe can put its temporary index and scratch blob there; read-only and "
-        "names no remote"
+        "the index-write probe can name its temporary index there; read-only and names no remote"
     ),
     ("src/coding/workspace_preflight.py", ("hash-object",)): (
-        "`git hash-object -w -- <scratch blob>` is the pre-spawn observation that this isolation's "
-        "object store accepts a write at all; it writes one unreferenced loose object from a scratch "
-        "file the probe creates and removes, and names no remote"
+        "`git hash-object -w --stdin` is the pre-spawn observation that this isolation's object "
+        "store accepts a write at all; it writes one unreferenced loose object from bytes handed to "
+        "it on stdin, and names no remote"
     ),
     ("src/coding/workspace_preflight.py", ("read-tree", "HEAD")): (
         "`git read-tree HEAD` under a temporary GIT_INDEX_FILE, so the index-write probe never "

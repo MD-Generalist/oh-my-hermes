@@ -317,6 +317,7 @@ def signal_safe_unit_runner(
     errors: str | None = None,
     capture_output: bool = False,
     timeout: float | None = None,
+    input: str | bytes | None = None,
     on_spawn: Callable[[subprocess.Popen[bytes] | subprocess.Popen[str]], None] | None = None,
     on_output: Callable[[str], None] | None = None,
     confinement_command: Sequence[str] | None = None,
@@ -337,7 +338,11 @@ def signal_safe_unit_runner(
     cumulative token telemetry mid-run instead of only after exit. It only
     engages for text-mode captured output (the dispatch path's shape); any
     other shape keeps the plain blocking `communicate` exactly as before.
+    `input`, as for `subprocess.run`, is written to the child's stdin on that
+    plain path (the workspace preflight hands git its blob this way, #2040).
     """
+    if input is not None and (output_capture is not None or on_output is not None):
+        raise ValueError("input is only supported on the plain communicate path")
     pipe = subprocess.PIPE if capture_output else None
     def spawn():
         return subprocess.Popen(
@@ -346,6 +351,7 @@ def signal_safe_unit_runner(
             env=dict(env) if env is not None else None,
             text=False if output_capture is not None else text,
             errors=None if output_capture is not None else errors,
+            stdin=None if input is None else subprocess.PIPE,
             stdout=pipe,
             stderr=pipe,
             start_new_session=os.name != "nt",
@@ -377,7 +383,7 @@ def signal_safe_unit_runner(
                     poll_seconds=UNIT_OUTPUT_POLL_SECONDS,
                 )
             else:
-                stdout, stderr = process.communicate(timeout=timeout)
+                stdout, stderr = process.communicate(input=input, timeout=timeout)
         except subprocess.TimeoutExpired:
             # The whole group dies with the leader — a timed-out unit must
             # not leave grandchildren running against the worktree.

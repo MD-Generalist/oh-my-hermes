@@ -199,6 +199,7 @@ def _run_git(
     argv: list[str],
     *,
     env: dict[str, str],
+    stdin: str | None = None,
 ) -> tuple[int, str, str]:
     """Run one bounded git command in the worktree, returning (code, stdout, stderr).
 
@@ -210,7 +211,9 @@ def _run_git(
 
     A git that cannot be run at all reports `_GIT_UNRUNNABLE` rather than
     raising: every caller is deciding whether a blocker is present, and an
-    unanswerable question is a blocker, not a crash.
+    unanswerable question is a blocker, not a crash. `stdin`, when given, is
+    passed as the runner's `input`; it is omitted otherwise, so a runner that
+    does not take `input` still serves every other call.
     """
     try:
         completed = runner(
@@ -220,6 +223,7 @@ def _run_git(
             capture_output=True,
             timeout=_GIT_TIMEOUT_SECONDS,
             env=env,
+            **({} if stdin is None else {"input": stdin}),
         )
     except (OSError, subprocess.SubprocessError) as exc:
         return _GIT_UNRUNNABLE, "", f"{type(exc).__name__}: {exc}"
@@ -287,12 +291,17 @@ def _check_git_index_write(
     """Prove the object store and the index can be written, without dirtying either.
 
     The write goes to a TEMPORARY index named by `GIT_INDEX_FILE`, so the real
-    index the unit will use is never touched, and to a scratch blob inside the
-    git directory rather than the worktree, so nothing appears in `git status`.
-    `hash-object -w` is what observes that the object store itself is
-    writable; `read-tree` plus `update-index --cacheinfo` is what observes that
-    the index machinery works. Both temporary paths are removed before this
-    returns.
+    index the unit will use is never touched. `hash-object -w --stdin` is what
+    observes that the object store itself is writable; `read-tree` plus
+    `update-index --cacheinfo` is what observes that the index machinery works.
+
+    The git directory is whatever the worktree's `.git` file names, and on a
+    reused worktree that file is the unit's (#2040). So this process writes
+    nothing under it: the blob reaches git on stdin, and the temporary index
+    is created by git itself, through `runner`, which on a reused worktree is
+    the unit's own fence. What this process does there is unlink the names
+    that index write uses, which come from a fresh uuid: they exist only if
+    the git call just above created them, and `unlink` does not follow a link.
     """
     code, stdout, stderr = _run_git(runner, worktree, ["git", "rev-parse", "--absolute-git-dir"], env=env)
     if code != 0:
@@ -308,17 +317,11 @@ def _check_git_index_write(
             False,
             f"git reported {git_dir} as its directory, but it is not a directory",
         )
-    blob_path = git_dir / _scratch_name(".blob")
     index_path = git_dir / _scratch_name(".index")
     try:
-        blob_path.write_text("omh workspace preflight\n", encoding="utf-8")
-    except OSError as exc:
-        return _check(
-            CHECK_GIT_INDEX_WRITE, False, f"could not write a scratch blob in {git_dir}: {exc}"
-        )
-    try:
         code, stdout, stderr = _run_git(
-            runner, worktree, ["git", "hash-object", "-w", "--", str(blob_path)], env=env
+            runner, worktree, ["git", "hash-object", "-w", "--stdin"], env=env,
+            stdin="omh workspace preflight\n",
         )
         if code != 0:
             return _check(
@@ -349,13 +352,12 @@ def _check_git_index_write(
                 f"could not write an entry into a temporary index at {index_path}: {stderr or stdout}",
             )
     finally:
-        _remove(blob_path)
         _remove(index_path)
         _remove(index_path.with_name(index_path.name + ".lock"))
     return _check(
         CHECK_GIT_INDEX_WRITE,
         True,
-        f"wrote a scratch blob and an index entry through a temporary index under {git_dir}",
+        f"wrote a blob and an index entry through a temporary index under {git_dir}",
     )
 
 
