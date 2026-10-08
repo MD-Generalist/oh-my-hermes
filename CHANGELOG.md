@@ -29,6 +29,17 @@ All notable changes will be documented here.
   "the last step" and "le dernier commit" stay auto-approved; French "hier"
   stays out because of German "hier".
 
+- **A preflight the fenced tree failed no longer passes as a host failure.**
+  The fence preflight starts `/usr/bin/true` with the unit worktree as its
+  working directory, so a unit still running in its own fence could make its
+  root unenterable for just that call, and the failure was classified as the
+  host's: `--allow-unconfined` then let dispatcher git run unfenced (#2042).
+  A failed preflight is now repeated once entering `/` instead of the tree;
+  when that passes, the receipt reads `sandbox_preflight_failed_in_tree`, a
+  reason the fenced tree caused, and the opt-in is refused. The test that
+  every unenforced reason is classified now derives every reason code the
+  fence builders can reach rather than two functions' prefixed literals, and
+  classifies `worktree_missing` as well.
 - **Fenced dispatcher git gets no credentials and no network.** Git the
   dispatcher ran in a unit worktree inside a fence (the unit's own since
   #1995, the narrow one #2034 added for `fanout status`, the claim and reuse

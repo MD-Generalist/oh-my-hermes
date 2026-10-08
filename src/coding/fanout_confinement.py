@@ -617,15 +617,20 @@ UNCONFINED_REASON_SOURCES: Mapping[str, str] = {
     # The caller's command list and the host PATH, not the fenced tree.
     "sandbox_no_runnable_command": "host",
     "sandbox_executable_not_found": "host",
-    # Runs `/usr/bin/true` with the tree as working directory, after
-    # `_write_scratch_ignore` already wrote into it: a tree the dispatcher
-    # cannot enter fails that step first, as `sandbox_scratch_unsafe`.
+    # The preflight failed in the tree AND again from `/`, which does not
+    # depend on the tree being enterable.
     "sandbox_preflight_failed": "host",
+    # The preflight failed with the tree as working directory but passed from
+    # `/`: a unit still running in its own fence can make its root
+    # unenterable for just that one preflight (#2042).
+    "sandbox_preflight_failed_in_tree": "content",
     # A committed `.omh` file, or a link at `.omh/confinement-tmp/.gitignore`.
     "sandbox_scratch_unsafe": "content",
     # The probe writes every write root, and a unit fence's git roots are read
     # from the gitdir the unit can write, so a failure is not the host's alone.
     "sandbox_probe_failed": "content",
+    # `prepare_dispatcher_git_fence` never creates the tree it fences.
+    "worktree_missing": "content",
 }
 
 
@@ -799,11 +804,19 @@ def _prepare_fanout_filesystem_confinement(
         allow_broad_file_read=linux_layout, inherit_environment=linux_layout,
     )
     if not ready:
+        # Both backends start the preflight in `child.work`, the tree, which a
+        # unit still running in its own fence can make unenterable for just
+        # this call (#2042). The same preflight entering `/` instead depends
+        # only on the host; when that passes, the failure was the tree's.
+        neutral_ready, _ = preflight(
+            selected, roots, replace(child, work=Path("/")), True, environment,
+            allow_broad_file_read=linux_layout, inherit_environment=linux_layout,
+        )
         return _unconfined(
             worktree,
             selected,
             environment,
-            "sandbox_preflight_failed",
+            "sandbox_preflight_failed_in_tree" if neutral_ready else "sandbox_preflight_failed",
             roots=roots,
             write_roots=write_roots,
             write_literals=write_literals,
