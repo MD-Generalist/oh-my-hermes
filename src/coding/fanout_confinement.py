@@ -172,8 +172,8 @@ class FanoutFilesystemConfinement:
     # whose receipt is not enforced; it is what lets a caller run a command
     # `command` returned None for, and nothing else may (#1982).
     unconfined_allowed: bool = False
-    # Off only for a fence whose commands have no reason to leave the host:
-    # a diagnostics analyzer reading a snapshot the unit wrote (#2036).
+    # Off for fences whose commands only read local state: dispatcher git
+    # (#2035) and a diagnostics analyzer (#2036).
     allow_network: bool = True
 
     def command(self, argv: Sequence[str]) -> tuple[str, ...] | None:
@@ -288,27 +288,37 @@ class FanoutFilesystemConfinement:
         }
 
 
-# What git the dispatcher runs for itself inside a fence keeps of the dispatcher's
-# environment (#2035): where to find programs and the user's git config, and the
-# locale. Everything else -- tokens, agent sockets, every other `GIT_*` -- is
-# dropped, so a program the unit planted for that git call cannot read it.
-_DISPATCHER_GIT_ENVIRONMENT_KEYS = ("PATH", "HOME", "XDG_CONFIG_HOME", "LANG", "LANGUAGE")
+# What git the dispatcher runs for itself in a unit worktree keeps of the
+# dispatcher's environment (#2035): where to find programs and the user's git
+# config, the locale, and the temporary directory. Everything else -- tokens,
+# agent sockets, every other `GIT_*` -- is dropped, so a program the unit
+# planted for that git call cannot read it. Windows git also needs its system
+# and profile directories to start and to find the user's config.
+_DISPATCHER_GIT_ENVIRONMENT_KEYS = ("PATH", "HOME", "XDG_CONFIG_HOME", "LANG", "LANGUAGE", "TMPDIR")
+_DISPATCHER_GIT_WINDOWS_ENVIRONMENT_KEYS = (
+    "SYSTEMROOT", "WINDIR", "COMSPEC", "PATHEXT", "USERPROFILE", "HOMEDRIVE", "HOMEPATH", "TEMP", "TMP",
+)
 
 
-def dispatcher_git_environment(temporary_directory: Path) -> dict[str, str]:
-    """The whole environment of git the dispatcher runs inside a unit's fence (#2035).
+def dispatcher_git_environment(temporary_directory: Path | None = None) -> dict[str, str]:
+    """The whole environment of git the dispatcher runs in a unit's worktree (#2035).
 
-    `temporary_directory` is the fence's scratch directory: the operator's own
-    is outside every write root. No lazy fetch, because the command has no
-    network to fetch with.
+    Fenced or not: a run the operator let go unfenced (`--allow-unconfined`)
+    is still git in a worktree the unit wrote. `temporary_directory` is the
+    fence's scratch directory, since the operator's own is outside every write
+    root; unfenced, the operator's is kept. No lazy fetch: a dispatcher read
+    has no reason to reach a remote, and inside a fence it has no network.
     """
+    keys = _DISPATCHER_GIT_ENVIRONMENT_KEYS
+    if os.name == "nt":
+        keys += _DISPATCHER_GIT_WINDOWS_ENVIRONMENT_KEYS
     environment = {
         key: value for key, value in os.environ.items()
-        if key in _DISPATCHER_GIT_ENVIRONMENT_KEYS or key.startswith("LC_")
+        if key.upper() in keys or key.upper().startswith("LC_")
     }
-    environment.update(
-        TMPDIR=str(temporary_directory), GIT_OPTIONAL_LOCKS="0", GIT_TERMINAL_PROMPT="0", GIT_NO_LAZY_FETCH="1",
-    )
+    if temporary_directory is not None:
+        environment["TMPDIR"] = str(temporary_directory)
+    environment.update(GIT_OPTIONAL_LOCKS="0", GIT_TERMINAL_PROMPT="0", GIT_NO_LAZY_FETCH="1")
     return environment
 
 

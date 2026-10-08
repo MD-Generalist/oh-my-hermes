@@ -15,7 +15,7 @@ from typing import Iterator
 
 from .diagnostic_execution import CancellationSignal, ProviderObservation
 from .diagnostic_providers import GLOBAL_MAX_DIAGNOSTICS_PER_CHECK
-from .fanout_confinement import FanoutFilesystemConfinement, prepare_dispatcher_git_fence
+from .fanout_confinement import FanoutFilesystemConfinement, dispatcher_git_environment, prepare_dispatcher_git_fence
 from .local_diagnostic_capture import DiagnosticPipeDrainer
 from .local_diagnostic_parsing import parse_local_diagnostics
 from .local_diagnostic_process_owner import ProcessTreeOwner, start_owned_process
@@ -45,12 +45,12 @@ class WorkspaceGitFences:
         self._fences: dict[str, FanoutFilesystemConfinement] = {}
         self._lock = Lock()
 
-    def command(self, workspace: str | Path, argv: Sequence[str]) -> tuple[list[str], dict[str, str] | None]:
+    def command(self, workspace: str | Path, argv: Sequence[str]) -> tuple[list[str], dict[str, str]]:
         """`argv` placed inside the worktree's fence, and the environment to spawn it with.
 
-        Fenced, the command has no network and the environment only what git
-        needs (#2035); unfenced by the operator's opt-in, the environment is
-        None (inherited). Raises OSError when no fence can be proven and the
+        Fenced, the command has no network; fenced or unfenced by the
+        operator's opt-in, the environment holds only what git needs (#2035).
+        Raises OSError when no fence can be proven and the
         operator did not pass `--allow-unconfined`; the engine reports that as
         a crashed diagnostic, never as one that ran.
         """
@@ -64,7 +64,7 @@ class WorkspaceGitFences:
         if fenced is not None:
             return list(fenced[0]), fenced[1]
         if fence.unconfined_allowed:
-            return list(argv), None
+            return list(argv), dispatcher_git_environment()
         raise OSError("local diagnostics found no write fence for git in the unit worktree")
 
 

@@ -90,10 +90,7 @@ def _dumps(reports: Path) -> list[str]:
     return [path.read_text(encoding="utf-8") for path in sorted(reports.glob("env-*"))]
 
 
-@unittest.skipUnless(sys.platform == "darwin", "sandbox-exec confinement is exercised on macOS")
-class PlantedProgramEnvironmentTests(unittest.TestCase):
-    """Each dispatcher-git surface, with the unit's program planted and a secret in the dispatcher."""
-
+class _PlantedWorktree(unittest.TestCase):
     def setUp(self) -> None:
         self.listener = socket.create_server(("127.0.0.1", 0))
         self.listener.settimeout(0.2)
@@ -106,15 +103,21 @@ class PlantedProgramEnvironmentTests(unittest.TestCase):
         secrets.start()
         self.addCleanup(secrets.stop)
 
-    def _assert_planted_program_saw_nothing(self) -> None:
+    def _assert_planted_program_saw_nothing(self, *, fenced: bool = True) -> None:
         dumps = _dumps(self.reports)
         self.assertTrue(dumps, "the planted program did not run, so this measured nothing")
         for dump in dumps:
             self.assertNotIn(_SENTINEL_VALUE, dump)
             self.assertNotIn(_GIT_SENTINEL_NAME, dump)
             self.assertIn("GIT_TERMINAL_PROMPT=0", dump)
-        attempts = (self.reports / "network").read_text(encoding="utf-8").split("\n")
-        self.assertNotIn("connected", attempts)
+        if fenced:
+            attempts = (self.reports / "network").read_text(encoding="utf-8").split("\n")
+            self.assertNotIn("connected", attempts)
+
+
+@unittest.skipUnless(sys.platform == "darwin", "sandbox-exec confinement is exercised on macOS")
+class PlantedProgramEnvironmentTests(_PlantedWorktree):
+    """Each dispatcher-git surface, with the unit's program planted and a secret in the dispatcher."""
 
     def test_the_planted_program_sees_the_secret_on_plain_host_git(self) -> None:
         """The control: without a fence the plant fires and reads the dispatcher's environment."""
@@ -149,6 +152,67 @@ class PlantedProgramEnvironmentTests(unittest.TestCase):
 
         self.assertEqual(GitRevisionReader().read(str(self.worktree), "HEAD"), "workspace-dirty")
         self._assert_planted_program_saw_nothing()
+
+
+@requires_posix
+class UnfencedOptInEnvironmentTests(_PlantedWorktree):
+    """`--allow-unconfined` skips the fence, which a unit can force; the environment is still scrubbed.
+
+    The network is not: with no fence there is nothing to deny it with.
+    """
+
+    def _opted_in_fence(self) -> FanoutFilesystemConfinement:
+        with mock.patch("omh.coding.fanout_confinement.backend_available", return_value=False):
+            fence = prepare_dispatcher_git_fence(self.worktree, allow_unconfined=True)
+        self.assertNotEqual(fence.receipt["enforced"], True)
+        self.assertTrue(fence.unconfined_allowed)
+        return fence
+
+    def test_the_status_probe_of_a_unit_worktree(self) -> None:
+        from omh.coding.fanout_executor_sessions import observe_session_workspace
+
+        self.assertIsNotNone(observe_session_workspace(str(self.worktree), confinement=self._opted_in_fence()))
+        self._assert_planted_program_saw_nothing(fenced=False)
+
+    def test_the_diagnostics_revision_reader(self) -> None:
+        from omh.coding.local_diagnostic_engine import GitRevisionReader
+        from omh.coding.local_diagnostic_process import WorkspaceGitFences
+
+        with mock.patch("omh.coding.fanout_confinement.backend_available", return_value=False):
+            reader = GitRevisionReader(git=WorkspaceGitFences(allow_unconfined=True))
+            self.assertEqual(reader.read(str(self.worktree), "HEAD"), "workspace-dirty")
+        self._assert_planted_program_saw_nothing(fenced=False)
+
+
+class DispatcherGitEnvironmentKeepListTests(unittest.TestCase):
+    """The keep-list per platform, decided by `os.name` at call time, so every job runs both."""
+
+    _OPERATOR = {
+        "PATH": "/usr/bin", "HOME": "/home/operator", "TMPDIR": "/operator-tmp", "LC_ALL": "C.UTF-8",
+        "SYSTEMROOT": "C:\\Windows", "WINDIR": "C:\\Windows", "COMSPEC": "C:\\Windows\\cmd.exe",
+        "PATHEXT": ".COM;.EXE", "USERPROFILE": "C:\\Users\\operator", "HOMEDRIVE": "C:", "HOMEPATH": "\\Users\\operator",
+        "TEMP": "C:\\Temp", "TMP": "C:\\Temp",
+        _SENTINEL_NAME: _SENTINEL_VALUE, "GITHUB_TOKEN": "ghp-sentinel", "GIT_DIR": "/elsewhere",
+    }
+    _SWITCHES = {"GIT_OPTIONAL_LOCKS": "0", "GIT_TERMINAL_PROMPT": "0", "GIT_NO_LAZY_FETCH": "1"}
+
+    def _environment(self, platform: str) -> dict[str, str]:
+        from omh.coding.fanout_confinement import dispatcher_git_environment
+
+        with mock.patch.dict(os.environ, self._OPERATOR, clear=True), mock.patch.object(os, "name", platform):
+            return dispatcher_git_environment()
+
+    def test_windows_keeps_what_git_needs_to_start_there(self) -> None:
+        windows = {key: value for key, value in self._OPERATOR.items() if key not in {
+            _SENTINEL_NAME, "GITHUB_TOKEN", "GIT_DIR",
+        }}
+        self.assertEqual(self._environment("nt"), {**windows, **self._SWITCHES})
+
+    def test_posix_keeps_none_of_the_windows_variables(self) -> None:
+        self.assertEqual(self._environment("posix"), {
+            "PATH": "/usr/bin", "HOME": "/home/operator", "TMPDIR": "/operator-tmp", "LC_ALL": "C.UTF-8",
+            **self._SWITCHES,
+        })
 
 
 @requires_posix

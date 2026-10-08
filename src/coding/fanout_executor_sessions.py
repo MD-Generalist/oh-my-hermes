@@ -426,8 +426,10 @@ def observe_session_workspace(
     unconfined (#1999).
     """
     root = Path(path)
-    environment = {key: value for key, value in os.environ.items() if not key.startswith('GIT_')}
-    environment.update(GIT_OPTIONAL_LOCKS='0', GIT_TERMINAL_PROMPT='0')
+    from .fanout_confinement import dispatcher_git_environment
+
+    # Unfenced too: the worktree is still the unit's (#2035).
+    environment = dispatcher_git_environment()
     fenced = confinement is not None and confinement.receipt.get('enforced') is True
     if confinement is not None and not fenced and not confinement.unconfined_allowed:
         return None

@@ -13,9 +13,11 @@ All notable changes will be documented here.
   (#2035). Those calls now run with the network denied and an environment of
   `PATH`, `HOME`, `XDG_CONFIG_HOME`, the locale, the fence's `TMPDIR` and
   `GIT_OPTIONAL_LOCKS=0`, `GIT_TERMINAL_PROMPT=0`, `GIT_NO_LAZY_FETCH=1`;
-  every other `GIT_*` is dropped. Checks run for the unit keep the unit's
-  network and environment, and an unfenced run under `--allow-unconfined`
-  keeps the inherited environment.
+  every other `GIT_*` is dropped. An unfenced run under `--allow-unconfined`,
+  which a unit can force, gets the same environment with the operator's own
+  temporary directory (and, on Windows, the system and profile variables git
+  needs to start); it has no fence to deny the network with. Checks run for
+  the unit keep the unit's network and environment.
 - **File activity fails closed on symlink escapes.** `omh quality-evidence
   file-activity` judged workspace containment by a path's spelling only, so a
   symlink inside the workspace that points outside it, such as `linked/notes.md`

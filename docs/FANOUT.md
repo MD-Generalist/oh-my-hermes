@@ -1062,7 +1062,10 @@ Rules, all applied at freeze time:
   (Seatbelt, or bwrap `--unshare-net`) and only `PATH`, `HOME`,
   `XDG_CONFIG_HOME`, the locale, the fence's own `TMPDIR` and git's
   no-prompt, no-optional-lock and no-lazy-fetch switches in its environment,
-  so a planted program reads no credential and reaches no host (#2035).
+  so a planted program reads no credential and reaches no host (#2035). An
+  unfenced run under `--allow-unconfined` gets the same environment, with the
+  operator's temporary directory and, on Windows, the system and profile
+  variables git needs; it keeps the network, having no fence to deny it.
   Checks the dispatcher runs for the unit keep the unit's network and
   environment.
 
