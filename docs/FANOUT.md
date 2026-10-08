@@ -1057,7 +1057,14 @@ Rules, all applied at freeze time:
   `symbolic-ref` and `rev-parse` reads load no index and run no hook or
   filter, and `tests/test_fanout_host_git_outside_fence.py` pins that with
   the same plant. The Hermes recovery dispatch runs no dispatcher git in the
-  worktree.
+  worktree. Every one of these fenced dispatcher git calls, and the
+  dispatcher's own git inside the unit's fence, runs with the network denied
+  (Seatbelt, or bwrap `--unshare-net`) and only `PATH`, `HOME`,
+  `XDG_CONFIG_HOME`, the locale, the fence's own `TMPDIR` and git's
+  no-prompt, no-optional-lock and no-lazy-fetch switches in its environment,
+  so a planted program reads no credential and reaches no host (#2035).
+  Checks the dispatcher runs for the unit keep the unit's network and
+  environment.
 
   That cover is one socket, not the class. A read-only mount stops writes, not
   `connect()`, so any socket still reachable by a well-known path remains a way

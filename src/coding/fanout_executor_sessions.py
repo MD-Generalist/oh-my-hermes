@@ -433,13 +433,14 @@ def observe_session_workspace(
         return None
 
     def probe(argv: list[str]) -> tuple[bytes | None, str]:
-        if fenced:
-            assert confinement is not None
-            command = confinement.dispatcher_command(argv)
-            if command is None:
-                return None, 'probe_fence_unavailable'
-            argv = list(command)
-        return bounded_session_probe(argv, cwd=str(root), env=environment)
+        if not fenced:
+            return bounded_session_probe(argv, cwd=str(root), env=environment)
+        assert confinement is not None
+        # No network and only the environment git needs (#2035).
+        command = confinement.dispatcher_git_command(argv)
+        if command is None:
+            return None, 'probe_fence_unavailable'
+        return bounded_session_probe(list(command[0]), cwd=str(root), env=command[1])
 
     try:
         root = root.resolve(strict=True)

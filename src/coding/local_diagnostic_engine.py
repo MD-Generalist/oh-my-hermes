@@ -41,21 +41,23 @@ class GitChangedFileResolver:
         baseline_revision: str,
         end_revision: str,
     ) -> tuple[str, ...]:
+        command, environment = self.git.command(
+            workspace_id,
+            [
+                "git",
+                "diff",
+                "--name-only",
+                "-z",
+                "--diff-filter=ACDMR",
+                baseline_revision,
+                end_revision,
+                "--",
+            ],
+        )
         completed = subprocess.run(
-            self.git.command(
-                workspace_id,
-                [
-                    "git",
-                    "diff",
-                    "--name-only",
-                    "-z",
-                    "--diff-filter=ACDMR",
-                    baseline_revision,
-                    end_revision,
-                    "--",
-                ],
-            ),
+            command,
             cwd=workspace_id,
+            env=environment,
             check=True,
             capture_output=True,
             timeout=30,
@@ -84,12 +86,14 @@ class GitRevisionReader:
         self.git = WorkspaceGitFences() if git is None else git
 
     def read(self, workspace_id: str, revision: str) -> str:
+        command, environment = self.git.command(
+            workspace_id,
+            ["git", "rev-parse", "--verify", f"{revision}^{{commit}}"],
+        )
         completed = subprocess.run(
-            self.git.command(
-                workspace_id,
-                ["git", "rev-parse", "--verify", f"{revision}^{{commit}}"],
-            ),
+            command,
             cwd=workspace_id,
+            env=environment,
             check=True,
             capture_output=True,
             text=True,
@@ -99,17 +103,19 @@ class GitRevisionReader:
         if _FIXED_COMMIT.fullmatch(resolved) is None:
             raise OSError("local diagnostics revision did not resolve to a fixed commit")
         if revision == "HEAD":
+            command, environment = self.git.command(
+                workspace_id,
+                [
+                    "git",
+                    "status",
+                    "--porcelain",
+                    "--untracked-files=normal",
+                ],
+            )
             status = subprocess.run(
-                self.git.command(
-                    workspace_id,
-                    [
-                        "git",
-                        "status",
-                        "--porcelain",
-                        "--untracked-files=normal",
-                    ],
-                ),
+                command,
                 cwd=workspace_id,
+                env=environment,
                 check=True,
                 capture_output=True,
                 timeout=30,

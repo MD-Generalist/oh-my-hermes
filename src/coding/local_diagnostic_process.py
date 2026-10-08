@@ -45,12 +45,14 @@ class WorkspaceGitFences:
         self._fences: dict[str, FanoutFilesystemConfinement] = {}
         self._lock = Lock()
 
-    def command(self, workspace: str | Path, argv: Sequence[str]) -> list[str]:
-        """`argv` placed inside the worktree's fence.
+    def command(self, workspace: str | Path, argv: Sequence[str]) -> tuple[list[str], dict[str, str] | None]:
+        """`argv` placed inside the worktree's fence, and the environment to spawn it with.
 
-        Raises OSError when no fence can be proven and the operator did not
-        pass `--allow-unconfined`; the engine reports that as a crashed
-        diagnostic, never as one that ran.
+        Fenced, the command has no network and the environment only what git
+        needs (#2035); unfenced by the operator's opt-in, the environment is
+        None (inherited). Raises OSError when no fence can be proven and the
+        operator did not pass `--allow-unconfined`; the engine reports that as
+        a crashed diagnostic, never as one that ran.
         """
         key = str(Path(workspace).resolve())
         with self._lock:
@@ -58,11 +60,11 @@ class WorkspaceGitFences:
             if fence is None:
                 fence = prepare_dispatcher_git_fence(Path(key), allow_unconfined=self.allow_unconfined)
                 self._fences[key] = fence
-        command = fence.dispatcher_command(argv)
-        if command is not None:
-            return list(command)
+        fenced = fence.dispatcher_git_command(argv)
+        if fenced is not None:
+            return list(fenced[0]), fenced[1]
         if fence.unconfined_allowed:
-            return list(argv)
+            return list(argv), None
         raise OSError("local diagnostics found no write fence for git in the unit worktree")
 
 
@@ -256,10 +258,11 @@ def _revision_snapshot(
     with TemporaryDirectory(prefix="omh-diagnostics-") as raw:
         snapshot = Path(raw) / "checkout"
         snapshot.mkdir()
-        command = git.command(workspace, ["git", "archive", "--format=tar", revision])
+        command, environment = git.command(workspace, ["git", "archive", "--format=tar", revision])
         with subprocess.Popen(
             command,
             cwd=workspace,
+            env=environment,
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,

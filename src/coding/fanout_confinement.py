@@ -198,6 +198,36 @@ class FanoutFilesystemConfinement:
         directory. None when no receipt proved the fence or the executable
         cannot be located; a caller must not run the command unfenced instead.
         """
+        located = self._dispatcher_executable(argv, path)
+        return None if located is None else self._fenced(located, argv)
+
+    def dispatcher_git_command(
+        self, argv: Sequence[str], environment: Mapping[str, str] | None = None
+    ) -> tuple[tuple[str, ...], dict[str, str]] | None:
+        """Fence git the dispatcher runs for ITSELF in this unit's worktree, and its environment.
+
+        What `dispatcher_command` returns keeps the network and the spawn keeps
+        the dispatcher's environment, which a check run for the unit may need.
+        Git the dispatcher runs to read or measure the worktree needs neither,
+        and a program the unit planted for it (`core.fsmonitor`, a filter, a
+        hook) inherits both (#2035). So this command has no network, and the
+        returned environment, which the caller must spawn it with, is
+        `dispatcher_git_environment`: no credential and no other `GIT_*`.
+        `environment` is the caller's own spawn environment; only its
+        `GIT_INDEX_FILE` is carried over. None when no receipt proved the fence
+        or git cannot be located; a caller must not run the command unfenced.
+        """
+        located = self._dispatcher_executable(argv, None)
+        if located is None:
+            return None
+        assert self.child is not None
+        git_environment = dispatcher_git_environment(self.child.work / _FANOUT_TOOLCHAIN_TEMP_DIRECTORY)
+        index_file = None if environment is None else environment.get("GIT_INDEX_FILE")
+        if index_file:
+            git_environment["GIT_INDEX_FILE"] = index_file
+        return self._fenced(located, argv, allow_network=False), git_environment
+
+    def _dispatcher_executable(self, argv: Sequence[str], path: str | None) -> str | None:
         if self.receipt.get("enforced") is not True or not argv or self.child is None:
             return None
         name = str(argv[0])
@@ -212,18 +242,16 @@ class FanoutFilesystemConfinement:
                 entry if os.path.isabs(entry) else str(work / entry) for entry in search.split(os.pathsep) if entry
             )
             located = shutil.which(name, path=anchored)
-        if located is None:
-            return None
-        return self._fenced(str(Path(located).resolve()), argv)
+        return None if located is None else str(Path(located).resolve())
 
-    def _fenced(self, executable: str, argv: Sequence[str]) -> tuple[str, ...]:
+    def _fenced(self, executable: str, argv: Sequence[str], *, allow_network: bool = True) -> tuple[str, ...]:
         assert self.child is not None
         return sandbox_command(
             (executable, *[str(argument) for argument in argv[1:]]),
             self.selected,
             self.roots,
             self.child,
-            True,
+            allow_network,
             self.environment,
             self.backend_digest,
             allow_broad_process_exec=True,
@@ -253,6 +281,30 @@ class FanoutFilesystemConfinement:
             **selected_environment,
             "TMPDIR": str(self.child.work / _FANOUT_TOOLCHAIN_TEMP_DIRECTORY),
         }
+
+
+# What git the dispatcher runs for itself inside a fence keeps of the dispatcher's
+# environment (#2035): where to find programs and the user's git config, and the
+# locale. Everything else -- tokens, agent sockets, every other `GIT_*` -- is
+# dropped, so a program the unit planted for that git call cannot read it.
+_DISPATCHER_GIT_ENVIRONMENT_KEYS = ("PATH", "HOME", "XDG_CONFIG_HOME", "LANG", "LANGUAGE")
+
+
+def dispatcher_git_environment(temporary_directory: Path) -> dict[str, str]:
+    """The whole environment of git the dispatcher runs inside a unit's fence (#2035).
+
+    `temporary_directory` is the fence's scratch directory: the operator's own
+    is outside every write root. No lazy fetch, because the command has no
+    network to fetch with.
+    """
+    environment = {
+        key: value for key, value in os.environ.items()
+        if key in _DISPATCHER_GIT_ENVIRONMENT_KEYS or key.startswith("LC_")
+    }
+    environment.update(
+        TMPDIR=str(temporary_directory), GIT_OPTIONAL_LOCKS="0", GIT_TERMINAL_PROMPT="0", GIT_NO_LAZY_FETCH="1",
+    )
+    return environment
 
 
 # Diagnostics only (why a unit got no git write root). Never read for a security decision.

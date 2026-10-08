@@ -5983,7 +5983,9 @@ def _fenced_dispatcher_runner(
     failed read. That includes a cwd BELOW the worktree, which the fence cannot
     keep (bwrap starts every command at the worktree itself). A call whose cwd
     is outside the worktree passes through, as does every call when no fence
-    was enforced, because the unit then ran unfenced as well.
+    was enforced, because the unit then ran unfenced as well. A wrapped call has
+    no network and only the environment git needs (#2035): every caller here
+    runs git to read or measure the worktree, which needs neither.
     """
     if confinement is None or confinement.receipt.get("enforced") is not True:
         return runner
@@ -5996,10 +5998,11 @@ def _fenced_dispatcher_runner(
         resolved = Path(cwd).resolve()
         if resolved != fenced_cwd and not resolved.is_relative_to(fenced_cwd):
             return runner(argv, **kwargs)
-        command = confinement.dispatcher_command(argv) if resolved == fenced_cwd else None
-        if command is None:
+        fenced = confinement.dispatcher_git_command(argv, kwargs.get("env")) if resolved == fenced_cwd else None
+        if fenced is None:
             raise OSError("the command could not be placed inside the unit's write fence")
-        return runner(argv, confinement_command=command, **kwargs)
+        command, environment = fenced
+        return runner(argv, confinement_command=command, **{**kwargs, "env": environment})
 
     return run
 
