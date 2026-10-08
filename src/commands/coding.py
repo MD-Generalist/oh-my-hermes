@@ -2725,6 +2725,7 @@ def cmd_coding_fanout_dispatch(
             only_units=args.unit,
             dry_run=bool(args.dry_run),
             run_verification=bool(args.run_verification),
+            allow_unconfined=bool(args.allow_unconfined),
             integrated_worktree=integrated_worktree,
             integrated_revision=args.integration_revision or None,
             resume_journal=resume_journal,
@@ -2770,6 +2771,7 @@ def cmd_coding_fanout_dispatch(
             only_units=args.unit,
             dry_run=bool(args.dry_run),
             run_verification=bool(args.run_verification),
+            allow_unconfined=bool(args.allow_unconfined),
             integrated_worktree=integrated_worktree,
             integrated_revision=args.integration_revision or None,
             resume_journal=resume_journal,
@@ -2916,6 +2918,7 @@ def cmd_coding_run(args: argparse.Namespace) -> int:
             timeout=args.timeout,
             dry_run=bool(args.dry_run),
             run_verification=bool(args.run_verification),
+            allow_unconfined=bool(args.allow_unconfined),
             environment_policy=environment_policy,
             **_failure_recovery_kwargs(args),
         )
@@ -3330,6 +3333,16 @@ def _add_coding_commands(sub) -> None:
         action="store_true",
         help="Run each unit's contract verification_commands in its worktree after its sidecar validates.",
     )
+    fanout_dispatch.add_argument(
+        "--allow-unconfined",
+        action="store_true",
+        help=(
+            "Run a unit and its checks even when no filesystem write fence can be proven on this host "
+            "(no sandbox backend, e.g. Windows or Linux without a trusted bwrap). Without it such a unit "
+            "is refused before it spawns; with it the unit writes with your full access and the dispatch "
+            "summary lists it under unconfined_units."
+        ),
+    )
     add_fanout_environment_arguments(fanout_dispatch)
     diagnostics = fanout_dispatch.add_mutually_exclusive_group()
     diagnostics.add_argument(
@@ -3490,6 +3503,16 @@ def _add_coding_commands(sub) -> None:
         "--run-verification",
         action="store_true",
         help="Run the unit's contract verification_commands in its worktree after the process exits 0.",
+    )
+    run_cmd.add_argument(
+        "--allow-unconfined",
+        action="store_true",
+        help=(
+            "Run a unit and its checks even when no filesystem write fence can be proven on this host "
+            "(no sandbox backend, e.g. Windows or Linux without a trusted bwrap). Without it such a unit "
+            "is refused before it spawns; with it the unit writes with your full access and the dispatch "
+            "summary lists it under unconfined_units."
+        ),
     )
     add_fanout_environment_arguments(run_cmd)
     run_cmd.add_argument(

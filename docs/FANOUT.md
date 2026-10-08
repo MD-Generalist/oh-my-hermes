@@ -975,9 +975,17 @@ Rules, all applied at freeze time:
   commands under an OS write fence (`sandbox-exec` on macOS, a trusted `bwrap`
   on Linux) and reports it only when that run's own probe wrote inside the
   unit worktree and the owner's state and was refused outside them. A host
-  with no backend, or whose probe fails, dispatches unconfined with the reason
-  recorded. Reads and network stay open, so the network row keeps naming its
-  blocker. On Linux the fence is the host tree mounted read-only with the
+  with no backend, or whose probe fails, has no fence to offer, and the unit
+  is refused before it spawns: `worktree_failed` with `reason_code:
+  filesystem_confinement_unavailable`, `failure_kind: workspace_blocked`, the
+  receipt's own `reason_code` in the reason, and a non-zero exit (#1982). A
+  declared check, a reproduction command and an integration check on such a
+  host are failed checks that did not run. `--allow-unconfined` on `omh coding
+  fanout dispatch` or `omh coding run` is the operator's explicit consent to
+  run them anyway with the operator's full write access; the receipt then
+  carries `unconfined_opt_in: true` and the summary lists the unit under
+  `unconfined_units`. Reads and network stay open, so the network row keeps
+  naming its blocker. On Linux the fence is the host tree mounted read-only with the
   worktree and owner state bound writable, toolchain `TMPDIR` redirected into
   the worktree's ignored `.omh/confinement-tmp`, and the per-user runtime
   directory (`/run/user/<uid>`, which holds the session bus) replaced by an
@@ -1094,8 +1102,9 @@ Rules, all applied at freeze time:
   its own install, the repository or `~/.gitconfig` unless the package SID were
   granted read across the user's tree, which is the opposite of the read
   boundary the receipt attests. Not measured: a non-elevated host, and an owner
-  CLI other than `node` under either token. A Windows dispatch therefore stays
-  unconfined and records `no_os_confinement_backend_on_this_platform`. Shipping
+  CLI other than `node` under either token. A Windows host therefore has no
+  fence and records `no_os_confinement_backend_on_this_platform`; like any
+  host without one, it dispatches only with `--allow-unconfined`. Shipping
   the Low-integrity variant would mean deciding to accept a write domain shared
   across the host and a persistent label on owner state.
 

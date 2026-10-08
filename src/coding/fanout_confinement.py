@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from importlib import import_module
 import os
 from pathlib import Path
@@ -167,6 +167,10 @@ class FanoutFilesystemConfinement:
     backend_digest: str
     executables: Mapping[str, str]
     receipt: dict[str, object]
+    # The operator's explicit `--allow-unconfined`. Set only on a confinement
+    # whose receipt is not enforced; it is what lets a caller run a command
+    # `command` returned None for, and nothing else may (#1982).
+    unconfined_allowed: bool = False
 
     def command(self, argv: Sequence[str]) -> tuple[str, ...] | None:
         """Return the same-root sandbox command, or None when no receipt proved it."""
@@ -489,8 +493,37 @@ def prepare_fanout_filesystem_confinement(
     intake_root: Path | None = None,
     unit_branch: str = "",
     repo_root: Path | None = None,
+    allow_unconfined: bool = False,
 ) -> FanoutFilesystemConfinement:
-    """Probe one unit's backend before allowing its owner or checks to use it."""
+    """Probe one unit's backend before allowing its owner or checks to use it.
+
+    A confinement whose receipt is not enforced fences nothing, and its
+    callers refuse to spawn without it unless the operator passed
+    `allow_unconfined` (#1982). The receipt records that choice either way as
+    `unconfined_opt_in`, which is never true beside an enforced fence.
+    """
+    confinement = _prepare_fanout_filesystem_confinement(
+        worktree, environment, commands,
+        owner=owner, intake_root=intake_root, unit_branch=unit_branch, repo_root=repo_root,
+    )
+    opted_in = allow_unconfined and confinement.receipt.get("enforced") is not True
+    return replace(
+        confinement,
+        receipt={**confinement.receipt, "unconfined_opt_in": opted_in},
+        unconfined_allowed=opted_in,
+    )
+
+
+def _prepare_fanout_filesystem_confinement(
+    worktree: Path,
+    environment: Mapping[str, str],
+    commands: Sequence[Sequence[str]],
+    *,
+    owner: str = "",
+    intake_root: Path | None = None,
+    unit_branch: str = "",
+    repo_root: Path | None = None,
+) -> FanoutFilesystemConfinement:
     worktree = worktree.resolve()
     owner_state_roots = owner_state_directories(owner, environment)
     # This exact invocation-owned directory is removed by the dispatcher.

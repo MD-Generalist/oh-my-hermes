@@ -183,7 +183,12 @@ from .fanout_retry import (
     classify_unit_failure,
     evaluate_unit_retry,
 )
-from .unit_execution_state import UNIT_STATE_AWAITING_INPUT, UNIT_STATE_FAILED, UNIT_STATE_VERIFIED
+from .unit_execution_state import (
+    UNIT_STATE_AWAITING_INPUT,
+    UNIT_STATE_FAILED,
+    UNIT_STATE_PERMISSION_BLOCKED,
+    UNIT_STATE_VERIFIED,
+)
 from .unit_progress import (
     assess_progress,
     empty_progress_evidence,
@@ -1443,6 +1448,17 @@ def _run_verification_command(
             if confinement_command is None:
                 return failed('missing_binary', None, 'not_observed',
                               "verification binary not found, so it was not run outside the unit's write fence")
+        if (
+            confinement_command is None
+            and active_confinement is not None
+            and not active_confinement.unconfined_allowed
+        ):
+            # No proven fence and no operator opt-in: a check runs code the
+            # unit wrote, so it does not run with full write access (#1982).
+            reason_code = str(active_confinement.receipt.get("reason_code") or "sandbox_command_not_fenced")
+            return failed('denial', None, 'not_observed',
+                          f"no filesystem write fence could be proven ({reason_code}), so the check was not "
+                          "run; pass --allow-unconfined to run it with the operator's full write access")
         if active_confinement is not None:
             environment = active_confinement.command_environment(environment)
         completed = runner(
@@ -1700,6 +1716,7 @@ def _run_integration_verification_wave(
     base_env: Mapping[str, str],
     dispatch_depth: int,
     environment_policy: Mapping[str, object] | None,
+    allow_unconfined: bool = False,
 ) -> None:
     """Run integration-tier checks once the producer lanes have fanned in.
 
@@ -1753,7 +1770,8 @@ def _run_integration_verification_wave(
             integration_argv.append(check_argv)
         integration_confinement = (
             prepare_fanout_filesystem_confinement(
-                integrated_worktree, integration_environment, tuple(integration_argv)
+                integrated_worktree, integration_environment, tuple(integration_argv),
+                allow_unconfined=allow_unconfined,
             )
             if runner is signal_safe_unit_runner
             else None
@@ -2017,6 +2035,9 @@ def dispatch_fanout(
     emit_health_events: bool = False,
     capacity_sources: Sequence[CodexAdmissionSource] | None = None,
     health_clock: Callable[[], int] = monotonic_milliseconds,
+    # The operator's explicit consent to run a unit, and its checks, with no
+    # proven write fence. Off, such a unit is refused before it spawns (#1982).
+    allow_unconfined: bool = False,
 ) -> dict[str, Any]:
     # The spawn guard runs before every other check, including the two
     # boundary re-checks below: it is the only one whose whole job is that no
@@ -2286,6 +2307,7 @@ def dispatch_fanout(
         "timeout": timeout,
         "dry_run": dry_run,
         "run_verification": run_verification,
+        "allow_unconfined": allow_unconfined,
         "runner": runner,
         "readiness": readiness,
         "current_catalog_digest": current_catalog_digest,
@@ -2580,6 +2602,7 @@ def dispatch_fanout(
                 base_env=guard_env,
                 dispatch_depth=current_depth,
                 environment_policy=environment_policy,
+                allow_unconfined=allow_unconfined,
             )
     finally:
         if verification_execution_gate is not None:
@@ -2668,6 +2691,13 @@ def dispatch_fanout(
         "units": summary_units,
         "integration_ready_units": [
             entry["unit_id"] for entry in summary_units if entry.get("integration_ready")
+        ],
+        # Units the operator let run with no proven write fence
+        # (`--allow-unconfined`): they wrote with the operator's full access.
+        "unconfined_units": [
+            entry["unit_id"] for entry in summary_units
+            if isinstance(entry.get("filesystem_confinement"), Mapping)
+            and entry["filesystem_confinement"].get("unconfined_opt_in") is True
         ],
         # The counterpart to process success: units that failed but left work worth
         # looking at before anyone re-runs them from scratch.
@@ -4021,6 +4051,7 @@ def _dispatch_unit(
     timeout: int,
     dry_run: bool,
     run_verification: bool = False,
+    allow_unconfined: bool = False,
     source_ref: str = "",
     runner: Callable[..., Any],
     readiness: Callable[..., dict[str, object]],
@@ -4059,6 +4090,7 @@ def _dispatch_unit(
             return _dispatch_unit(
                 paths, unit, goal_text=goal_text, repo_root=repo_root, base_sha=base_sha,
                 timeout=timeout, dry_run=dry_run, run_verification=run_verification,
+                allow_unconfined=allow_unconfined,
                 source_ref=source_ref, runner=runner, readiness=readiness,
                 current_catalog_digest=current_catalog_digest, fanout_id=fanout_id,
                 discoveries=discoveries, capability_precheck=capability_precheck,
@@ -4471,6 +4503,7 @@ def _dispatch_unit(
             # Same expression ensure_fanout_unit_worktree used to create this unit's branch.
             unit_branch=str(unit.get("branch_suggestion", f"agent/{unit_id}")),
             repo_root=repo_root,
+            allow_unconfined=allow_unconfined,
         )
         if runner is signal_safe_unit_runner
         else None
@@ -4478,6 +4511,36 @@ def _dispatch_unit(
     filesystem_confinement = confinement_receipt(confinement, worktree)
     if confinement is not None and isinstance(filesystem_confinement, dict):
         filesystem_confinement["git_roots_skip"] = git_roots_skip_reason(worktree.resolve())
+    if (
+        confinement is not None
+        and argv is not None
+        and confinement.command(argv) is None
+        and not confinement.unconfined_allowed
+    ):
+        # No proven fence, so the spawn below would run the owner CLI with the
+        # operator's full write access (#1982). The receipt alone said so, and
+        # nothing read it. Refused before anything runs in the worktree, the
+        # same setup-phase shape as a workspace preflight blocker: the next
+        # attempt on this host inherits the same missing fence, and only a
+        # host with a backend or the operator's `--allow-unconfined` clears it.
+        reason_code = str(filesystem_confinement.get("reason_code") or "sandbox_command_not_fenced")
+        return {
+            "unit_id": unit_id,
+            "run_ref": run_ref,
+            "owner": owner,
+            "status": "worktree_failed",
+            "attempt_id": attempt_id,
+            "reason_code": "filesystem_confinement_unavailable",
+            "failure_kind": FAILURE_KIND_WORKSPACE_BLOCKED,
+            "unit_state": UNIT_STATE_PERMISSION_BLOCKED,
+            "worktree_path": str(worktree),
+            "filesystem_confinement": filesystem_confinement,
+            "reason": (
+                f"no filesystem write fence could be proven for this unit ({reason_code}), so it was not "
+                "spawned; pass --allow-unconfined to run it with the operator's full write access"
+            ),
+            **_dispatch_status_ladder(),
+        }
     if confinement is not None:
         child_env = confinement.command_environment()
     # From here on, git the dispatcher runs in this worktree runs inside the

@@ -30,6 +30,20 @@ All notable changes will be documented here.
   routes through `model.base_url` rather than a named provider, is refused
   with that reason instead of a missing-auth one, and the provider next
   action asks for the configured name instead of `hermes auth login custom`.
+- **Fanout no longer runs a unit unfenced without being told to.** When
+  `prepare_fanout_filesystem_confinement` could not prove a write fence (no
+  backend on the platform, no trusted bwrap, a failed preflight or probe), the
+  receipt said `enforced: false` and nothing read it: `omh coding fanout
+  dispatch` and `omh coding run` spawned the owner CLI, and its verification
+  commands, with the operator's full write access (#1982). Such a unit is now
+  refused before it spawns as `worktree_failed` with `reason_code:
+  filesystem_confinement_unavailable` and `failure_kind: workspace_blocked`,
+  so the dispatch exits 1; its checks, reproduction command and integration
+  checks are failed checks that did not run. `--allow-unconfined` on either
+  command runs them unfenced on purpose, records `unconfined_opt_in: true` in
+  the receipt, and lists the unit under the summary's new `unconfined_units`.
+  This changes Windows, which has no fence (#1357): a Windows dispatch now
+  needs `--allow-unconfined`, as does a Linux host without a trusted bwrap.
 
 ## 3.0.1 - 2026-10-07
 
