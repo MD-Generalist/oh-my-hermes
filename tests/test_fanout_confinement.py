@@ -1392,5 +1392,176 @@ class GitLfsWriteRootTests(unittest.TestCase):
             self.assertIn(common / "lfs", _git_write_roots(worktree, "agent/unit", root / "repo"))
 
 
+
+def _dispatch_repo(root: Path) -> tuple[Path, str]:
+    repo = root / "repo"
+    repo.mkdir()
+    (repo / "seed").write_text("seed\n", encoding="utf-8")
+    for command in (
+        ("init", "-q"),
+        ("add", "seed"),
+        ("-c", "user.name=test", "-c", "user.email=test@example.test", "commit", "-qm", "init"),
+    ):
+        _ = subprocess.run(("git", *command), cwd=repo, capture_output=True, check=True)
+    base = subprocess.run(
+        ("git", "rev-parse", "HEAD"), cwd=repo, capture_output=True, text=True, check=True
+    ).stdout.strip()
+    return repo, base
+
+
+@requires_posix
+class UnconfinedDispatchRefusalTests(unittest.TestCase):
+    """A host that cannot prove a write fence does not run the unit unfenced unless told to (#1982).
+
+    `backend_available` is patched to False so every job, macOS included,
+    measures the host the issue reported: no backend, so no fence.
+    """
+
+    def _dispatch(self, root: Path, *, allow_unconfined: bool) -> tuple[dict[str, object], Path]:
+        from five_issue_cases.capacity import no_stagger, ready
+        from omh.coding.fanout import build_fanout_contract
+        from omh.coding.fanout_artifacts import write_fanout_contract
+        from omh.coding.fanout_dispatch import dispatch_fanout
+
+        repo, base = _dispatch_repo(root)
+        outside = root / "written-outside"
+        argv = ["/bin/sh", "-c", f'printf x > "{outside}"']
+        paths = OmhPaths(omh_home=root / "omh", hermes_home=root / "hermes")
+        goal = "Prove the unit never runs outside a write fence silently."
+        contract = write_fanout_contract(paths, build_fanout_contract(goal, [
+            {"unit_id": "unit", "title": "unit", "owner": "codex", "file_scope": ["unit/"]},
+        ]))
+        environment = {"PATH": "/usr/bin:/bin", "HOME": str(root / "home")}
+        with (
+            mock.patch("omh.coding.fanout_confinement.backend_available", return_value=False),
+            mock.patch("omh.coding.fanout_dispatch.build_dispatch_argv", lambda *_args, **_kwargs: list(argv)),
+            mock.patch("omh.coding.fanout_dispatch.negotiate_session_capability", return_value=None),
+            mock.patch("omh.coding.fanout_dispatch._SpawnStagger.reserve", no_stagger),
+        ):
+            summary = dispatch_fanout(
+                paths, contract, goal_text=goal, repo_root=repo, base_sha=base, concurrency=1,
+                runner=signal_safe_unit_runner, readiness=ready, max_retries=0, env=environment,
+                allow_unconfined=allow_unconfined,
+            )
+        return summary, outside
+
+    def test_the_unit_is_refused_and_never_spawned_by_default(self) -> None:
+        from omh.commands.coding import _fanout_dispatch_exit_code
+
+        with TemporaryDirectory() as temporary:
+            summary, outside = self._dispatch(Path(temporary).resolve(), allow_unconfined=False)
+            self.assertFalse(outside.exists(), "the unit ran with the operator's full write access")
+        (unit,) = summary["units"]  # type: ignore[misc]
+        self.assertEqual(unit["status"], "worktree_failed")
+        self.assertEqual(unit["reason_code"], "filesystem_confinement_unavailable")
+        self.assertEqual(unit["failure_kind"], "workspace_blocked")
+        self.assertEqual(unit["unit_state"], "permission_blocked")
+        self.assertIn("--allow-unconfined", unit["reason"])
+        self.assertIn("sandbox_backend_unavailable", unit["reason"])
+        self.assertEqual(unit["filesystem_confinement"]["reason_code"], "sandbox_backend_unavailable")
+        self.assertFalse(unit["filesystem_confinement"]["unconfined_opt_in"])
+        self.assertEqual(summary["unconfined_units"], [])
+        self.assertEqual(_fanout_dispatch_exit_code(summary), 1)
+
+    def test_the_operator_opt_in_runs_it_unfenced_and_says_so(self) -> None:
+        with TemporaryDirectory() as temporary:
+            summary, outside = self._dispatch(Path(temporary).resolve(), allow_unconfined=True)
+            self.assertTrue(outside.exists())
+        (unit,) = summary["units"]  # type: ignore[misc]
+        self.assertNotEqual(unit.get("reason_code"), "filesystem_confinement_unavailable")
+        self.assertFalse(unit["filesystem_confinement"]["enforced"])
+        self.assertTrue(unit["filesystem_confinement"]["unconfined_opt_in"])
+        self.assertEqual(summary["unconfined_units"], ["unit"])
+
+    def test_a_verification_command_is_not_run_unfenced(self) -> None:
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            worktree = root / "worktree"
+            worktree.mkdir()
+            outside = root / "outside"
+            command = shlex.join(["/bin/sh", "-c", f'printf x > "{outside}"'])
+            with mock.patch("omh.coding.fanout_confinement.backend_available", return_value=False):
+                implicit = _run_verification_command(command, worktree, signal_safe_unit_runner)
+                passed = prepare_fanout_filesystem_confinement(
+                    worktree, {"PATH": "/usr/bin:/bin"}, (("/bin/sh",),)
+                )
+                refused = _run_verification_command(
+                    command, worktree, signal_safe_unit_runner, confinement=passed
+                )
+            self.assertEqual(implicit[0], "failed")
+            self.assertEqual(refused[0], "failed")
+            self.assertIn("--allow-unconfined", refused[1])
+            self.assertFalse(outside.exists(), "a check ran with the operator's full write access")
+
+            with mock.patch("omh.coding.fanout_confinement.backend_available", return_value=False):
+                opted_in = prepare_fanout_filesystem_confinement(
+                    worktree, {"PATH": "/usr/bin:/bin"}, (("/bin/sh",),), allow_unconfined=True
+                )
+                allowed = _run_verification_command(
+                    command, worktree, signal_safe_unit_runner, confinement=opted_in
+                )
+            self.assertEqual(allowed[0], "passed")
+            self.assertTrue(outside.exists())
+
+    def test_the_opt_in_never_marks_an_enforced_fence(self) -> None:
+        with TemporaryDirectory() as temporary:
+            worktree = Path(temporary) / "worktree"
+            worktree.mkdir()
+            with mock.patch("omh.coding.fanout_confinement.backend_available", return_value=False):
+                refused = prepare_fanout_filesystem_confinement(worktree, {}, (("/bin/sh",),))
+                opted_in = prepare_fanout_filesystem_confinement(
+                    worktree, {}, (("/bin/sh",),), allow_unconfined=True
+                )
+        self.assertFalse(refused.unconfined_allowed)
+        self.assertFalse(refused.receipt["unconfined_opt_in"])
+        self.assertTrue(opted_in.unconfined_allowed)
+        self.assertTrue(opted_in.receipt["unconfined_opt_in"])
+        self.assertEqual(opted_in.receipt["reason_code"], "sandbox_backend_unavailable")
+
+
+
+class AllowUnconfinedCliTests(unittest.TestCase):
+    """The opt-in is off unless the operator types it, and it reaches the dispatcher on both commands."""
+
+    def test_both_commands_thread_the_flag_and_default_it_off(self) -> None:
+        from contextlib import redirect_stdout
+        from io import StringIO
+
+        from omh.commands.coding import cmd_coding_fanout_dispatch, cmd_coding_run
+        from omh.commands.main import build_parser
+
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            repo, _base = _dispatch_repo(root)
+            goal = root / "goal.txt"
+            goal.write_text("thread the opt-in", encoding="utf-8")
+            paths = OmhPaths(omh_home=root / "omh", hermes_home=root / "hermes")
+            from omh.coding.fanout import build_fanout_contract
+            from omh.coding.fanout_artifacts import write_fanout_contract
+
+            contract = write_fanout_contract(paths, build_fanout_contract("thread the opt-in", [
+                {"unit_id": "unit", "title": "unit", "owner": "codex", "file_scope": ["unit/"]},
+            ]))
+            dispatch_args = ["coding", "fanout", "dispatch", str(contract["fanout_id"]), "--goal-file", str(goal),
+                             "--repo-root", str(repo)]
+            run_args = ["coding", "run", "--owner", "codex", "--goal", "thread the opt-in", "--repo-root", str(repo)]
+            seen: list[object] = []
+
+            def dispatch(*_args: object, **kwargs: object) -> dict[str, object]:
+                seen.append(kwargs.get("allow_unconfined"))
+                return {"dry_run": False, "units": []}
+
+            for command, argv in ((cmd_coding_fanout_dispatch, dispatch_args), (cmd_coding_run, run_args)):
+                for extra in ([], ["--allow-unconfined"]):
+                    args = build_parser().parse_args([*argv, *extra])
+                    with (
+                        mock.patch("omh.commands.coding._paths", return_value=paths),
+                        mock.patch("omh.coding.fanout_dispatch.dispatch_fanout", side_effect=dispatch),
+                        redirect_stdout(StringIO()),
+                    ):
+                        _ = command(args)
+        self.assertEqual(seen, [False, True, False, True])
+
+
 if __name__ == "__main__":
     unittest.main()
