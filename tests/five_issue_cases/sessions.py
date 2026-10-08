@@ -24,6 +24,7 @@ from omh.coding.fanout_journal import read_fanout_run_journal
 from omh.system.paths import OmhPaths
 from omh.wrapper.executor_sessions import build_fanout_session_followup
 from _cli_harness import run_cli
+from _fanout_host_fence import host_cannot_fence_fanout
 from . import CaseResult, JsonValue
 
 
@@ -117,7 +118,8 @@ def run_case(case_id: str) -> CaseResult:
         fanout_id = str(contract['fanout_id'])
         with patch('omh.coding.fanout_dispatch.build_dispatch_argv', fixture_argv):
             summary = dispatch_fanout(paths, contract, goal_text=goal, repo_root=repo,
-                                      base_sha=base, concurrency=1, readiness=ready, max_retries=0, env=environment)
+                                      base_sha=base, concurrency=1, readiness=ready, max_retries=0, env=environment,
+                                      allow_unconfined=host_cannot_fence_fanout())
         rows = rows_of(summary)
         # This assertion fails against the pre-integration dispatcher, not a fabricated fixture result.
         assert all('executor_session' in row for row in rows), 'dispatcher receipt missing'
@@ -225,7 +227,8 @@ def run_case(case_id: str) -> CaseResult:
             with patch('omh.coding.fanout_dispatch.build_dispatch_argv', fixture_argv):
                 fresh = dispatch_fanout(paths, contract, goal_text=goal, repo_root=repo,
                     base_sha=base, concurrency=1, readiness=ready, max_retries=0,
-                    only_units=['b'], resume_journal=journal, env=environment)
+                    only_units=['b'], resume_journal=journal, env=environment,
+                    allow_unconfined=host_cannot_fence_fanout())
             fresh_rows = rows_of(fresh)
             assert 'executor_session' in fresh_rows[0], 'held receipt lost'
             assert fresh_rows[0]['executor_session'] == receipts[0]

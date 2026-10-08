@@ -21,6 +21,7 @@ from omh.coding.fanout_dispatch import dispatch_fanout
 from omh.coding.fanout_failure_diagnostics import is_object_list, is_string_map
 from omh.runtime.artifacts import show_run
 from omh.system.paths import OmhPaths
+from _fanout_host_fence import host_cannot_fence_fanout
 
 from . import CaseResult, JsonValue
 
@@ -122,7 +123,8 @@ def exercise_dispatch(*, stdout: bytes = b'', stderr: bytes = b'', exit_code: in
         with patch('omh.coding.fanout_dispatch.build_dispatch_argv', argv_for_fixture):
             summary = dispatch_fanout(paths, contract, goal_text=goal, repo_root=repo,
                                       base_sha=base, concurrency=1, readiness=ready,
-                                      max_retries=0, run_verification=verification)
+                                      max_retries=0, run_verification=verification,
+                                      allow_unconfined=host_cannot_fence_fanout())
         # JSON round-trip gives the same machine-visible public payload a CLI reads.
         decode: Callable[[str], JsonValue] = json.loads
         observations['summary'] = decode(json.dumps(summary))
