@@ -294,6 +294,7 @@ class SessionFileActivityTests(unittest.TestCase):
             payload["omitted_paths"]["by_reason"],
             {
                 "outside_workspace": 4,
+                "symlink_escape": 0,
                 "workspace_unknown": 0,
                 "relative_without_cwd": 0,
                 "home_relative": 1,
@@ -309,6 +310,43 @@ class SessionFileActivityTests(unittest.TestCase):
         for leaked in ("elsewhere", "private.txt", "repo-sibling", "escape.txt", ".ssh", "example.com", "evil"):
             self.assertNotIn(leaked, rendered)
         self.assertNotIn(self._tmp.name, json.dumps(payload["files"]))
+
+    def test_a_symlink_escaping_the_workspace_fails_closed(self) -> None:
+        elsewhere = Path(self._tmp.name) / "elsewhere"
+        (elsewhere / "nested").mkdir(parents=True)
+        (self.root / "src").mkdir(parents=True)
+        alias_root = Path(self._tmp.name) / "repo-alias"
+        try:
+            (self.root / "linked-dir").symlink_to(elsewhere, target_is_directory=True)
+            (self.root / "linked-file.txt").symlink_to(elsewhere / "secret.txt")
+            (self.root / "inner").symlink_to(self.root / "src", target_is_directory=True)
+            alias_root.symlink_to(self.root, target_is_directory=True)
+        except (OSError, NotImplementedError) as exc:
+            self.skipTest(f"symlink creation unavailable: {exc}")
+        self.store.session(SESSION, cwd=str(alias_root), repo_root=str(alias_root))
+        calls = [
+            _call("c1", "read_file", {"path": "linked-dir/nested/notes.md"}),
+            _call("c2", "write_file", {"path": str(alias_root / "linked-file.txt"), "content": "x"}),
+            _call("c3", "read_file", {"path": "inner/app.py"}),
+            _call("c4", "read_file", {"path": "src/never-created.py"}),
+        ]
+        self.store.assistant(calls, at=60.0)
+        for call in calls:
+            self.store.result(call["id"], call["function"]["name"], READ_OK if call["id"] != "c2" else WRITE_OK, at=61.0)
+
+        payload = build_session_file_activity(self.home, SESSION)
+
+        # The link inside the workspace that stays inside keeps its declared spelling;
+        # a path whose file was never created resolves as far as it exists.
+        self.assertEqual(
+            _activity(payload),
+            {"inner/app.py": [("read", "succeeded", 1)], "src/never-created.py": [("read", "succeeded", 1)]},
+        )
+        self.assertEqual(payload["omitted_paths"]["by_reason"]["symlink_escape"], 2)
+        self.assertEqual(payload["omitted_paths"]["by_reason"]["outside_workspace"], 0)
+        rendered = json.dumps(payload) + format_session_file_activity_summary(payload)
+        for leaked in ("linked-dir", "linked-file", "nested", "notes.md", "secret.txt", "elsewhere"):
+            self.assertNotIn(leaked, rendered)
 
     def test_relative_paths_need_the_session_cwd_and_paths_need_a_workspace(self) -> None:
         self.store.session(SESSION, cwd=None, repo_root=str(self.root))
