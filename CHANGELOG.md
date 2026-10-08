@@ -40,6 +40,15 @@ All notable changes will be documented here.
   every unenforced reason is classified now derives every reason code the
   fence builders can reach rather than two functions' prefixed literals, and
   classifies `worktree_missing` as well.
+- **The workspace preflight writes nothing into the unit's git directory.**
+  The index-write check wrote its scratch blob, from the dispatcher process,
+  into the directory `git rev-parse --absolute-git-dir` named, and on a reused
+  worktree the unit can rewrite its `.git` file to name any host directory
+  (#2040). The blob now reaches `git hash-object -w --stdin` on stdin, so the
+  only writes there are git's own, through the runner that is the unit's
+  fence on a reused worktree; a git directory redirected outside the fence's
+  write roots fails the check as `git_index_write` instead of being written
+  to.
 - **Fenced dispatcher git gets no credentials and no network.** Git the
   dispatcher ran in a unit worktree inside a fence (the unit's own since
   #1995, the narrow one #2034 added for `fanout status`, the claim and reuse

@@ -184,6 +184,76 @@ class WorkspacePreflightIndexWriteTests(unittest.TestCase):
                 [],
             )
 
+    def test_a_redirected_gitfile_gets_no_dispatcher_write_in_its_git_dir(self) -> None:
+        # #2040: the git directory is whatever the worktree's `.git` file
+        # names, and a reused worktree's `.git` file is the unit's to rewrite.
+        # The dispatcher process itself may write nothing there; what lands in
+        # it is git's own work, which the unit's fence confines on a reused
+        # worktree. Observed at every git call, because a scratch file the
+        # probe removes again leaves nothing to find afterwards.
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo, sha = _make_repo(root)
+            worktree = root / "unit"
+            _git(repo, "worktree", "add", "-q", "-b", "agent/unit", str(worktree))
+            decoy = root / "decoy.git"
+            _git(root, "clone", "-q", "--bare", str(repo), str(decoy))
+            # Git for Windows marks the `.git` file hidden, and Windows refuses
+            # to truncate a hidden file, so it is replaced rather than rewritten.
+            # A forward-slash absolute path is a valid gitfile target everywhere.
+            (worktree / ".git").unlink()
+            (worktree / ".git").write_text(f"gitdir: {decoy.as_posix()}\n", encoding="utf-8")
+            self.assertEqual(Path(_git(worktree, "rev-parse", "--absolute-git-dir")).resolve(), decoy.resolve())
+            seen_before_git_index_write: list[str] = []
+            index_written = False
+
+            def runner(argv, **kwargs):
+                nonlocal index_written
+                if not index_written:
+                    seen_before_git_index_write.extend(
+                        entry.name for entry in decoy.iterdir() if "workspace-preflight" in entry.name
+                    )
+                if argv[:2] == ["git", "read-tree"]:
+                    index_written = True
+                return subprocess.run(argv, **kwargs)
+
+            report = probe_workspace(worktree, base_ref=sha, target_ref=None, runner=runner)
+
+            self.assertTrue(_by_name(report)[CHECK_GIT_INDEX_WRITE]["ok"], report)
+            self.assertTrue(index_written)
+            self.assertEqual(seen_before_git_index_write, [])
+            self.assertEqual(
+                [entry.name for entry in decoy.iterdir() if "workspace-preflight" in entry.name], []
+            )
+
+    def test_the_dispatchers_own_runner_hands_git_the_blob_on_stdin(self) -> None:
+        # The blob now reaches `hash-object` as runner input, so the runner the
+        # dispatcher actually uses has to deliver it, or every dispatch would
+        # block on an object-store write that never happened.
+        from omh.coding.fanout_dispatch import signal_safe_unit_runner
+
+        with TemporaryDirectory() as tmp:
+            repo, sha = _make_repo(Path(tmp))
+
+            report = probe_workspace(repo, base_ref=sha, target_ref=None, runner=signal_safe_unit_runner)
+
+            self.assertTrue(_by_name(report)[CHECK_GIT_INDEX_WRITE]["ok"], report)
+
+    def test_a_runner_that_cannot_take_stdin_is_a_blocker_not_an_exception(self) -> None:
+        with TemporaryDirectory() as tmp:
+            repo, sha = _make_repo(Path(tmp))
+
+            def runner(argv, *, cwd, text, capture_output, timeout, env):
+                return subprocess.run(
+                    argv, cwd=cwd, text=text, capture_output=capture_output, timeout=timeout, env=env
+                )
+
+            report = probe_workspace(repo, base_ref=sha, target_ref=None, runner=runner)
+
+            self.assertEqual(report["blocking"], [CHECK_GIT_INDEX_WRITE])
+            self.assertIn("stdin", str(_by_name(report)[CHECK_GIT_INDEX_WRITE]["detail"]))
+            self.assertEqual(workspace_preflight_unit_state(report), UNIT_STATE_PERMISSION_BLOCKED)
+
     def test_a_runner_with_a_non_numeric_exit_code_is_treated_as_a_blocker(self) -> None:
         # An unanswerable question is a blocker, never a pass: a probe that
         # cannot observe the index write must not report that it observed one.
