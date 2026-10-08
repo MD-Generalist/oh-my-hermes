@@ -8,12 +8,14 @@ import os
 from pathlib import Path
 import signal
 import subprocess
+import tarfile
 from tempfile import TemporaryDirectory
-from threading import Event, Lock, Thread
+from threading import Event, Thread, Timer
 from typing import Iterator
 
 from .diagnostic_execution import CancellationSignal, ProviderObservation
 from .diagnostic_providers import GLOBAL_MAX_DIAGNOSTICS_PER_CHECK
+from .fanout_confinement import prepare_dispatcher_git_fence
 from .local_diagnostic_capture import DiagnosticPipeDrainer
 from .local_diagnostic_parsing import parse_local_diagnostics
 from .local_diagnostic_process_owner import ProcessTreeOwner, start_owned_process
@@ -26,12 +28,30 @@ _COMMAND_ARGS: dict[str, tuple[str, ...]] = {
 }
 _MAX_OUTPUT_BYTES = 2_000_000
 _TERMINATE_GRACE_SECONDS = 1.0
+_GIT_TIMEOUT_SECONDS = 30
+
+
+def workspace_git_command(workspace: str | Path, argv: Sequence[str], *, allow_unconfined: bool) -> list[str]:
+    """`argv` placed inside a fence for the unit worktree it runs in (#1999).
+
+    The worktree is the unit's, so its git configuration, hooks and filters may
+    be the unit's too. Raises OSError when no fence can be proven and the
+    operator did not pass `--allow-unconfined`; the engine reports that as a
+    crashed diagnostic, never as one that ran.
+    """
+    fence = prepare_dispatcher_git_fence(Path(workspace), allow_unconfined=allow_unconfined)
+    command = fence.dispatcher_command(argv)
+    if command is not None:
+        return list(command)
+    if fence.unconfined_allowed:
+        return list(argv)
+    raise OSError("local diagnostics found no write fence for git in the unit worktree")
 
 
 class LocalDiagnosticProviderRunner:
     """Run one closed-set provider against one immutable Git snapshot."""
 
-    def __init__(self, executables: Mapping[str, str]) -> None:
+    def __init__(self, executables: Mapping[str, str], *, allow_unconfined: bool = False) -> None:
         unknown = set(executables) - set(_COMMAND_ARGS)
         if unknown:
             raise ValueError(
@@ -46,7 +66,7 @@ class LocalDiagnosticProviderRunner:
                 )
             checked[provider_id] = str(path.resolve())
         self.executables = checked
-        self._git_lock = Lock()
+        self.allow_unconfined = allow_unconfined
 
     def run(
         self,
@@ -62,10 +82,10 @@ class LocalDiagnosticProviderRunner:
             return ProviderObservation.unavailable()
         if cancelled is not None and cancelled.is_set():
             return ProviderObservation("cancelled")
-        with _revision_worktree(
+        with _revision_snapshot(
             Path(workspace_id),
             revision,
-            self._git_lock,
+            allow_unconfined=self.allow_unconfined,
         ) as snapshot:
             existing = tuple(
                 path for path in files if (snapshot / path).is_file()
@@ -185,48 +205,48 @@ def _watch_cancellation(
 
 
 @contextmanager
-def _revision_worktree(
+def _revision_snapshot(
     workspace: Path,
     revision: str,
-    git_lock: Lock,
+    *,
+    allow_unconfined: bool,
 ) -> Iterator[Path]:
+    """Materialize `revision` into a private directory without writing the repository.
+
+    `git archive` runs inside the unit worktree's fence and only streams the
+    tree; this process extracts it. A `git worktree add` here ran the unit's
+    post-checkout hook and smudge filters on the host, and inside the fence it
+    could not register a worktree under the shared git directory at all.
+    """
     with TemporaryDirectory(prefix="omh-diagnostics-") as raw:
         snapshot = Path(raw) / "checkout"
-        with git_lock:
-            added = subprocess.run(
-                [
-                    "git",
-                    "worktree",
-                    "add",
-                    "--detach",
-                    "--quiet",
-                    str(snapshot),
-                    revision,
-                ],
-                cwd=workspace,
-                capture_output=True,
-                timeout=30,
-            )
-        if added.returncode != 0:
+        snapshot.mkdir()
+        command = workspace_git_command(
+            workspace,
+            ["git", "archive", "--format=tar", revision],
+            allow_unconfined=allow_unconfined,
+        )
+        with subprocess.Popen(
+            command,
+            cwd=workspace,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+        ) as archive:
+            watchdog = Timer(_GIT_TIMEOUT_SECONDS, archive.kill)
+            watchdog.start()
+            try:
+                with tarfile.open(fileobj=archive.stdout, mode="r|") as stream:
+                    stream.extractall(snapshot, filter="data")
+            except (tarfile.TarError, OSError) as exc:
+                archive.kill()
+                raise OSError("local diagnostics could not materialize the revision") from exc
+            finally:
+                watchdog.cancel()
+            code = archive.wait(timeout=_GIT_TIMEOUT_SECONDS)
+        if code != 0:
             raise OSError("local diagnostics could not materialize the revision")
-        try:
-            yield snapshot
-        finally:
-            with git_lock:
-                removed = subprocess.run(
-                    [
-                        "git",
-                        "worktree",
-                        "remove",
-                        "--force",
-                        str(snapshot),
-                    ],
-                    cwd=workspace,
-                    capture_output=True,
-                    timeout=30,
-                )
-            if removed.returncode != 0:
-                raise OSError("local diagnostics could not remove its revision worktree")
+        yield snapshot
 
 
 def _diagnostic_environment() -> dict[str, str]:

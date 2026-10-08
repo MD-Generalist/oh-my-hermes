@@ -40,6 +40,7 @@ whole roster instead of one per unit.
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from pathlib import Path
 import re
 from typing import Any, Callable, Mapping
 
@@ -62,6 +63,7 @@ from .fanout_executor_sessions import (
 )
 from .executor_readiness import observe_session_binary
 from .fanout_capacity import read_capacity_fields
+from .fanout_confinement import prepare_dispatcher_git_fence
 from .fanout_artifacts import fanout_contract_digest, fanout_dispatch_summary_path
 from ..system.local_store import read_json_object_result
 from .inflight import read_inflight_markers
@@ -107,8 +109,13 @@ _DISPATCH_EVENTS = ("executor_dispatch_observed", "worktree_creation_observed")
 _RESULT_VALIDATED_EVENT = "unit_result_validated"
 
 
-def project_fanout_status(paths: OmhPaths, fanout_id: str, *, unit_id: str | None = None) -> dict[str, Any]:
+def project_fanout_status(
+    paths: OmhPaths, fanout_id: str, *, unit_id: str | None = None, allow_unconfined: bool = False,
+) -> dict[str, Any]:
     """Project one fanout's unit roster from the observation journal.
+
+    A unit worktree is observed through `prepare_dispatcher_git_fence`; where no
+    fence can be proven it is not observed unless `allow_unconfined` (#1999).
 
     Raises `ValueError` naming the id when it is not a fanout id shape, or when
     the journal has never recorded a single event for it: a roster that silently
@@ -157,7 +164,7 @@ def project_fanout_status(paths: OmhPaths, fanout_id: str, *, unit_id: str | Non
                 unit['process_succeeded'] = False
                 unit['unit_verification_observed'] = False
                 unit['integration_ready'] = False
-        unit['resume'] = _resume_for_unit(unit, contract, duplicates)
+        unit['resume'] = _resume_for_unit(unit, contract, duplicates, allow_unconfined=allow_unconfined)
         current = None
         seen: set[str] = set()
         capacity: dict[str, object] = {}
@@ -462,7 +469,9 @@ def _unit_row(unit_id: str, events: list[dict[str, Any]], fanout_id: str) -> dic
     }
 
 
-def _resume_for_unit(unit: Mapping[str, object], contract: object, duplicates: frozenset[str]) -> dict[str, object]:
+def _resume_for_unit(
+    unit: Mapping[str, object], contract: object, duplicates: frozenset[str], *, allow_unconfined: bool = False,
+) -> dict[str, object]:
     read = read_session_receipt(unit.get('executor_session'))
     unavailable: dict[str, object] = {'available': False, 'reason': read.reason,
         'argv': [], 'cwd': None, 'shell_command': None, 'execution_policy': 'copy_only',
@@ -483,9 +492,14 @@ def _resume_for_unit(unit: Mapping[str, object], contract: object, duplicates: f
         return {**unavailable, 'reason': 'binding_mismatch'}
     if observe_session_binary(receipt.capability.binary_identity.resolved_path) != receipt.capability.binary_identity:
         return {**unavailable, 'reason': 'binary_changed'}
+    # The unit wrote this worktree, so git there runs inside a fence (#1999).
+    fence = prepare_dispatcher_git_fence(Path(binding.worktree_path), allow_unconfined=allow_unconfined)
+    if (fence.receipt.get('enforced') is not True and not fence.unconfined_allowed
+            and fence.receipt.get('reason_code') != 'worktree_missing'):
+        return {**unavailable, 'reason': 'workspace_unfenced'}
     recovery = unit.get('session_recovery_snapshot')
     return dict(project_session_resume(receipt.to_dict(), binding=binding,
-        workspace=observe_session_workspace(binding.worktree_path),
+        workspace=observe_session_workspace(binding.worktree_path, confinement=fence),
         recovery_snapshot=recovery if isinstance(recovery, str) else None,
         duplicate_references=duplicates))
 

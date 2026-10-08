@@ -2313,7 +2313,10 @@ def cmd_coding_fanout_status(args: argparse.Namespace) -> int:
 
     paths = _paths(args)
     try:
-        roster = project_fanout_status(paths, args.fanout_id, unit_id=getattr(args, 'unit', None))
+        roster = project_fanout_status(
+            paths, args.fanout_id, unit_id=getattr(args, 'unit', None),
+            allow_unconfined=bool(getattr(args, 'allow_unconfined', False)),
+        )
     except (OSError, ValueError) as exc:
         raise OmhError(f"fanout status unavailable: {exc}") from exc
     if _wants_json(args):
@@ -2637,7 +2640,7 @@ def cmd_coding_fanout_dispatch(
     recovery_kwargs = _failure_recovery_kwargs(args)
     environment_policy = child_environment_policy_from_args(args)
     selected_diagnostic_engine = (
-        (diagnostic_engine or build_local_diagnostic_engine())
+        (diagnostic_engine or build_local_diagnostic_engine(allow_unconfined=bool(args.allow_unconfined)))
         if args.diagnostics
         else None
     )
@@ -3450,6 +3453,15 @@ def _add_coding_commands(sub) -> None:
         help="Fanout id whose unit roster is projected from the observation journal.",
     )
     fanout_status.add_argument('--unit', help='Select one observed unit for read-only session/resume projection.')
+    fanout_status.add_argument(
+        "--allow-unconfined",
+        action="store_true",
+        help=(
+            "Observe a unit worktree for its resume projection even when no filesystem write fence can be "
+            "proven on this host. Git there reads configuration the unit wrote; without this flag such a "
+            "worktree is not observed and its resume reads workspace_unfenced."
+        ),
+    )
     fanout_status.add_argument("--json", action="store_true", help="Emit the machine payload instead of plain text.")
     fanout_status.set_defaults(func=cmd_coding_fanout_status)
 

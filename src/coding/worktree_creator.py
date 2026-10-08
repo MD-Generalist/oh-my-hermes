@@ -20,7 +20,7 @@ import json
 from pathlib import Path
 import subprocess
 import threading
-from typing import Any, Callable, TypeGuard
+from typing import TYPE_CHECKING, Any, Callable, TypeGuard
 
 from ..system.local_store import ensure_dir, ensure_file, file_lock, read_jsonl_objects, utc_now
 from ..system.paths import OmhPaths, expand_path
@@ -31,6 +31,9 @@ from .fanout_failure_diagnostics import (
 from .fanout_output import FanoutOutput
 from .fanout_capacity import read_capacity_fields
 from .fanout_executor_sessions import observe_session_workspace
+
+if TYPE_CHECKING:
+    from .fanout_confinement import FanoutFilesystemConfinement
 
 WORKTREE_OBSERVATION_SCHEMA_VERSION = "omh_worktree_observation/v1"
 WORKTREE_CLEANUP_EVENT = "worktree_cleanup"
@@ -382,6 +385,7 @@ def ensure_fanout_unit_worktree(
     failure_diagnostic_context: Mapping[str, object] | None = None,
     capacity_resume: Mapping[str, object] | None = None,
     contract_digest: str = '',
+    confinement: FanoutFilesystemConfinement | None = None,
 ) -> dict[str, Any]:
     """Create the per-unit worktree for the opt-in fanout dispatch bridge.
 
@@ -401,6 +405,9 @@ def ensure_fanout_unit_worktree(
     is a typed refusal before Git. Failures return/store failure_diagnostic only
     with valid context. All subprocess/exception text is sanitized even without
     context, before either ledger or cleanup persistence. No raw spill is made.
+
+    `confinement` fences the probe of an existing worktree a capacity resume
+    would reuse: an earlier attempt wrote it, git config included (#1999).
     """
     worktree_path = repo_root.parent / f"{repo_root.name}-fanout-{unit_id}"
     result: dict[str, Any] = {
@@ -469,7 +476,7 @@ def ensure_fanout_unit_worktree(
             # queue/lease store. Check and reserve atomically across invocations.
             # No lock spans the child lifetime. An ambiguous marker means HOLD.
             with file_lock(paths.runtime_worktrees_path, private=True):
-                observed = observe_session_workspace(str(worktree_path))
+                observed = observe_session_workspace(str(worktree_path), confinement=confinement)
                 ledger = latest_observed_worktree_record(paths, worktree_path)
                 safe = (observed is not None and not observed.dirty and observed.head == base_sha
                     and observed.incarnation.incarnation_id == lineage.get('incarnation_id')

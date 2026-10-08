@@ -155,7 +155,10 @@ def run_case(case_id: str) -> CaseResult:
         assert all(receipt['unit_id'] == row['unit_id'] and receipt['attempt_id'] == row['attempt_id']
                    and receipt['worktree_path'] == row['worktree_path'] for receipt, row in zip(receipts, rows))
         before = {str(path): path.read_bytes() for path in paths.omh_home.rglob('*') if path.is_file()}
-        roster = project_fanout_status(paths, fanout_id)
+        # A unit worktree is observed only inside a fence; where the host has
+        # none, the fixture opts in exactly as its dispatch does (#1999).
+        unfenced = host_cannot_fence_fanout()
+        roster = project_fanout_status(paths, fanout_id, allow_unconfined=unfenced)
         journal = read_fanout_run_journal(fanout_run_journal_path(paths, fanout_id))
         roster_rows = rows_of(roster)
         assert [row['executor_session'] for row in roster_rows] == receipts
@@ -189,11 +192,12 @@ def run_case(case_id: str) -> CaseResult:
         assert all(marker not in persisted for marker in (
             b'PROMPT_PRIVATE_SENTINEL', b'REASONING_PRIVATE_SENTINEL', b'EVENT_PRIVATE_SENTINEL', b'STDERR_PRIVATE_SENTINEL'))
         if case_id in ('S2', 'S7'):
-            selected = project_fanout_status(paths, fanout_id, unit_id='a')
+            selected = project_fanout_status(paths, fanout_id, unit_id='a', allow_unconfined=unfenced)
             assert len(rows_of(selected)) == 1 and rows_of(selected)[0]['executor_session'] == receipts[0]
             followup = build_fanout_session_followup(paths, fanout_id=fanout_id, unit_id='b')
             assert followup['executor_session'] == receipts[1]
-            assert followup['resume'] == roster_rows[1]['resume']
+            # The wrapper takes no opt-in, so it matches the status projection without one.
+            assert followup['resume'] == rows_of(project_fanout_status(paths, fanout_id))[1]['resume']
             command = ['--omh-home', str(paths.omh_home), '--hermes-home', str(paths.hermes_home),
                        'coding', 'fanout', 'status', '--fanout-id', fanout_id, '--unit', 'a', '--json']
             commands.append(['omh', *command])
@@ -206,7 +210,7 @@ def run_case(case_id: str) -> CaseResult:
         if case_id == 'S2':
             workspace_file = Path(text(rows[0]['worktree_path'])) / 'seed'
             _ = workspace_file.write_text('changed after observation\n')
-            stale = rows_of(project_fanout_status(paths, fanout_id, unit_id='a'))[0]
+            stale = rows_of(project_fanout_status(paths, fanout_id, unit_id='a', allow_unconfined=unfenced))[0]
             assert record(stale['resume'])['reason'] == 'recovery_snapshot_mismatch'
             assert stale['executor_session'] == receipts[0]
             _ = workspace_file.write_text('seed\n')
@@ -214,7 +218,7 @@ def run_case(case_id: str) -> CaseResult:
             index_path = Path(git_dir) / 'index'
             os.utime(workspace_file, (1, 1))
             index_before = index_path.read_bytes()
-            current = rows_of(project_fanout_status(paths, fanout_id, unit_id='a'))[0]
+            current = rows_of(project_fanout_status(paths, fanout_id, unit_id='a', allow_unconfined=unfenced))[0]
             assert index_path.read_bytes() == index_before, 'read-only status refreshed Git index'
             assert record(current['resume'])['available']
             observations['stale_workspace_refused'] = True

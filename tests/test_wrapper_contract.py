@@ -247,7 +247,14 @@ class FiveIssueWrapperSurfaceTests(unittest.TestCase):
         self.assertTrue(hasattr(contract, "build_fanout_status_interaction"), "missing observed fanout wrapper status")
         checked: list[str] = []
 
-        def inspect_status(paths: OmhPaths, fanout_id: str, *, unit_id: str | None = None) -> dict[str, object]:
+        def inspect_status(
+            paths: OmhPaths, fanout_id: str, *, unit_id: str | None = None, allow_unconfined: bool = False,
+        ) -> dict[str, object]:
+            # The wrapper takes no `--allow-unconfined`, so it is compared with the
+            # projection made without one; the fixture still gets what it asked for.
+            projected: dict[str, object] = project_fanout_status(
+                paths, fanout_id, unit_id=unit_id, allow_unconfined=allow_unconfined,
+            )
             expected: dict[str, object] = project_fanout_status(paths, fanout_id, unit_id=unit_id)
             for item in self.rows(expected["units"]):
                 unit = self.record(item)
@@ -263,7 +270,7 @@ class FiveIssueWrapperSurfaceTests(unittest.TestCase):
                 else:
                     self.assertNotIn("copy_fanout_resume", actions)
                 checked.append(selected_id)
-            return expected
+            return projected
 
         # The producer still executes its actual reader/CLI and real local protocol
         # processes. The observer adds wrapper assertions without replacing evidence.

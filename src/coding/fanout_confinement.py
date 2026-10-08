@@ -514,6 +514,28 @@ def prepare_fanout_filesystem_confinement(
     )
 
 
+def prepare_dispatcher_git_fence(worktree: Path, *, allow_unconfined: bool = False) -> FanoutFilesystemConfinement:
+    """A fence for host git in a unit worktree where no unit fence is held (#1999).
+
+    Git takes its configuration, hooks and filters from the worktree it runs in,
+    and a unit that wrote that worktree can point it at programs of its own --
+    through its gitdir's `commondir`, for one. Before a reused worktree's unit
+    fence is prepared, in `fanout status`, and in `--diagnostics`, the
+    dispatcher's git runs inside this fence instead. Its only write root is the
+    worktree, which the unit could already write. A missing worktree gets no
+    fence, so preparing one never creates the directory. Not enforced and not
+    opted in (`unconfined_allowed`) means the caller runs nothing.
+    """
+    if not worktree.is_dir():
+        return _unconfined(worktree, backend("auto"), dict(os.environ), "worktree_missing")
+    # A program name for the preparation to resolve, not an argv: each caller
+    # spells its own git subcommand as a literal for the no-remote-mutation gate.
+    git_program = "git"
+    return prepare_fanout_filesystem_confinement(
+        worktree, dict(os.environ), ((git_program,),), allow_unconfined=allow_unconfined,
+    )
+
+
 def _prepare_fanout_filesystem_confinement(
     worktree: Path,
     environment: Mapping[str, str],

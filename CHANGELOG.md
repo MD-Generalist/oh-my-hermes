@@ -24,6 +24,21 @@ All notable changes will be documented here.
   verdict, whose repair card still names the real prerequisite), so the batch
   exits 1. A dry run keeps its exit code. The truthfulness gate now builds
   each refusal from the dispatcher and fails if one maps to 0.
+- **Host git no longer runs a unit's planted git configuration.** A unit can
+  write its gitdir's `commondir`, and with it the `config` git reads in its
+  worktree, so a `core.fsmonitor`, `core.hooksPath` or filter driver it
+  planted ran with the operator's write access whenever the dispatcher's own
+  git touched that worktree outside the unit's fence (#1999). Measured on
+  macOS: a repair attempt's workspace preflight, `fanout status`, and
+  `--diagnostics` (`git worktree add` ran the unit's post-checkout hook and
+  smudge filter) all fired it. These now run inside a fence whose only write
+  root is the worktree: the reused worktree's preflight inside the unit's own
+  fence, the claim and capacity-reuse probes and `fanout status` inside a
+  narrow one, and diagnostics through a fenced `git archive` the dispatcher
+  extracts itself. Where no fence can be proven they do not run unless
+  `--allow-unconfined` is passed: `fanout status` gains that flag and
+  otherwise reports the resume as `workspace_unfenced`; wrapper status
+  surfaces take no opt-in.
 - **Memory reads French.** Recall tokenization treated every accented Latin
   letter as a separator, so `déploiement` indexed as `ploiement` and
   `préférence` as `pr` + `rence`; a query typed without accents never
