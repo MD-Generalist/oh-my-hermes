@@ -1311,7 +1311,11 @@ _RELATIVE_TIME_PATTERN = re.compile(
     # idiomatic majority -- but a following non-particle hangul syllable
     # (오늘의집, 내일정) means a compound, not a time reference.
     r"|(?<![가-힣])(?:그저께|어제|오늘|내일|모레|다음\s*주|다음\s*달|이번\s*주)(?:은|는|이|가|에|에는|부터|까지|도|만)?(?![가-힣])"
-    r"|\b(?:yesterday|today|tomorrow|next\s+(?:week|month|year)|in\s+\d{1,4}\s+(?:days?|weeks?|months?|years?|hours?|minutes?))\b"
+    r"|\b(?:yesterday|today|tomorrow|next\s+(?:week|month|year)|in\s+\d{1,4}\s+(?:days?|weeks?|months?|years?|hours?|minutes?)"
+    # Past-relative English has the same hidden anchor: a number plus a unit
+    # before "ago", "last" bound to a time noun, or the fixed "the other day".
+    # Bare "ago", "last" and "other" ("the last step") never match.
+    r"|(?:\d{1,4}|an?|one)\s+(?:days?|weeks?|months?|years?|hours?|minutes?)\s+ago|last\s+(?:week|month|year)|the\s+other\s+day)\b"
     r"|(?<!\d)\d{1,4}\s*(?:日|週間|ヶ月|か月|年)\s*(?:後|以内)"
     r"|(?<!\d)\d{1,4}\s*(?:天|周|個月|个月|年)\s*(?:后|後|以内|以內|内|內)"
     r"|明日|昨日|来週|来月|明天|昨天|下周(?!期)|下個月|下个月"
@@ -1323,6 +1327,11 @@ _RELATIVE_TIME_PATTERN = re.compile(
     r"|\b(?:(?:dans|d['’]ici)\s+\d{1,4}\s+(?:jours?|semaines?|mois|ann[ée]es?|ans?|heures?|minutes?)"
     r"|(?:la\s+)?semaine\s+prochaine|(?:le\s+)?mois\s+prochain|(?:l['’])?ann[ée]e\s+prochaine"
     r"|demain|aujourd['’]hui|avant-hier"
+    # Past-relative French: "il y a" only with a number plus a unit ("il y a
+    # des cas" is ordinary), and "dernier/dernière" only bound to a time noun
+    # ("le dernier commit" is ordinary).
+    r"|il\s+y\s+a\s+\d{1,4}\s+(?:jours?|semaines?|mois|ann[ée]es?|ans?|heures?|minutes?)"
+    r"|(?:la\s+)?semaine\s+derni[èe]re|(?:le\s+)?mois\s+dernier|(?:l['’])?ann[ée]e\s+derni[èe]re|l['’]an\s+dernier"
     r"|d['’]ici\s+(?:lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche|demain|la\s+fin\s+(?:de\s+la\s+semaine|du\s+mois)))\b",
     re.IGNORECASE,
 )

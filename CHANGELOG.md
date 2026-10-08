@@ -21,6 +21,14 @@ All notable changes will be documented here.
   `plugin_omh_home_binding:<profile>` when a home names no store and would
   be refused that way. Behaviour change: as with any other store, the
   recorded setting outranks an `OMH_HOME` exported to Hermes.
+- **Past-relative phrases now route a memory capture to review.** The
+  capture-time relative-time lint flagged "in 3 weeks" and "yesterday" but not
+  "we migrated 3 days ago", "last week", "the other day", "il y a 3 jours" or
+  "la semaine dernière", which carry the same hidden anchor (#2031). Each form
+  needs a number plus a unit or a "last"/"dernier" bound to a time noun, so
+  "the last step" and "le dernier commit" stay auto-approved; French "hier"
+  stays out because of German "hier".
+
 - **Fenced dispatcher git gets no credentials and no network.** Git the
   dispatcher ran in a unit worktree inside a fence (the unit's own since
   #1995, the narrow one #2034 added for `fanout status`, the claim and reuse
