@@ -30,7 +30,19 @@ _SAFE_LINES = frozenset({
     'Permission denied', 'permission denied', 'Operation not permitted',
     'No such file or directory', 'command not found', 'Connection refused',
     'Connection timed out', 'Authentication failed', 'fatal: not a git repository',
+    'failed to load configuration: Failed to synchronize managed preferences',
 })
+# A known startup error whose raw line wraps a fixed message in a variable
+# envelope. The full line must match; only the fixed template is retained, never
+# the envelope, so retained text stays inside `_SAFE_LINES`. Codex on macOS,
+# verbatim (#1996): `Error: thread/start: thread/start failed: failed to load
+# configuration: Failed to synchronize managed preferences (code -32600)`.
+_SAFE_LINE_TEMPLATES = (
+    (re.compile(r'(?:Error: (?:[a-z/]+: )*thread/start failed: )?'
+                r'failed to load configuration: Failed to synchronize managed preferences'
+                r'(?: \(code -?[0-9]{1,6}\))?'),
+     'failed to load configuration: Failed to synchronize managed preferences'),
+)
 _SECRET_MARKERS = re.compile(
     rb'(?i:authorization\s*:|bearer\s|api[_-]?key\s*[=:]|password\s*[=:]|'
     + rb'-----BEGIN [A-Z ]*PRIVATE KEY-----)|sk-|github_pat_|gh[pousr]_|AKIA|AIza'
@@ -165,10 +177,12 @@ class SanitizedStream:
             text = self.line.decode('utf-8')
         except UnicodeDecodeError:
             text = ''
-        if self.line_overrun or text.removesuffix('\n') not in _SAFE_LINES:
+        line = text.removesuffix('\n')
+        line = next((template for pattern, template in _SAFE_LINE_TEMPLATES if pattern.fullmatch(line)), line)
+        if self.line_overrun or line not in _SAFE_LINES:
             self.unknown = True
         elif not (self.unknown or self.invalid or self.control or self.sensitive or self.protocol):
-            self.text = _capped(self.text + text)
+            self.text = _capped(self.text + line + ('\n' if text.endswith('\n') else ''))
         self.line.clear()
         self.line_overrun = False
 

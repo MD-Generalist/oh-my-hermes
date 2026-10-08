@@ -182,6 +182,38 @@ class FailureDiagnosticsFoundation(unittest.TestCase):
                 self.assertFalse(stream['truncated'])
                 self.assert_bounded(stream)
 
+    def test_d4_codex_managed_preferences_startup_error_is_retained_as_template(self):
+        # Verbatim Codex 0.159.2 stderr on macOS inside the fanout fence (#1996).
+        verbatim = (b'Error: thread/start: thread/start failed: failed to load configuration: '
+                    b'Failed to synchronize managed preferences (code -32600)\n')
+        template = 'failed to load configuration: Failed to synchronize managed preferences\n'
+        capture = self.capture(stderr=verbatim, protocol='codex')
+        stderr = capture.streams()[1]
+        self.assertEqual((stderr['stream'], stderr['state'], stderr['reason']),
+                         ('stderr', 'retained', 'safe_template'))
+        self.assertEqual(stderr['text'], template)
+        self.assertNotIn('thread/start', stderr['text'])
+        self.assertNotIn('-32600', stderr['text'])
+        self.assert_bounded(stderr)
+        self.assertIsNotNone(self.diagnostic(capture, owner='codex'))
+        withheld = {
+            'narration': b'Codex said it failed to load configuration: Failed to synchronize managed '
+                         b'preferences (code -32600), so I retried.\n',
+            'unknown_envelope': b'Error: see /Users/me/notes: failed to load configuration: '
+                                b'Failed to synchronize managed preferences\n',
+            'trailing_text': b'failed to load configuration: Failed to synchronize managed preferences '
+                             b'for /Users/me\n',
+            'other_line_beside_it': verbatim + b'PROMPT_SENTINEL_1996\n',
+        }
+        for name, raw in withheld.items():
+            with self.subTest(case=name):
+                stream = self.capture(stderr=raw).streams()[1]
+                self.assertEqual((stream['state'], stream['reason']), ('withheld', 'unknown_output'))
+                self.assertNotIn('managed preferences', stream['text'])
+        secret = self.capture(stderr=b'Error: thread/start: thread/start failed: sk-abcdefgh12345678: '
+                                     b'failed to load configuration: Failed to synchronize managed preferences\n')
+        self.assertEqual(secret.streams()[1]['state'], 'redacted')
+
     def test_d4_screen_after_retention_cap_and_split_secret(self):
         capture = output.FanoutOutput(known_secrets=('compiler failed',))
         for byte in b'compiler failed\n':

@@ -4,6 +4,21 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **Codex starts inside the macOS fanout fence.** Codex CLI reads
+  administrator-managed configuration through CFPreferences and stops at
+  startup with `Failed to synchronize managed preferences (code -32600)`
+  when `CFPreferencesAppSynchronize` returns false (#1996). The Seatbelt
+  profile denied every route to the preferences daemon, so the call failed
+  inside the fence and succeeded outside it. The fence now allows the two
+  `cfprefsd` mach-lookup services and read-only access to its
+  `apple.cfprefs.` shared memory; measured on macOS 26.6, all three are
+  needed. Preference writes stay refused: the daemon rejects them from a
+  client without `user-preference-write`, and a fenced
+  `CFPreferencesSetAppValue` or `defaults write` leaves no domain behind.
+  No file-write allowance changed. The dispatch diagnostic also retains this
+  startup error as a fixed sanitized line, where it used to withhold the
+  whole stream as `unknown_output`.
+
 ## 3.0.1 - 2026-10-07
 
 - **The handoff context pack treats project scopes the way it treats thread

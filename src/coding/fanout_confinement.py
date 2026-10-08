@@ -28,8 +28,10 @@ FANOUT_FILESYSTEM_CONFINEMENT_SCHEMA_VERSION = "fanout_filesystem_confinement/v1
 FANOUT_FILESYSTEM_CONFINEMENT_CLAIM_BOUNDARY = (
     "A confinement receipt is observed only when its same-run sandbox probe wrote inside the unit worktree "
     "and every selected owner state directory, then was refused outside every write root. Owner state may also "
-    "include an exact file literal and the two named credential mach-lookup allowances; neither expands into a "
-    "directory or broader IPC permission. Backend availability, preflight, and a prepared command alone are not "
+    "include an exact file literal. On macOS the IPC allowances are the two named credential mach-lookup services "
+    "and the read side of the user preferences daemon (its two named mach-lookup services and read-only access to "
+    "its apple.cfprefs. shared memory); none expands into a directory, a preference write, or broader IPC "
+    "permission. Backend availability, preflight, and a prepared command alone are not "
     "confinement evidence. Reads are not part of this boundary: every command this confinement returns runs with "
     "broad host read, so no receipt here reports a read boundary, whatever its write verdict."
 )
@@ -41,6 +43,17 @@ _FANOUT_MACOS_TOOLCHAIN_WRITE_DATA_LITERALS = (Path("/dev/null"),)
 # external SecurityAgent prompt rather than hard-failing here, and still governs
 # credential access.
 _FANOUT_MACOS_CREDENTIAL_MACH_SERVICES = ("com.apple.securityd.xpc", "com.apple.SecurityServer")
+# Codex reads administrator-managed configuration through CFPreferences and
+# treats a failed CFPreferencesAppSynchronize as a fatal startup error (#1996).
+# Under `(deny default)` it reaches no preferences daemon, and once the process
+# has queried a value (CFPreferencesAppValueIsForced) it returns false. Measured on macOS 26.6: it returns true only with BOTH cfprefsd lookups
+# AND read access to the daemon's shared memory; dropping any one of the three
+# still fails. The preferences daemon refuses a write from a client whose
+# sandbox lacks `user-preference-write`, which `(deny default)` keeps denied:
+# CFPreferencesSetAppValue plus synchronize and `defaults write` both fail
+# inside the fence and leave no domain behind.
+_FANOUT_MACOS_PREFERENCE_MACH_SERVICES = ("com.apple.cfprefsd.daemon", "com.apple.cfprefsd.agent")
+_FANOUT_MACOS_PREFERENCE_SHM_READ_PREFIXES = ("apple.cfprefs.",)
 _FANOUT_TOOLCHAIN_TEMP_DIRECTORY = Path(".omh") / "confinement-tmp"
 
 
@@ -211,7 +224,10 @@ class FanoutFilesystemConfinement:
             allow_broad_process_exec=True,
             macos_write_data_literals=_FANOUT_MACOS_TOOLCHAIN_WRITE_DATA_LITERALS,
             write_literals=self.write_literals,
-            macos_mach_lookup_names=_FANOUT_MACOS_CREDENTIAL_MACH_SERVICES,
+            macos_mach_lookup_names=(
+                *_FANOUT_MACOS_CREDENTIAL_MACH_SERVICES, *_FANOUT_MACOS_PREFERENCE_MACH_SERVICES
+            ),
+            macos_ipc_posix_shm_read_prefixes=_FANOUT_MACOS_PREFERENCE_SHM_READ_PREFIXES,
             allow_broad_file_read=True,
             write_roots=self.write_roots,
             inherit_environment=True,
