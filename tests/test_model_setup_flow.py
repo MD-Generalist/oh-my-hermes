@@ -14,6 +14,7 @@ from omh.coding.hermes_model_config import (
 )
 from omh.commands import setup as setup_commands
 from omh.commands.main import build_parser
+from omh.commands.model_setup_projections import provider_next_actions
 
 
 def _inspection(
@@ -640,6 +641,41 @@ class ModelSetupFlowTests(unittest.TestCase):
 
         self.assertEqual((status, stderr), (0, ""))
         self.assertEqual(events, ["preview", "confirm"])
+
+    def test_next_actions_name_the_custom_provider_instead_of_a_bare_custom_login(self) -> None:
+        # Given: issue #1998's custom-pool machine, where the configured name
+        # carries the pool auth and bare `custom` carries none.
+        inspection = HermesModelConfigInspection(
+            hermes="hermes",
+            config_path=Path("config.yaml"),
+            config_digest="before-digest",
+            config_check_ok=True,
+            model_aliases={},
+            model_dot_aliases={},
+            providers=(
+                ProviderPresence("9router", True, True, False),
+                ProviderPresence("custom", False, True, False),
+            ),
+            commands=(),
+        )
+
+        # When: both spellings of the gateway model are confirmed.
+        actions = provider_next_actions(
+            {"9router/clv/kimi-k3", "custom/clv/kimi-k3"}, inspection
+        )
+
+        # Then: the named provider is ready and bare `custom` is not sent to a login.
+        self.assertEqual(
+            actions,
+            [
+                {"provider": "9router", "status": "ready", "next_action": ""},
+                {
+                    "provider": "custom",
+                    "status": "custom_provider_name_required",
+                    "next_action": "use the configured custom provider name as the prefix: <name>/<model>",
+                },
+            ],
+        )
 
 
 if __name__ == "__main__":

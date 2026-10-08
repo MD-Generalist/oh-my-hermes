@@ -50,7 +50,17 @@ def provider_next_actions(confirmed: set[str], inspection) -> list[dict[str, str
         reference.partition("/")[0] for reference in confirmed if "/" in reference
     ):
         provider = presence.get(provider_id)
-        if provider is None or not provider.auth_present:
+        if provider_id == "custom" and (provider is None or not provider.auth_present):
+            # Bare `custom` names no credential pool to log in to; Hermes
+            # resolves a configured custom provider by its own name.
+            actions.append(
+                {
+                    "provider": provider_id,
+                    "status": "custom_provider_name_required",
+                    "next_action": "use the configured custom provider name as the prefix: <name>/<model>",
+                }
+            )
+        elif provider is None or not provider.auth_present:
             actions.append(
                 {
                     "provider": provider_id,

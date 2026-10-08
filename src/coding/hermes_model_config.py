@@ -22,7 +22,14 @@ from ..system.metadata_safety import is_sensitive_metadata_text
 
 
 _ALIAS_RE: Final[re.Pattern[str]] = re.compile(r"^[A-Za-z0-9_-]+$")
-_AUTH_PROVIDER_RE: Final[re.Pattern[str]] = re.compile(r"^([A-Za-z0-9_-]+) \(")
+# `hermes auth list` heads each pool with `<id> (N credentials):`. A legacy
+# `custom_providers:` entry's pool id is composed as `custom:<name>`
+# (agent/credential_pool.py CUSTOM_POOL_PREFIX); only that one colon form is read.
+_AUTH_PROVIDER_RE: Final[re.Pattern[str]] = re.compile(
+    r"^([A-Za-z0-9_-]+|custom:[A-Za-z0-9_.-]+) \("
+)
+_CUSTOM_PROVIDER_NAME_RE: Final[re.Pattern[str]] = re.compile(r"^[A-Za-z0-9_.-]+$")
+_CUSTOM_POOL_PREFIX: Final = "custom:"
 _COMMAND_TIMEOUT_SECONDS: Final = 10
 _APPLY_LOCK: Final = Lock()
 
@@ -111,10 +118,16 @@ def inspect_hermes_model_config(
     plugins = _optional_json_value(
         (hermes, "config", "get", "plugins", "--json"), env, commands
     )
+    custom_providers = _optional_json_value(
+        (hermes, "config", "get", "custom_providers", "--json"), env, commands
+    )
     check = _run((hermes, "config", "check"), env, commands)
     auth_list = _run((hermes, "auth", "list"), env, commands)
 
-    auth_providers = _auth_provider_ids(auth_list.stdout if auth_list.returncode == 0 else "")
+    auth_providers = _configured_auth_provider_ids(
+        _auth_provider_ids(auth_list.stdout if auth_list.returncode == 0 else ""),
+        _custom_provider_names(custom_providers),
+    )
     plugin_providers = _plugin_provider_ids(plugins)
     providers = set(auth_providers) | plugin_providers
     if isinstance(provider, str) and _safe_metadata(provider):
@@ -167,6 +180,16 @@ def preview_hermes_model_config(
             )
         if target is not None:
             provider_id = target.split("/", 1)[0]
+            if (
+                _safe_metadata(target)
+                and provider_id == "custom"
+                and not _provider_has_auth(inspection, provider_id)
+            ):
+                raise HermesModelConfigError(
+                    f"Hermes model target {target!r} uses bare 'custom', which names no "
+                    "configured endpoint or credential pool; write it as '<name>/<model>' "
+                    "with the custom provider's configured name"
+                )
             if not _safe_metadata(target) or not _provider_has_auth(inspection, provider_id):
                 raise HermesModelConfigError(
                     f"Hermes model target {target!r} lacks safe observed provider auth"
@@ -340,9 +363,15 @@ def _run(
     if commands is not None:
         commands.append(command)
     try:
+        # Hermes forces its stdout to UTF-8 on every platform
+        # (hermes_cli/__init__.py), and `auth list` marks the current
+        # credential with `←`; the locale codec (cp1252 on Windows) cannot
+        # decode those bytes.
         return subprocess.run(
             _platform_command(command),
             text=True,
+            encoding="utf-8",
+            errors="replace",
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             check=False,
@@ -417,6 +446,43 @@ def _auth_provider_ids(output: str) -> set[str]:
         match = _AUTH_PROVIDER_RE.match(line.strip())
         if match and _safe_metadata(match.group(1)):
             providers.add(match.group(1))
+    return providers
+
+
+def _custom_provider_names(
+    value: str | list[str] | dict[str, str | list[str] | dict[str, str]] | None,
+) -> set[str]:
+    """Configured legacy custom provider names, normalized the way Hermes keys their pools."""
+    if not isinstance(value, list):
+        return set()
+    names: set[str] = set()
+    for entry in value:
+        name = entry.get("name") if isinstance(entry, dict) else None
+        if not isinstance(name, str):
+            continue
+        normalized = name.strip().lower().replace(" ", "-")
+        if _CUSTOM_PROVIDER_NAME_RE.fullmatch(normalized) and _safe_metadata(normalized):
+            names.add(normalized)
+    return names
+
+
+def _configured_auth_provider_ids(auth_providers: set[str], custom_names: set[str]) -> set[str]:
+    """Credentialed ids an alias target can name.
+
+    Hermes resolves an alias prefix `<name>` or `custom:<name>` to a legacy
+    custom provider only while `custom_providers` still configures `<name>`, so
+    a `custom:<name>` pool counts for both spellings then, and for neither once
+    the entry is gone.
+    """
+    providers = {
+        provider
+        for provider in auth_providers
+        if not provider.startswith(_CUSTOM_POOL_PREFIX)
+        or provider.removeprefix(_CUSTOM_POOL_PREFIX) in custom_names
+    }
+    providers.update(
+        name for name in custom_names if f"{_CUSTOM_POOL_PREFIX}{name}" in auth_providers
+    )
     return providers
 
 

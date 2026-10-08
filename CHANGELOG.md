@@ -18,6 +18,18 @@ All notable changes will be documented here.
   No file-write allowance changed. The dispatch diagnostic also retains this
   startup error as a fixed sanitized line, where it used to withhold the
   whole stream as `unknown_output`.
+- **Model setup binds aliases on a Hermes custom-provider machine.**
+  `hermes auth list` heads a `custom_providers:` entry's pool as
+  `custom:<name> (N credentials):`, and the auth parser read only colon-free
+  ids, so the gateway's credentials were never observed and every alias
+  target was refused as lacking provider auth (#1998). The parser now reads
+  that one composed form, and a pool whose `<name>` is still configured
+  authorizes both `<name>/<model>` — the spelling Hermes resolves to that
+  endpoint — and `custom:<name>/<model>`; a pool left behind by a removed
+  entry authorizes neither. A bare `custom/<model>` target, which Hermes
+  routes through `model.base_url` rather than a named provider, is refused
+  with that reason instead of a missing-auth one, and the provider next
+  action asks for the configured name instead of `hermes auth login custom`.
 
 ## 3.0.1 - 2026-10-07
 
