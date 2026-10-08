@@ -18,6 +18,7 @@ same shape arriving from anywhere else.
 
 from __future__ import annotations
 
+import ast
 from collections.abc import Iterator
 from contextlib import contextmanager
 import importlib
@@ -185,6 +186,168 @@ class CachedStubBridgeTests(unittest.TestCase):
         self.assertNotIsInstance(error, ModuleNotFoundError)
         self.assertEqual(error.name, f"{LANE_PACKAGE}.agent_board_bridge")
         self.assertFalse(str(error.name) == "omh" or str(error.name).startswith("omh."))
+
+
+# Hermes' directory loader names the bundle `hermes_plugins.<slug>`; a foreign
+# name keeps the case from passing on this repo's own `omh.` package path.
+EVICTED_PACKAGE = "hermes_plugins_test1979.omh"
+
+
+class EvictedBundleModulesTests(unittest.TestCase):
+    """The board after Hermes dropped the bundle's modules from `sys.modules`.
+
+    Hermes evicts `hermes_plugins.<slug>` and every submodule on a reload or a
+    failed load (`_evict_modules` in hermes_cli/plugins_loader.py) while the
+    handlers and hooks it registered stay callable. #1979 reported that state
+    from a running agent -- no `hermes_plugins`, no module under the bundle --
+    with the board tool answering `omh_agent_board_core_unavailable` on a host
+    whose `omh` package imported fine, while the other tools kept working.
+    """
+
+    def setUp(self) -> None:
+        self.addCleanup(self._forget)
+        self._forget()
+        # Hermes registers the bare namespace parent before the plugin.
+        parent = ModuleType(EVICTED_PACKAGE.split(".")[0])
+        parent.__path__ = []
+        sys.modules[parent.__name__] = parent
+        directory = bundle_dir()
+        spec = importlib.util.spec_from_file_location(
+            EVICTED_PACKAGE, directory / "__init__.py", submodule_search_locations=[str(directory)]
+        )
+        if spec is None or spec.loader is None:
+            raise RuntimeError("failed to load the plugin bundle under a host name")
+        package = importlib.util.module_from_spec(spec)
+        sys.modules[EVICTED_PACKAGE] = package
+        spec.loader.exec_module(package)
+        # What `register()` imports when Hermes loads the plugin.
+        self.tool = importlib.import_module(f"{EVICTED_PACKAGE}.tools.agent_board_tool")
+        self.hooks = importlib.import_module(f"{EVICTED_PACKAGE}.hooks.tool_hooks")
+        self.team = importlib.import_module(f"{EVICTED_PACKAGE}.tools.team_tool")
+        self.jev = importlib.import_module(f"{EVICTED_PACKAGE}.tools.jev_ask_tool")
+        self.bridge = importlib.import_module(f"{EVICTED_PACKAGE}.agent_board_bridge")
+        self._forget()  # the eviction
+
+    @staticmethod
+    def _forget() -> None:
+        parent = EVICTED_PACKAGE.split(".")[0]
+        for name in list(sys.modules):
+            if name == parent or name.startswith(f"{parent}."):
+                sys.modules.pop(name, None)
+
+    def test_the_board_tool_still_reaches_its_core(self) -> None:
+        from unittest.mock import patch
+
+        self.assertNotIn(EVICTED_PACKAGE, sys.modules)
+        with TemporaryDirectory() as home, patch.object(self.bridge, "default_omh_home", return_value=Path(home)):
+            result = json.loads(self.tool.omh_agent_board_handler({"action": "status", "request_id": "r"}))
+        # An empty store has no such request: the engine answered, so the core
+        # is present. Before #1979 this read `omh_agent_board_core_unavailable`.
+        self.assertEqual(result["reason"], "invalid_request_or_board_store")
+
+    def test_the_tool_call_hooks_still_reach_the_bridge(self) -> None:
+        self.assertIs(self.hooks._agent_board_bridge(), self.bridge)
+
+    def test_the_team_tool_still_reaches_its_siblings(self) -> None:
+        from unittest.mock import patch
+
+        with patch.dict("os.environ", {}, clear=False) as environ:
+            environ.pop(self.team.KANBAN_TASK_ENV, None)
+            result = json.loads(self.team.omh_team_handler({"action": "team_status", "team_id": "t"}))
+        # No host session in the call: the handler got past every sibling it
+        # reads and refused on the request itself.
+        self.assertEqual(result["reason"], "session_required", result)
+
+    def test_the_jev_ask_check_still_reaches_its_store(self) -> None:
+        from unittest.mock import patch
+
+        with TemporaryDirectory() as home, patch.object(self.jev, "default_omh_home", return_value=Path(home)):
+            self.assertIs(self.jev.jev_ask_available(), False)
+
+
+# Functions that run only while Hermes holds the package in `sys.modules`, or
+# never inside Hermes at all, with the reason each call-time import is safe.
+CALL_TIME_IMPORT_EXEMPTIONS = {
+    ("__init__.py", "register"): "runs inside Hermes' load, while the package is in sys.modules",
+    ("tools/__init__.py", "builtin_tool_schemas"): "called by the OMH CLI (quality/schema_overlap), never registered",
+}
+
+
+def call_time_bundle_imports() -> list[str]:
+    """Every relative import of a bundle sibling made inside a function body.
+
+    Read off the directory, so a new tool or hook joins without a list. An
+    import that climbs above the bundle root (`awareness.py`'s `...routing`)
+    reaches the OMH package, not a sibling, and is out of scope here; a
+    `TYPE_CHECKING` block never runs.
+    """
+    bundle = bundle_dir()
+    found: list[str] = []
+    for path in sorted(bundle.rglob("*.py")):
+        rel = path.relative_to(bundle).as_posix()
+        depth = len(Path(rel).parts) - 1  # package depth below the bundle root
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for function in ast.walk(tree):
+            if not isinstance(function, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            if (rel, function.name) in CALL_TIME_IMPORT_EXEMPTIONS:
+                continue
+            for node in ast.walk(function):
+                if isinstance(node, ast.ImportFrom) and 1 <= node.level <= depth + 1:
+                    found.append(f"{rel}:{node.lineno} {function.name}: from {'.' * node.level}{node.module or ''}")
+    return sorted(set(found))
+
+
+class CallTimeBundleImportGateTests(unittest.TestCase):
+    def test_no_bundle_function_resolves_a_sibling_through_sys_modules(self) -> None:
+        self.assertEqual(
+            call_time_bundle_imports(),
+            [],
+            "Hermes evicts the plugin's modules from sys.modules while the handlers "
+            "and hooks it registered stay callable (#1979); a relative import made "
+            "inside a function then has no parent package. Bind the sibling at module "
+            "scope (`from . import sibling as _sibling`, placed after the module's own "
+            "definitions when the two import each other) and read its names at call time.",
+        )
+
+    def test_the_gate_sees_a_call_time_import(self) -> None:
+        source = "def handler():\n    from ..runtime_reader import read_omh_todo\n"
+        nodes = [n for n in ast.walk(ast.parse(source)) if isinstance(n, ast.ImportFrom)]
+        self.assertEqual([n.level for n in nodes], [2])
+
+
+class UnavailableBoardDetailTests(unittest.TestCase):
+    """One reason used to cover two faults; `detail` names the import that failed."""
+
+    def test_a_missing_engine_names_the_engine_module(self) -> None:
+        tool = load_standalone_bundle(("agent_board_bridge", "tools.agent_board_tool"))["tools.agent_board_tool"]
+        result = json.loads(tool.omh_agent_board_handler({"action": "status", "request_id": "r"}))
+        self.assertEqual(result["reason"], "omh_agent_board_core_unavailable")
+        self.assertTrue(result["detail"].startswith("board_engine_unimportable:omh"), result)
+
+    def test_a_stub_bridge_is_named_as_incomplete(self) -> None:
+        with hermes_memory_lane_bundle():
+            tool = importlib.import_module(f"{LANE_PACKAGE}.tools.agent_board_tool")
+            result = json.loads(tool.omh_agent_board_handler({"action": "status", "request_id": "r"}))
+        self.assertEqual(result["detail"], "board_bridge_incomplete")
+
+    def test_an_unimportable_bridge_names_the_module(self) -> None:
+        with hermes_memory_lane_bundle():
+            sys.modules[f"{LANE_PACKAGE}.agent_board_bridge"] = None  # import of it raises ImportError
+            tool = importlib.import_module(f"{LANE_PACKAGE}.tools.agent_board_tool")
+            result = json.loads(tool.omh_agent_board_handler({"action": "status", "request_id": "r"}))
+        self.assertEqual(result["reason"], "omh_agent_board_core_unavailable")
+        self.assertEqual(result["detail"], f"board_bridge_unimportable:{LANE_PACKAGE}.agent_board_bridge")
+
+
+class UnavailableTeamDetailTests(unittest.TestCase):
+    def test_an_unimportable_sibling_names_the_module(self) -> None:
+        with hermes_memory_lane_bundle():
+            sys.modules[f"{LANE_PACKAGE}.cost_receipt"] = None  # import of it raises ImportError
+            tool = importlib.import_module(f"{LANE_PACKAGE}.tools.team_tool")
+            result = json.loads(tool.omh_team_handler({"action": "team_status", "team_id": "t"}))
+        self.assertEqual(result["reason"], "omh_team_core_unavailable")
+        self.assertEqual(result["detail"], f"bundle_module_unimportable:{LANE_PACKAGE}.cost_receipt")
 
 
 if __name__ == "__main__":

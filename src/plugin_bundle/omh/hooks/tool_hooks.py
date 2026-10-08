@@ -50,12 +50,19 @@ def _agent_board_bridge() -> _BoardBridge | None:
     on its own -- the name it carries still is not `omh` -- so the bridge is
     taken by attribute instead: a module that cannot supply both names is no
     bridge, and one broken module must not take the hook down on every call.
+
+    The module is bound at import, not looked up per call: Hermes can evict
+    the plugin's modules from `sys.modules` while these hooks stay registered,
+    and a call-time relative import then has no parent package (#1979).
     """
-    try:
-        from .. import agent_board_bridge
-    except ImportError:
-        return None
-    return agent_board_bridge if isinstance(agent_board_bridge, _BoardBridge) else None
+    bridge = _BOARD_BRIDGE_MODULE
+    return bridge if isinstance(bridge, _BoardBridge) else None
+
+
+try:
+    from .. import agent_board_bridge as _BOARD_BRIDGE_MODULE
+except ImportError:
+    _BOARD_BRIDGE_MODULE = None
 
 
 def _rule_directive_or_recorded_fault(

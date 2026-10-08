@@ -85,11 +85,21 @@ def omh_team_handler(args: Mapping[str, object], **kwargs: object) -> str:
         from omh.workflows import team
     except ImportError:
         return _refused(action, "omh_team_core_unavailable", "This install has no team engine.")
+    if _BUNDLE_IMPORT_FAILURE:
+        return _refused(action, "omh_team_core_unavailable", "This install has no team engine.",
+                        detail=f"bundle_module_unimportable:{_BUNDLE_IMPORT_FAILURE}")
+    # A sibling Hermes could not exec can sit in sys.modules as a stub with
+    # none of its names (#1623): a missing component, not an AttributeError.
     try:
-        from ..hooks.nudge_budget import session_is_delegated
-        from ..runtime_reader import read_omh_todo, reading_session_id
-        from ..todo_store import todo_items_digest
-
+        session_is_delegated = _nudge_budget.session_is_delegated
+        read_omh_todo = _runtime_reader.read_omh_todo
+        reading_session_id = _runtime_reader.reading_session_id
+        todo_items_digest = _todo_store.todo_items_digest
+        _ = (_evidence_tool.run_verification_command, _cost_receipt.build_cost_receipt)
+    except AttributeError:
+        return _refused(action, "omh_team_core_unavailable", "This install has no team engine.",
+                        detail="bundle_module_incomplete")
+    try:
         session = host_session_id(dict(kwargs))
         hermes_home = runtime_paths.default_hermes_home()
         omh_home = runtime_paths.default_omh_home()
@@ -173,7 +183,7 @@ def _cron_session() -> bool:
 
 
 def _runner(team: Any) -> Any:
-    from .evidence_tool import run_verification_command
+    run_verification_command = _evidence_tool.run_verification_command
 
     def run(tokens: list[str], workdir: Path, timeout: int) -> Any:
         observed = run_verification_command(tokens, workdir=workdir, timeout=timeout)
@@ -201,9 +211,7 @@ def _now() -> float:
 
 
 def _cost(hermes_home: Path, omh_home: Path, session: str) -> dict[str, Any]:
-    from ..cost_receipt import build_cost_receipt
-
-    receipt = build_cost_receipt(hermes_home=hermes_home, omh_home=omh_home, session_id=session)
+    receipt = _cost_receipt.build_cost_receipt(hermes_home=hermes_home, omh_home=omh_home, session_id=session)
     if receipt.get("status") != "observed":
         return {"status": "not_observed", "say": "Cost for this conversation is not available."}
     helpers = (receipt.get("sources") or {}).get("delegated_children") or {}
@@ -218,6 +226,27 @@ def _cost(hermes_home: Path, omh_home: Path, session: str) -> dict[str, Any]:
     }
 
 
-def _refused(action: str, reason: str, say: str) -> str:
-    return json.dumps({"schema_version": "omh_team_result/v1", "action": action, "status": "refused",
-                       "reason": reason, "say": say, "delegate_task": None}, sort_keys=True)
+def _refused(action: str, reason: str, say: str, *, detail: str = "") -> str:
+    payload: dict[str, object] = {"schema_version": "omh_team_result/v1", "action": action, "status": "refused",
+                                  "reason": reason, "say": say, "delegate_task": None}
+    if detail:
+        # Which bundle module failed to import: a module name, never a message or a path.
+        payload["detail"] = detail
+    return json.dumps(payload, sort_keys=True)
+
+
+# Module scope, not call time: Hermes can evict the bundle from sys.modules
+# while this handler stays registered, and a call-time relative import then
+# has no parent package (#1979). Guarded so a host missing one still registers
+# the tool and names the module instead of failing to load (#1623). Last, so
+# an import cycle finds every name.
+try:
+    from .. import cost_receipt as _cost_receipt
+    from .. import runtime_reader as _runtime_reader
+    from .. import todo_store as _todo_store
+    from ..hooks import nudge_budget as _nudge_budget
+    from . import evidence_tool as _evidence_tool
+except ImportError as _bundle_import_error:
+    _BUNDLE_IMPORT_FAILURE = _bundle_import_error.name or "unknown"
+else:
+    _BUNDLE_IMPORT_FAILURE = ""

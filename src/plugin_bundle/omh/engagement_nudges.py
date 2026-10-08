@@ -453,8 +453,8 @@ def _plan_declared(*, session: str, omh_home: str, hermes_home: str) -> bool:
     suppresses one. That is the right direction for a best-effort read here:
     the alternative is a broken home silently disabling the nudge forever.
     """
-    from .todo_reconciliation import plan_is_declared
-    from .runtime_reader import read_omh_todo
+    plan_is_declared = _todo_reconciliation.plan_is_declared
+    read_omh_todo = _runtime_reader.read_omh_todo
 
     todo = read_omh_todo(omh_home or None, hermes_home or None, session_ref=session)
     return isinstance(todo, dict) and plan_is_declared(todo)
@@ -483,3 +483,9 @@ def _carry(result: object, text: str) -> str | None:
         return json.dumps(parsed, ensure_ascii=False)
     except (TypeError, ValueError):
         return None
+
+
+# Module scope, not call time: Hermes can evict the bundle from sys.modules
+# while its callbacks stay live (#1979). Last, so an import cycle finds every name.
+from . import runtime_reader as _runtime_reader
+from . import todo_reconciliation as _todo_reconciliation

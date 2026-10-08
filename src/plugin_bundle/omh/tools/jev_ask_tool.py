@@ -77,6 +77,7 @@ from ..jev_ask_store import (
     read_key,
     remember_answered_ask,
     resolve_route,
+    route_available,
 )
 from ..jev_consent import consent_observed
 from ..jev_presets import PRESET_IDS, PRESETS, policy_result, preset_questions
@@ -216,9 +217,13 @@ def omh_jev_ask_handler(
 
 
 def jev_ask_available() -> bool:
-    """`check_fn` for the host: True only when an ask could take a route now."""
-    from ..jev_ask_store import route_available
+    """`check_fn` for the host: True only when an ask could take a route now.
 
+    `route_available` is bound with this module's other store names, not
+    imported here: Hermes can evict the bundle from `sys.modules` while this
+    check stays registered, and a call-time relative import then has no parent
+    package (#1979).
+    """
     try:
         home = default_omh_home()
     except Exception:  # noqa: BLE001 - classified: an unbound home keeps the tool hidden rather than failing registration

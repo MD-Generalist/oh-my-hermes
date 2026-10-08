@@ -37,10 +37,13 @@ try:  # The board engine is core-owned; this file is the bridge TO it.
     from omh.workflows.agent_board import (
         AgentBoard, AgentBoardRequest, HostIdentity, MAX_INTAKE_BYTES, board_reference, native_schema_supported,
     )
-except ImportError:  # pragma: no cover - standalone plugin hosts have no omh package.
+except ImportError as _core_import_error:  # pragma: no cover - standalone plugin hosts have no omh package.
     _BOARD_CORE_AVAILABLE = False
+    # The module that failed, for the tool's `detail`; never the message.
+    BOARD_CORE_IMPORT_FAILURE = _core_import_error.name or "omh"
 else:
     _BOARD_CORE_AVAILABLE = True
+    BOARD_CORE_IMPORT_FAILURE = ""
 
 from .runtime_reader import default_omh_home
 

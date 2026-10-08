@@ -315,7 +315,7 @@ def read_reviewed_records(omh_home: str | Path, *, unreadable: list[str] | None 
 
 def read_approved_records(omh_home: str | Path) -> list[dict[str, Any]]:
     """Replay-eligible v2 records at wall clock, for the bridge, demotion and expiry views."""
-    from .memory_governance import evaluate_memory_replay
+    evaluate_memory_replay = _memory_governance.evaluate_memory_replay
 
     home = Path(omh_home).expanduser() / "memory"
     reviews = _read_reviews(home / "reviews")
@@ -441,7 +441,7 @@ def classify_record_expiry(
     value that claims to be a deadline but cannot be read -- never treated as
     expired, because a move on a misread is a move that cannot be defended.
     """
-    from .memory_governance import classify_record_expiry_v1_compat
+    classify_record_expiry_v1_compat = _memory_governance.classify_record_expiry_v1_compat
     return classify_record_expiry_v1_compat(record, now=now, window_days=window_days)
 
 
@@ -753,3 +753,8 @@ def _demotion_file_summary(reading: HermesMemoryFile, rows: list[dict[str, objec
         "estimated_headroom_after": reading.headroom_chars
         + sum(max(int(row["savings_chars"]), 0) for row in planned),
     }
+
+
+# Module scope, not call time: Hermes can evict the bundle from sys.modules
+# while its callbacks stay live (#1979). Last, so an import cycle finds every name.
+from . import memory_governance as _memory_governance

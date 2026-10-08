@@ -22,7 +22,7 @@ def validate_stale_override(
     - confirmed_at is present (timestamp of confirmation)
     - expires_at is present and <= 7 days from now
     """
-    from ._governance_evaluation import stable_artifact_identity
+    stable_artifact_identity = _governance_evaluation_module.stable_artifact_identity
     
     artifact_identity = stable_artifact_identity(artifact)
     override_identity = override.get("artifact_identity")
@@ -72,3 +72,8 @@ def validate_stale_override(
         return {"valid": False, "reason": "stale_override_invalid"}
     
     return {"valid": True}
+
+
+# Module scope, not call time: Hermes can evict the bundle from sys.modules
+# while its callbacks stay live (#1979). Last, so an import cycle finds every name.
+from . import _governance_evaluation as _governance_evaluation_module
