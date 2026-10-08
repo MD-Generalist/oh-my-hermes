@@ -21,6 +21,7 @@ import unittest
 from unittest import mock
 
 from _local_package import load_local_package
+from _platform_support import requires_posix
 
 load_local_package()
 
@@ -325,8 +326,6 @@ class OptInIsForHostCapabilityTests(unittest.TestCase):
         self.assertIsNone(fence.dispatcher_command(["git", "status"]))
 
     def test_a_preflight_that_passes_outside_the_tree_is_the_tree_s_failure(self) -> None:
-        from omh.quality import cross_harness_adapter_sandbox
-
         with TemporaryDirectory() as temporary:
             worktree = Path(temporary).resolve()
             children: list[Any] = []
@@ -352,15 +351,25 @@ class OptInIsForHostCapabilityTests(unittest.TestCase):
                     self.assertEqual({child.root for child in children}, {worktree})
                     self.assertEqual(fence.receipt["reason_code"], reason)
                     self.assertEqual(fence.unconfined_allowed, honoured)
-            # The bwrap retry enters the neutral directory, not the tree, and
-            # still binds the tree as the preflight in it does.
+
+    @requires_posix
+    def test_the_bwrap_retry_enters_the_neutral_directory_and_still_binds_the_tree(self) -> None:
+        from omh.quality import cross_harness_adapter_sandbox
+
+        # The child the retry passes (the test above): the tree as root, `/` as work.
+        with TemporaryDirectory() as temporary:
+            worktree = Path(temporary).resolve()
+            child = cross_harness_adapter_sandbox.ChildContext(
+                worktree, worktree, Path("/"), worktree, worktree,
+                worktree / "request", worktree / "artifact", "digest",
+            )
             with mock.patch.object(cross_harness_adapter_sandbox, "_trusted_bwrap", return_value="/usr/bin/bwrap"):
                 argv = cross_harness_adapter_sandbox.sandbox_command(
-                    ("/usr/bin/true",), "bwrap", (worktree,), children[-1], True, {}, "digest",
+                    ("/usr/bin/true",), "bwrap", (worktree,), child, True, {}, "digest",
                     allow_broad_file_read=True, inherit_environment=True,
                 )
-            self.assertEqual(argv[argv.index("--chdir") + 1], "/")
-            self.assertIn(("--bind", str(worktree), str(worktree)), tuple(zip(argv, argv[1:], argv[2:])))
+        self.assertEqual(argv[argv.index("--chdir") + 1], "/")
+        self.assertIn(("--bind", str(worktree), str(worktree)), tuple(zip(argv, argv[1:], argv[2:])))
 
     def test_a_host_without_a_backend_keeps_the_opt_in(self) -> None:
         with TemporaryDirectory() as temporary:
