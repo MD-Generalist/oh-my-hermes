@@ -5175,6 +5175,30 @@ class FanoutSpawnGuardTests(unittest.TestCase):
         self.assertEqual(runner.envs, [])
         self.assertEqual(_fanout_dispatch_exit_code(summary), 1)
 
+    def test_a_dry_run_environment_refusal_keeps_its_exit_code(self) -> None:
+        # A dry run asked for a plan, not for work, so the refusal is reported
+        # in the plan without the failure signal.
+        with TemporaryDirectory() as tmp:
+            paths, repo, sha, contract = self._setup(tmp, self._TWO_UNITS[:1])
+            summary = dispatch_fanout(
+                paths,
+                contract,
+                goal_text=_GOAL,
+                repo_root=repo,
+                base_sha=sha,
+                only_units=["core"],
+                dry_run=True,
+                runner=_env_capturing_runner(),
+                readiness=_ready,
+                env={"PATH": "/usr/bin"},
+                environment_policy={"owner_capabilities": {"codex": ["MISSING_CAPABILITY_TOKEN"]}},
+            )
+
+        core = summary["units"][0]
+        self.assertEqual(core["status"], "environment_not_ready")
+        self.assertNotIn("failure_kind", core)
+        self.assertEqual(_fanout_dispatch_exit_code(summary), 0)
+
     def test_a_nested_lineage_is_appended_not_replaced(self) -> None:
         # Depth 0 with an inherited lineage is the shape a wrapper produces
         # when it stamps provenance itself; the chain must extend so a later
