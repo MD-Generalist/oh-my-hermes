@@ -13,11 +13,29 @@ All notable changes will be documented here.
   (#2035). Those calls now run with the network denied and an environment of
   `PATH`, `HOME`, `XDG_CONFIG_HOME`, the locale, the fence's `TMPDIR` and
   `GIT_OPTIONAL_LOCKS=0`, `GIT_TERMINAL_PROMPT=0`, `GIT_NO_LAZY_FETCH=1`;
-  every other `GIT_*` is dropped. An unfenced run under `--allow-unconfined`,
-  which a unit can force, gets the same environment with the operator's own
+  every other `GIT_*` is dropped. An unfenced run under `--allow-unconfined`
+  gets the same environment with the operator's own
   temporary directory (and, on Windows, the system and profile variables git
   needs to start); it has no fence to deny the network with. Checks run for
   the unit keep the unit's network and environment.
+- **Diagnostics analyzers run fenced to their snapshot.** `--diagnostics`
+  ran pyright, basedpyright and ruff on the host, with the operator's write
+  access and network, against a snapshot of a tree the unit committed, and
+  pyright/basedpyright read their configuration from that tree (#2036). Each
+  analyzer now runs inside a fence whose only write root is the private
+  snapshot directory, with network denied and its temporary directory inside
+  the snapshot, and relative or empty `PATH` entries are dropped from its
+  environment. A host that cannot prove the fence reports the provider as
+  crashed unless the operator passed `--allow-unconfined`, as the
+  diagnostics git calls already do. That opt-in now means only "this host
+  cannot fence": a fence the fenced tree itself made unprovable (a committed
+  `.omh` file, a failed write probe) is refused even with it, for the
+  analyzer, the dispatcher's git and the unit fence alike, and every reason a
+  fence can go unenforced is classified in one table. Measured on macOS with
+  basedpyright 1.39.10 (pyright 1.1.412): a planted `venvPath`/`venv`
+  interpreter is never executed, and the PATH interpreter pyright runs drops
+  the working directory from `sys.path` before importing anything; a test
+  pins both where an analyzer is installed.
 - **File activity fails closed on symlink escapes.** `omh quality-evidence
   file-activity` judged workspace containment by a path's spelling only, so a
   symlink inside the workspace that points outside it, such as `linked/notes.md`

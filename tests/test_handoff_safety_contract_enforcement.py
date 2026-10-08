@@ -169,7 +169,8 @@ PROCESS_SPAWN_ALLOWLIST: dict[str, str] = {
     "src/coding/local_diagnostic_process.py": (
         "provider bridge reached only after explicit `omh coding fanout dispatch --diagnostics`; "
         "materializes fixed revisions through a fenced `git archive` and starts only the closed local "
-        "pyright/basedpyright/ruff command map with bounded output, time, and environment."
+        "pyright/basedpyright/ruff command map, fenced to the snapshot with network denied, with bounded "
+        "output, time, and environment."
     ),
     "src/coding/local_diagnostic_process_owner.py": (
         "private lifecycle boundary reached only by the explicit `omh coding fanout dispatch "

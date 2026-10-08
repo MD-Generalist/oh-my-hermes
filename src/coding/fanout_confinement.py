@@ -605,6 +605,30 @@ def planned_fanout_filesystem_confinement(
     )
 
 
+# Why `_prepare_fanout_filesystem_confinement` returned an unenforced fence:
+# "host" when the host lacks the capability, "content" when the tree being
+# fenced -- a unit worktree, possibly written by an earlier attempt, or a
+# diagnostics snapshot of a tree the unit committed -- can produce it. Only a
+# "host" reason lets `--allow-unconfined` run a command unfenced; a reason
+# missing here is treated as "content" (#2036).
+UNCONFINED_REASON_SOURCES: Mapping[str, str] = {
+    "no_os_confinement_backend_on_this_platform": "host",
+    "sandbox_backend_unavailable": "host",
+    # The caller's command list and the host PATH, not the fenced tree.
+    "sandbox_no_runnable_command": "host",
+    "sandbox_executable_not_found": "host",
+    # Runs `/usr/bin/true` with the tree as working directory, after
+    # `_write_scratch_ignore` already wrote into it: a tree the dispatcher
+    # cannot enter fails that step first, as `sandbox_scratch_unsafe`.
+    "sandbox_preflight_failed": "host",
+    # A committed `.omh` file, or a link at `.omh/confinement-tmp/.gitignore`.
+    "sandbox_scratch_unsafe": "content",
+    # The probe writes every write root, and a unit fence's git roots are read
+    # from the gitdir the unit can write, so a failure is not the host's alone.
+    "sandbox_probe_failed": "content",
+}
+
+
 def prepare_fanout_filesystem_confinement(
     worktree: Path,
     environment: Mapping[str, str],
@@ -622,12 +646,20 @@ def prepare_fanout_filesystem_confinement(
     callers refuse to spawn without it unless the operator passed
     `allow_unconfined` (#1982). The receipt records that choice either way as
     `unconfined_opt_in`, which is never true beside an enforced fence.
+
+    The opt-in answers "this host cannot fence", never "the fenced tree broke
+    the fence": it is honoured only for a reason `UNCONFINED_REASON_SOURCES`
+    names a host capability (#2036).
     """
     confinement = _prepare_fanout_filesystem_confinement(
         worktree, environment, commands,
         owner=owner, intake_root=intake_root, unit_branch=unit_branch, repo_root=repo_root,
     )
-    opted_in = allow_unconfined and confinement.receipt.get("enforced") is not True
+    opted_in = (
+        allow_unconfined
+        and confinement.receipt.get("enforced") is not True
+        and UNCONFINED_REASON_SOURCES.get(str(confinement.receipt.get("reason_code"))) == "host"
+    )
     return replace(
         confinement,
         receipt={**confinement.receipt, "unconfined_opt_in": opted_in},
@@ -656,6 +688,28 @@ def prepare_dispatcher_git_fence(worktree: Path, *, allow_unconfined: bool = Fal
         worktree, dict(os.environ), ((git_program,),), allow_unconfined=allow_unconfined,
     )
     # Only dispatcher git runs in this fence, and it reads local state (#2035).
+    return replace(fence, allow_network=False)
+
+
+def prepare_diagnostic_analyzer_fence(
+    snapshot: Path,
+    executable: str,
+    environment: Mapping[str, str],
+    *,
+    allow_unconfined: bool = False,
+) -> FanoutFilesystemConfinement:
+    """A fence for one `--diagnostics` analyzer run over a revision snapshot (#2036).
+
+    The snapshot is a tree the unit committed, and pyright/basedpyright read
+    their configuration from it. Its only write root is the snapshot itself, a
+    private temporary directory removed after the run, and its commands run
+    with network denied. `command` wraps only `executable`, the absolute path
+    of the analyzer the runner resolved. Not enforced and not opted in
+    (`unconfined_allowed`) means the caller runs nothing.
+    """
+    fence = prepare_fanout_filesystem_confinement(
+        snapshot, environment, ((executable,),), allow_unconfined=allow_unconfined,
+    )
     return replace(fence, allow_network=False)
 
 
