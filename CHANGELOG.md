@@ -13,6 +13,14 @@ All notable changes will be documented here.
   workspace is left out and counted under the new `symlink_escape` reason. A
   link that stays inside the workspace keeps its declared spelling, and a
   workspace reached through a link of its own still lists its files.
+- **Fanout dispatch no longer exits 0 over an environment refusal.** A unit
+  refused with `environment_not_ready` (a required child or verification
+  capability missing or denied) never spawned, yet it carried no failure
+  signal, so `omh coding fanout dispatch` and `omh coding run` reported the
+  batch as a success (#2029). The refusal now carries the pre-spawn
+  `failure_kind: workspace_blocked` and `unit_state: permission_blocked` a
+  workspace blocker does, so the batch exits 1. The truthfulness gate now
+  builds this refusal from the dispatcher and fails if it maps to 0.
 - **Memory reads French.** Recall tokenization treated every accented Latin
   letter as a separator, so `déploiement` indexed as `ploiement` and
   `préférence` as `pr` + `rence`; a query typed without accents never

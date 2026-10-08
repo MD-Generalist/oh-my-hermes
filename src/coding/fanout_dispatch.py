@@ -4265,6 +4265,10 @@ def _dispatch_unit(
             "verification_environment_policy": verification_environment.receipt,
             **_dispatch_status_ladder(),
             "reason": "required child environment capabilities are missing or denied",
+            # Refused before the spawn like a workspace blocker, so it carries
+            # the same failure signal the exit mapper reads (#2029).
+            "failure_kind": FAILURE_KIND_WORKSPACE_BLOCKED,
+            "unit_state": UNIT_STATE_PERMISSION_BLOCKED,
         }
     if dry_run:
         from .executor_skill_discovery import skill_selection_card, suggested_skill_sequence

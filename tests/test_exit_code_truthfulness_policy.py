@@ -132,6 +132,50 @@ class ExitCodeTruthfulnessPolicyTests(unittest.TestCase):
                         f"{module_stem}.{function_name} reported success over a unit the {status} gate refused",
                     )
 
+    def test_an_environment_refusal_is_never_reported_as_success(self) -> None:
+        """A unit refused for its child environment is a failed unit, not a skipped one.
+
+        Only the dispatch mapper grades unit rows; other mappers keep their own vocabulary.
+
+        The row is the dispatcher's own, produced by a declaration that
+        requires a capability the parent environment lacks, so a refusal row
+        that drops the failure signal fails here rather than in a wrapper's
+        shell (#2029).
+        """
+        import tempfile
+
+        from omh.coding.fanout import build_fanout_contract
+        from omh.coding.fanout_artifacts import write_fanout_contract
+        from omh.coding.fanout_dispatch import dispatch_fanout
+        from omh.system.paths import OmhPaths
+        from test_fanout_dispatch import _GOAL, _UNITS, _make_repo, _ready
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            paths = OmhPaths(omh_home=root / ".omh", hermes_home=root / ".hermes")
+            repo, sha = _make_repo(root)
+            contract = write_fanout_contract(paths, build_fanout_contract(_GOAL, _UNITS))
+            summary = dispatch_fanout(
+                paths,
+                contract,
+                goal_text=_GOAL,
+                repo_root=repo,
+                base_sha=sha,
+                only_units=["core"],
+                readiness=_ready,
+                env={"PATH": "/usr/bin"},
+                environment_policy={"owner_capabilities": {"codex": ["MISSING_CAPABILITY_TOKEN"]}},
+            )
+        entry = summary["units"][0]
+        self.assertEqual(entry["status"], "environment_not_ready")
+        from omh.commands.coding import _fanout_dispatch_exit_code
+
+        self.assertNotEqual(
+            _fanout_dispatch_exit_code({"units": [entry]}),
+            0,
+            "_fanout_dispatch_exit_code reported success over a unit refused as environment_not_ready",
+        )
+
     def test_a_unit_skipped_while_another_dispatch_holds_it_is_never_success(self) -> None:
         """Every dispatch skip status is classified, and a deferred one is not 0.
 
