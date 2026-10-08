@@ -318,5 +318,12 @@ def _diagnostic_environment() -> dict[str, str]:
         for key in retained
         if key in os.environ
     }
+    if "PATH" in environment:
+        # A relative or empty entry resolves against the working directory,
+        # the snapshot: pyright's `python3` and a `#!/usr/bin/env node` launcher
+        # would then run a program the unit committed (#2036).
+        environment["PATH"] = os.pathsep.join(
+            entry for entry in environment["PATH"].split(os.pathsep) if entry and os.path.isabs(entry)
+        )
     environment.update({"NO_COLOR": "1", "PYTHONUTF8": "1"})
     return environment

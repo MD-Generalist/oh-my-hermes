@@ -200,6 +200,89 @@ class AnalyzerWithoutFenceTests(unittest.TestCase):
         self.assertEqual(argv[0], str(Path(sys.executable).resolve()))
 
 
+class OptInIsForHostCapabilityTests(unittest.TestCase):
+    """`--allow-unconfined` means "this host cannot fence", not "the fenced tree broke the fence"."""
+
+    def test_every_unenforced_reason_is_classified(self) -> None:
+        import ast
+        import inspect
+        import textwrap
+
+        found: set[str] = set()
+        for function in (fanout_confinement._prepare_fanout_filesystem_confinement, fanout_confinement._probe):
+            tree = ast.parse(textwrap.dedent(inspect.getsource(function)))
+            found.update(
+                node.value for node in ast.walk(tree)
+                if isinstance(node, ast.Constant) and isinstance(node.value, str)
+                and (node.value.startswith("sandbox_") or node.value.startswith("no_os_"))
+            )
+        self.assertEqual(found, set(fanout_confinement.UNCONFINED_REASON_SOURCES))
+        self.assertLessEqual(set(fanout_confinement.UNCONFINED_REASON_SOURCES.values()), {"host", "content"})
+
+    def test_the_opt_in_is_honoured_only_for_a_host_reason(self) -> None:
+        reasons = {**fanout_confinement.UNCONFINED_REASON_SOURCES, "unclassified_reason": "content"}
+        with TemporaryDirectory() as temporary:
+            worktree = Path(temporary).resolve()
+            for reason, source in reasons.items():
+                with self.subTest(reason=reason), mock.patch.object(
+                    fanout_confinement, "_prepare_fanout_filesystem_confinement",
+                    return_value=fanout_confinement._unconfined(worktree, "test", {}, reason),
+                ):
+                    fence = fanout_confinement.prepare_fanout_filesystem_confinement(
+                        worktree, {}, (("git",),), allow_unconfined=True,
+                    )
+                self.assertEqual(fence.unconfined_allowed, source == "host")
+                self.assertEqual(fence.receipt["unconfined_opt_in"], source == "host")
+
+    @unittest.skipUnless(sys.platform == "darwin", "sandbox-exec confinement is exercised on macOS")
+    def test_a_committed_omh_file_refuses_the_analyzer_despite_the_opt_in(self) -> None:
+        from omh.coding import local_diagnostic_process
+
+        with TemporaryDirectory() as temporary:
+            repo, head = _repository(
+                Path(temporary).resolve(), {"seed.py": "value = 1\n", "check": "print('[]')\n", ".omh": "unit\n"},
+            )
+            runner = LocalDiagnosticProviderRunner({"ruff": sys.executable}, git=_HostGit(allow_unconfined=True))
+            with mock.patch.object(
+                local_diagnostic_process, "start_owned_process", wraps=local_diagnostic_process.start_owned_process
+            ) as spawn:
+                with self.assertRaises(OSError):
+                    runner.run("ruff", str(repo), head, ("seed.py",), 30_000, None)
+        spawn.assert_not_called()
+
+    @unittest.skipUnless(sys.platform == "darwin", "sandbox-exec confinement is exercised on macOS")
+    def test_a_committed_omh_file_refuses_dispatcher_git_despite_the_opt_in(self) -> None:
+        with TemporaryDirectory() as temporary:
+            worktree = Path(temporary).resolve()
+            (worktree / ".omh").write_text("unit\n", encoding="utf-8")
+            fence = fanout_confinement.prepare_dispatcher_git_fence(worktree, allow_unconfined=True)
+        self.assertEqual(fence.receipt["reason_code"], "sandbox_scratch_unsafe")
+        self.assertFalse(fence.unconfined_allowed)
+        self.assertIsNone(fence.dispatcher_command(["git", "status"]))
+
+    def test_a_host_without_a_backend_keeps_the_opt_in(self) -> None:
+        with TemporaryDirectory() as temporary:
+            worktree = Path(temporary).resolve()
+            (worktree / ".omh").write_text("unit\n", encoding="utf-8")
+            with mock.patch.object(fanout_confinement, "backend_available", return_value=False):
+                fence = fanout_confinement.prepare_diagnostic_analyzer_fence(
+                    worktree, sys.executable, {}, allow_unconfined=True,
+                )
+        if fence.receipt["reason_code"] != "no_os_confinement_backend_on_this_platform":
+            self.assertEqual(fence.receipt["reason_code"], "sandbox_backend_unavailable")
+        self.assertTrue(fence.unconfined_allowed)
+
+
+class AnalyzerPathTests(unittest.TestCase):
+    def test_relative_and_empty_path_entries_are_dropped(self) -> None:
+        from omh.coding.local_diagnostic_process import _diagnostic_environment
+
+        absolute = str(Path(sys.executable).resolve().parent)
+        path = os.pathsep.join((".", "", "bin", absolute, "node_modules/.bin"))
+        with mock.patch.dict(os.environ, {"PATH": path}):
+            self.assertEqual(_diagnostic_environment()["PATH"], absolute)
+
+
 _PYRIGHTS = tuple(name for name in ("pyright", "basedpyright") if shutil.which(name))
 
 

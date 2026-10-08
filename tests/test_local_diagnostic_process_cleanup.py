@@ -52,14 +52,7 @@ class LocalDiagnosticProcessCleanupTests(unittest.TestCase):
 
             # The provider runs fenced to its snapshot (#2036), so its
             # children are found by the token in their argv, not a pid file.
-            listing = subprocess.run(
-                ["ps", "-Ao", "pid=,command="], check=True, capture_output=True, text=True
-            ).stdout
-            alive = [
-                int(line.split(None, 1)[0])
-                for line in listing.splitlines()
-                if self._CHILD_TOKEN in line
-            ]
+            alive = self._token_processes()
             for pid in alive:
                 os.kill(pid, signal.SIGKILL)
 
@@ -104,6 +97,33 @@ class LocalDiagnosticProcessCleanupTests(unittest.TestCase):
                 msg=f"termination diagnostic: {owner.termination_diagnostic!r}",
             )
             self.assertTrue(process_absent(child_pid))
+
+    def _token_processes(self) -> list[int]:
+        # `ww`: an unbounded command column, so a truncated line (procps
+        # honours COLUMNS) cannot hide the token and pass vacuously.
+        listing = subprocess.run(
+            ["ps", "-Aww", "-o", "pid=,command="], check=True, capture_output=True, text=True
+        ).stdout
+        return [
+            int(line.split(None, 1)[0])
+            for line in listing.splitlines()
+            if self._CHILD_TOKEN in line
+        ]
+
+    @requires_posix
+    def test_the_token_listing_sees_a_live_token_process(self) -> None:
+        """Positive control for the listing the reaping test relies on."""
+        control = subprocess.Popen(
+            [sys.executable, "-c", "import time; time.sleep(60)", self._CHILD_TOKEN],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        try:
+            self.assertIn(control.pid, self._token_processes())
+        finally:
+            control.kill()
+            control.wait(timeout=10)
 
     def _repository(self, root: Path) -> tuple[Path, str, str]:
         repo = root / "repo"
