@@ -358,9 +358,13 @@ Paths are workspace-relative only. A path outside the workspace root, the root
 itself, a relative path when the session recorded no cwd, a `~` path, a
 URL-like value, one with control characters, one over 4096 characters, or a
 non-string argument is left out and counted under its reason; its value never
-reaches the payload or the text. Containment is judged by the path's spelling
-after `..` is collapsed: symlinks are not resolved and no named file is read or
-stat'ed. A compaction re-persists rows, so a call is one distinct call id per
+reaches the payload or the text. Containment is judged first by the path's
+spelling after `..` is collapsed, then through its symlinks: a path inside the
+workspace by its spelling whose links lead outside it, such as `linked/notes.md`
+when `linked` points elsewhere, is left out as `symlink_escape`. The links are
+resolved when the query runs, reading link metadata only; no named file is
+opened or read. So the verdict reflects the links as they stand at query time,
+and on a machine without the workspace the spelling alone decides. A compaction re-persists rows, so a call is one distinct call id per
 session, the first row by id deciding both its arguments and its result.
 
 A session with no file calls is an observation and exits 0. A missing

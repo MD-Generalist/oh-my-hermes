@@ -4,6 +4,15 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **File activity fails closed on symlink escapes.** `omh quality-evidence
+  file-activity` judged workspace containment by a path's spelling only, so a
+  symlink inside the workspace that points outside it, such as `linked/notes.md`
+  with `linked` leading elsewhere, was listed under its in-workspace spelling
+  (#1813). The path's links are now resolved when the query runs, reading link
+  metadata only and never a named file, and a path they lead outside the
+  workspace is left out and counted under the new `symlink_escape` reason. A
+  link that stays inside the workspace keeps its declared spelling, and a
+  workspace reached through a link of its own still lists its files.
 - **Memory reads French.** Recall tokenization treated every accented Latin
   letter as a separator, so `déploiement` indexed as `ploiement` and
   `préférence` as `pr` + `rence`; a query typed without accents never

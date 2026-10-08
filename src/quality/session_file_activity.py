@@ -16,8 +16,12 @@ never from wording: a call with no recorded result, an unknown effect, or a
 result without a success field is ``unknown``, so a submitted path is never
 presented as a successful write. Paths are shown workspace-relative only; a
 path outside the workspace, or one that cannot be placed against it, is
-omitted and counted by reason, never shown. The database is opened
-``mode=ro`` and no file named in a call is read or stat'ed.
+omitted and counted by reason, never shown. A path inside the workspace by its
+spelling is also omitted when a symlink on it leads outside the workspace:
+the links are resolved at query time (``os.path.realpath``, link metadata
+only), so the verdict reflects the links as they stand when the query runs.
+The database is opened ``mode=ro`` and no file named in a call is opened or
+read.
 
 A compaction re-persists assistant and tool rows under new ids, so a call is
 one distinct call id per session, the first row by id deciding both its
@@ -43,6 +47,7 @@ OUTCOMES: tuple[str, ...] = ("succeeded", "failed", "unknown")
 OPERATIONS: tuple[str, ...] = ("read", "write", "update", "add", "delete", "move_from", "move_to")
 OMISSION_REASONS: tuple[str, ...] = (
     "outside_workspace",
+    "symlink_escape",
     "workspace_unknown",
     "relative_without_cwd",
     "home_relative",
@@ -57,7 +62,8 @@ MAX_PATH_CHARS = 4096
 SESSION_FILE_ACTIVITY_CLAIM_BOUNDARY = (
     "Session file activity is a read-only projection of the file-tool calls one Hermes session "
     "persisted to its own session store. A path is the one the call declared, shown only when it "
-    "lies inside the workspace by its spelling (symlinks are not resolved and no file is read). "
+    "lies inside the workspace by its spelling and through every symlink on it as the links stand at "
+    "query time (link metadata only; no named file is opened or read). "
     "`succeeded` means Hermes recorded a result whose own fields report success; it is not "
     "file-content, diff, test, review, CI, or merge evidence."
 )
@@ -75,6 +81,8 @@ _OUTCOME_RULES: dict[str, str] = {
     "timestamps": "the issuing assistant row's timestamp, as UTC",
     "workspace": "--workspace, else the session's git_repo_root, else its cwd (Hermes' own workspace key); "
     "a relative path is placed against the session's cwd",
+    "symlinks": "a path inside the workspace by its spelling whose symlinks, resolved at query time, lead "
+    "outside the workspace is omitted as symlink_escape",
 }
 
 # Hermes' V4A markers (tools/patch_parser.py): a marker is the whole line.
@@ -132,6 +140,7 @@ def build_session_file_activity(
 
     cwd = _clean_dir(session_row.get("cwd"))
     root, basis = _workspace_root(workspace, session_row, cwd)
+    real_root = os.path.realpath(root) if root is not None else None
 
     results: dict[str, tuple[str, Any, Any]] = {}
     for call_key, tool_name, content, disposition in result_rows:
@@ -152,7 +161,7 @@ def build_session_file_activity(
             omitted["malformed"] += 1
             continue
         for raw_path, operation in targets:
-            relative, reason = _workspace_relative(raw_path, root, cwd)
+            relative, reason = _workspace_relative(raw_path, root, real_root, cwd)
             if relative is None:
                 omitted[reason] += 1
                 continue
@@ -379,7 +388,7 @@ def _unsafe_reason(value: str) -> str | None:
     return None
 
 
-def _workspace_relative(raw: Any, root: str | None, cwd: str | None) -> tuple[str | None, str]:
+def _workspace_relative(raw: Any, root: str | None, real_root: str | None, cwd: str | None) -> tuple[str | None, str]:
     """``(relative path, "")`` inside the workspace, else ``(None, reason)``; never the raw value."""
     if not isinstance(raw, str) or not raw.strip():
         return None, "malformed"
@@ -397,13 +406,19 @@ def _workspace_relative(raw: Any, root: str | None, cwd: str | None) -> tuple[st
         absolute = os.path.normpath(os.path.join(cwd, text))
     else:
         return None, "relative_without_cwd"
-    try:
-        common = os.path.commonpath([os.path.normcase(root), os.path.normcase(absolute)])
-    except ValueError:
+    if not _within(root, absolute) or os.path.normcase(absolute) == os.path.normcase(root):
         return None, "outside_workspace"
-    if common != os.path.normcase(root) or os.path.normcase(absolute) == os.path.normcase(root):
-        return None, "outside_workspace"
+    # Both sides resolved, so a workspace reached through a link of its own still contains its files.
+    if real_root is not None and not _within(real_root, os.path.realpath(absolute)):
+        return None, "symlink_escape"
     return os.path.relpath(absolute, root).replace(os.sep, "/"), ""
+
+
+def _within(root: str, path: str) -> bool:
+    try:
+        return os.path.commonpath([os.path.normcase(root), os.path.normcase(path)]) == os.path.normcase(root)
+    except ValueError:
+        return False
 
 
 def _record(files: dict[str, dict[str, Any]], path: str, operation: str, outcome: str, at: float | None) -> None:
