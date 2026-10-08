@@ -198,7 +198,11 @@ class WorkspacePreflightIndexWriteTests(unittest.TestCase):
             _git(repo, "worktree", "add", "-q", "-b", "agent/unit", str(worktree))
             decoy = root / "decoy.git"
             _git(root, "clone", "-q", "--bare", str(repo), str(decoy))
-            (worktree / ".git").write_text(f"gitdir: {decoy}\n", encoding="utf-8")
+            # Git for Windows marks the `.git` file hidden, and Windows refuses
+            # to truncate a hidden file, so it is replaced rather than rewritten.
+            # A forward-slash absolute path is a valid gitfile target everywhere.
+            (worktree / ".git").unlink()
+            (worktree / ".git").write_text(f"gitdir: {decoy.as_posix()}\n", encoding="utf-8")
             self.assertEqual(Path(_git(worktree, "rev-parse", "--absolute-git-dir")).resolve(), decoy.resolve())
             seen_before_git_index_write: list[str] = []
             index_written = False
