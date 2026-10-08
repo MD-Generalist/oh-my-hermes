@@ -17,6 +17,7 @@ from omh.coding.hermes_model_config import (  # noqa: E402
     ConfigDigestMismatchError,
     HermesCommandError,
     HermesModelConfigError,
+    _auth_provider_ids,
     apply_hermes_model_config,
     inspect_hermes_model_config,
     preview_hermes_model_config,
@@ -67,8 +68,13 @@ elif args[:2] == ["auth", "list"]:
     if not os.environ.get("HERMES_AUTH_MISSING"):
         print("alpha (1 credentials):")
         print("SECRET_VALUE_MUST_NOT_ESCAPE")
+        for line in json.loads(os.environ.get("HERMES_AUTH_LIST_EXTRA", "[]")):
+            print(line)
 elif args[:2] == ["auth", "status"]:
-    present = args[2] == "alpha" and not os.environ.get("HERMES_AUTH_MISSING")
+    present = (
+        args[2] in {"alpha", *os.environ.get("HERMES_AUTH_STATUS_OK", "").split(",")}
+        and not os.environ.get("HERMES_AUTH_MISSING")
+    )
     raise SystemExit(0 if present else 1)
 elif args[:2] == ["config", "set"]:
     failure_marker = home / "mutation-failed"
@@ -386,6 +392,121 @@ class HermesModelConfigTests(unittest.TestCase):
             )
 
         self.assertNotIn("new", self.state()["model"]["aliases"])
+
+    def custom_pool_inspection(self, *, configured: bool = True):
+        # Issue #1998's machine: model.provider is custom, the gateway is a
+        # legacy custom_providers entry, and `hermes auth list` prints its pool
+        # under the composed `custom:<name>` id (verbatim from the report).
+        state = self.state()
+        state["model"]["provider"] = "custom"
+        if configured:
+            state["custom_providers"] = [
+                {"name": "9router", "base_url": "http://localhost:20128/v1", "key_env": "ROUTER_KEY"}
+            ]
+        self.config.write_text(json.dumps(state, sort_keys=True), encoding="utf-8")
+        env = {
+            **self.env,
+            "HERMES_AUTH_LIST_EXTRA": json.dumps(
+                [
+                    "custom:9router (2 credentials):",
+                    "  #1  model_config         api_key id=9e6622 priority=0 model_config ←",
+                    "  #2  api-key-2            api_key id=7992e4 priority=1 manual",
+                ]
+            ),
+            # Hermes' `auth status` resolves both spellings to the same pool.
+            "HERMES_AUTH_STATUS_OK": "9router,custom:9router",
+        }
+        return inspect_hermes_model_config(hermes=str(self.hermes), env=env)
+
+    def test_auth_list_parses_the_composed_custom_pool_header(self) -> None:
+        # Given: header lines as `hermes auth list` prints them (issue #1998).
+        output = "\n".join(
+            [
+                "nous (1 credentials):",
+                "openai-codex (1 credentials):",
+                "custom:9router (2 credentials):",
+                "  #1  model_config         api_key id=9e6622 priority=0 model_config ←",
+                "custom:together.ai (1 credentials):",
+            ]
+        )
+
+        # When/Then: built-in ids and composed custom pool ids are both observed.
+        self.assertEqual(
+            _auth_provider_ids(output),
+            {"nous", "openai-codex", "custom:9router", "custom:together.ai"},
+        )
+
+    def test_auth_list_refuses_colon_headers_outside_the_custom_pool_shape(self) -> None:
+        # Given: headers that carry a colon but are not `custom:<name>`.
+        secret = "sk-" + ("c" * 24)
+        output = "\n".join(
+            [
+                "foo:bar (1 credentials):",
+                "custom:9router:extra (1 credentials):",
+                "custom: (1 credentials):",
+                "custom:9router/evil (1 credentials):",
+                "https://evil.example (1 credentials):",
+                "nous: free tier",
+                f"custom:{secret} (1 credentials):",
+            ]
+        )
+
+        # When/Then: none of them is observed as a provider id.
+        self.assertEqual(_auth_provider_ids(output), set())
+
+    def test_custom_pool_auth_binds_alias_under_the_configured_provider_name(self) -> None:
+        # Given: the custom-pool machine from issue #1998.
+        inspection = self.custom_pool_inspection()
+        providers = {item.provider_id: item for item in inspection.providers}
+
+        # Then: both the pool id and the configured name carry the observed auth.
+        self.assertTrue(providers["custom:9router"].auth_present)
+        self.assertTrue(providers["9router"].auth_present)
+        self.assertTrue(providers["9router"].auth_status_ok)
+        self.assertFalse(providers["custom"].auth_present)
+
+        # When: aliases target the gateway by its configured name or pool id.
+        preview = preview_hermes_model_config(
+            inspection,
+            {"main": "9router/clv/kimi-k3", "pool": "custom:9router/clv/kimi-k3"},
+        )
+
+        # Then: both bind, written exactly as Hermes resolves them.
+        self.assertEqual(
+            preview.commands,
+            (
+                (str(self.hermes), "config", "set", "model.aliases.main", "9router/clv/kimi-k3"),
+                (str(self.hermes), "config", "set", "model.aliases.pool", "custom:9router/clv/kimi-k3"),
+            ),
+        )
+
+    def test_bare_custom_target_is_refused_with_the_named_provider_reason(self) -> None:
+        # Given: the custom-pool machine from issue #1998.
+        inspection = self.custom_pool_inspection()
+
+        # When/Then: bare `custom` names no endpoint, and the refusal says so.
+        for target in ("custom/clv/kimi-k3", "custom/9router/clv/kimi-k3"):
+            with self.subTest(target=target):
+                with self.assertRaisesRegex(
+                    HermesModelConfigError, "bare 'custom'.*'<name>/<model>'"
+                ):
+                    preview_hermes_model_config(inspection, {"main": target})
+
+        # And: an unknown prefix still refuses as missing provider auth.
+        with self.assertRaisesRegex(HermesModelConfigError, "lacks safe observed provider auth"):
+            preview_hermes_model_config(inspection, {"main": "clv/kimi-k3"})
+
+    def test_custom_pool_without_configured_provider_does_not_authorize(self) -> None:
+        # Given: a `custom:9router` pool left behind with no custom_providers entry.
+        inspection = self.custom_pool_inspection(configured=False)
+
+        # When/Then: neither spelling binds, since Hermes would route it nowhere.
+        for target in ("9router/clv/kimi-k3", "custom:9router/clv/kimi-k3"):
+            with self.subTest(target=target):
+                with self.assertRaisesRegex(
+                    HermesModelConfigError, "lacks safe observed provider auth"
+                ):
+                    preview_hermes_model_config(inspection, {"main": target})
 
 
 if __name__ == "__main__":
