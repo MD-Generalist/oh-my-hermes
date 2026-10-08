@@ -273,6 +273,9 @@ def sandbox_command(
     macos_write_data_literals: Sequence[Path] = (),
     write_literals: Sequence[Path] = (),
     macos_mach_lookup_names: Sequence[str] = (),
+    # Read-only POSIX shared memory by name prefix. Reading a shared-memory
+    # region writes nothing, on disk or in it.
+    macos_ipc_posix_shm_read_prefixes: Sequence[str] = (),
     allow_broad_file_read: bool = False,
     # A write root is not screened as a read root: this is an explicit execution
     # allowance, while `read_roots_are_safe` protects data exposed to a child.
@@ -345,8 +348,12 @@ def sandbox_command(
             f'(allow mach-lookup (global-name {json.dumps(name)}))'
             for name in macos_mach_lookup_names
         )
+        shm_read = "".join(
+            f'(allow ipc-posix-shm-read-data (ipc-posix-name-prefix {json.dumps(prefix)}))'
+            for prefix in macos_ipc_posix_shm_read_prefixes
+        )
         network = "(allow network*)" if allow_network else ""
-        policy = f'(version 1)(deny default)(deny syscall-unix (syscall-number 147 82))(allow process-fork){process_exec}(allow sysctl-read){file_read}{write_data_literals}{write_literal_policy}(allow file-write* {write_subpaths}){write_root_pin}{mach_lookup}{network}'
+        policy = f'(version 1)(deny default)(deny syscall-unix (syscall-number 147 82))(allow process-fork){process_exec}(allow sysctl-read){file_read}{write_data_literals}{write_literal_policy}(allow file-write* {write_subpaths}){write_root_pin}{mach_lookup}{shm_read}{network}'
         return ("/usr/bin/sandbox-exec", "-p", policy, *argv)
     tool = _trusted_bwrap(backend_digest)
     assert tool is not None

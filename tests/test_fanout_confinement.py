@@ -630,6 +630,54 @@ class FanoutConfinementPolicyTests(unittest.TestCase):
             {"PATH": "/usr/bin", "OMH_MARK": "present", "TMPDIR": str(worktree / ".omh" / "confinement-tmp")},
         )
 
+    def test_seatbelt_profile_adds_only_the_preference_read_ipc_and_no_write(self) -> None:
+        # #1996: Codex fails startup when CFPreferencesAppSynchronize returns
+        # false. The fence adds the cfprefsd lookups and read-only cfprefs
+        # shared memory, and the profile is otherwise byte-identical.
+        worktree = Path("/tmp/fanout-seatbelt-worktree")
+        state = Path("/tmp/fanout-seatbelt-state")
+        child = ChildContext(
+            worktree, worktree, worktree, worktree, worktree,
+            worktree / "request", worktree / "artifact", "fanout-filesystem-confinement",
+        )
+        confinement = FanoutFilesystemConfinement(
+            selected="sandbox-exec",
+            roots=(worktree, Path("/bin")),
+            write_roots=(worktree, state),
+            write_literals=(state / "state.json",),
+            child=child,
+            environment={"PATH": "/usr/bin"},
+            backend_digest="digest",
+            executables={"/bin/sh": "/bin/sh"},
+            receipt={"enforced": True},
+        )
+        command = confinement.command(("/bin/sh", "-c", "exit 0"))
+        assert command is not None
+        policy = command[2]
+        added = (
+            '(allow mach-lookup (global-name "com.apple.cfprefsd.daemon"))'
+            '(allow mach-lookup (global-name "com.apple.cfprefsd.agent"))'
+            '(allow ipc-posix-shm-read-data (ipc-posix-name-prefix "apple.cfprefs."))'
+        )
+        self.assertEqual(policy.count(added), 1)
+        without_preferences = sandbox_command(
+            ("/bin/sh", "-c", "exit 0"), "sandbox-exec", confinement.roots, child, True,
+            confinement.environment, "digest",
+            allow_broad_process_exec=True,
+            macos_write_data_literals=(Path("/dev/null"),),
+            write_literals=confinement.write_literals,
+            macos_mach_lookup_names=("com.apple.securityd.xpc", "com.apple.SecurityServer"),
+            allow_broad_file_read=True,
+            write_roots=confinement.write_roots,
+            inherit_environment=True,
+            write_paths_resolved=True,
+        )[2]
+        # Removing exactly the three rules restores the previous profile, so no
+        # file-write, process, or other IPC allowance moved with them.
+        self.assertEqual(policy.replace(added, ""), without_preferences)
+        # cfprefsd refuses a write from a client whose sandbox lacks this.
+        self.assertNotIn("user-preference", policy)
+
 
 @unittest.skipUnless(sys.platform == "darwin", "sandbox-exec confinement is exercised on macOS")
 class FanoutFilesystemConfinementTests(_ConfinedSpawnContract, unittest.TestCase):
@@ -704,6 +752,65 @@ class FanoutFilesystemConfinementTests(_ConfinedSpawnContract, unittest.TestCase
             self.assertTrue(source.is_file())
             self.assertFalse((linked_outside / "file").exists())
             self.assertFalse((unrelated_repo / "file").exists())
+
+    def test_preferences_synchronize_inside_the_fence_and_preference_writes_stay_refused(self) -> None:
+        # #1996: the exact CoreFoundation call Codex makes at startup, after the
+        # managed-key query that makes it reach the preferences daemon.
+        script = r'''
+import ctypes, sys
+cf = ctypes.CDLL("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation")
+cf.CFStringCreateWithCString.restype = ctypes.c_void_p
+cf.CFStringCreateWithCString.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_uint32]
+cf.CFPreferencesAppValueIsForced.restype = ctypes.c_bool
+cf.CFPreferencesAppValueIsForced.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+cf.CFPreferencesAppSynchronize.restype = ctypes.c_bool
+cf.CFPreferencesAppSynchronize.argtypes = [ctypes.c_void_p]
+cf.CFPreferencesSetAppValue.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p]
+def string(value):
+    return cf.CFStringCreateWithCString(None, value.encode(), 0x08000100)
+codex = string("com.openai.codex")
+cf.CFPreferencesAppValueIsForced(string("config_toml_base64"), codex)
+print("synchronize=%s" % cf.CFPreferencesAppSynchronize(codex))
+domain = string(sys.argv[1])
+cf.CFPreferencesSetAppValue(string("written"), string("written"), domain)
+print("write_synchronize=%s" % cf.CFPreferencesAppSynchronize(domain))
+'''
+        domain = f"ai.omh.fence-probe-{os.getpid()}"
+        plist = Path.home() / "Library" / "Preferences" / f"{domain}.plist"
+        argv = (sys.executable, "-I", "-c", script, domain)
+        defaults_argv = ("/bin/sh", "-c", f"/usr/bin/defaults write {domain} k v")
+        with TemporaryDirectory() as temporary:
+            worktree = Path(temporary).resolve() / "worktree"
+            worktree.mkdir()
+            confinement = prepare_fanout_filesystem_confinement(
+                # Dispatch keeps HOME (fanout_environment); without it this call
+                # still fails inside the fence, a case no dispatch reaches.
+                worktree, {"PATH": "/usr/bin:/bin", "HOME": str(Path.home())}, (argv, defaults_argv)
+            )
+            self.assertTrue(confinement.receipt["enforced"])
+            command = confinement.command(argv)
+            defaults_command = confinement.command(defaults_argv)
+            assert command is not None and defaults_command is not None
+            try:
+                completed = subprocess.run(
+                    command, cwd=worktree, env=confinement.command_environment(),
+                    text=True, capture_output=True, check=False, timeout=60,
+                )
+                defaults = subprocess.run(
+                    defaults_command, cwd=worktree, env=confinement.command_environment(), capture_output=True, check=False,
+                )
+            finally:
+                # cfprefsd may hold a write before flushing it to the plist.
+                read_back = subprocess.run(("/usr/bin/defaults", "read", domain), capture_output=True, check=False)
+                plist_written = read_back.returncode == 0 or plist.exists()
+                if plist_written:
+                    _ = subprocess.run(("/usr/bin/defaults", "delete", domain), capture_output=True, check=False)
+                    plist.unlink(missing_ok=True)
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertIn("synchronize=True", completed.stdout.splitlines())
+            self.assertIn("write_synchronize=False", completed.stdout.splitlines())
+            self.assertNotEqual(defaults.returncode, 0)
+            self.assertFalse(plist_written)
 
     def test_seatbelt_literal_replacement_does_not_grant_descendant_writes(self) -> None:
         with TemporaryDirectory() as temporary:
