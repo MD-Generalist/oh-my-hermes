@@ -4,6 +4,20 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **Fenced dispatcher git gets no credentials and no network.** Git the
+  dispatcher ran in a unit worktree inside a fence (the unit's own since
+  #1995, the narrow one #2034 added for `fanout status`, the claim and reuse
+  probes and `--diagnostics`) still ran with the operator's whole environment
+  and the network allowed, so a `core.fsmonitor`, filter or hook the unit
+  planted could read a token the unit itself was denied and send it out
+  (#2035). Those calls now run with the network denied and an environment of
+  `PATH`, `HOME`, `XDG_CONFIG_HOME`, the locale, the fence's `TMPDIR` and
+  `GIT_OPTIONAL_LOCKS=0`, `GIT_TERMINAL_PROMPT=0`, `GIT_NO_LAZY_FETCH=1`;
+  every other `GIT_*` is dropped. An unfenced run under `--allow-unconfined`,
+  which a unit can force, gets the same environment with the operator's own
+  temporary directory (and, on Windows, the system and profile variables git
+  needs to start); it has no fence to deny the network with. Checks run for
+  the unit keep the unit's network and environment.
 - **File activity fails closed on symlink escapes.** `omh quality-evidence
   file-activity` judged workspace containment by a path's spelling only, so a
   symlink inside the workspace that points outside it, such as `linked/notes.md`

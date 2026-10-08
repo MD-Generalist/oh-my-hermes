@@ -172,6 +172,9 @@ class FanoutFilesystemConfinement:
     # whose receipt is not enforced; it is what lets a caller run a command
     # `command` returned None for, and nothing else may (#1982).
     unconfined_allowed: bool = False
+    # Off for fences whose commands only read local state: dispatcher git
+    # (#2035) and a diagnostics analyzer (#2036).
+    allow_network: bool = True
 
     def command(self, argv: Sequence[str]) -> tuple[str, ...] | None:
         """Return the same-root sandbox command, or None when no receipt proved it."""
@@ -198,6 +201,35 @@ class FanoutFilesystemConfinement:
         directory. None when no receipt proved the fence or the executable
         cannot be located; a caller must not run the command unfenced instead.
         """
+        located = self._dispatcher_executable(argv, path)
+        return None if located is None else self._fenced(located, argv)
+
+    def dispatcher_git_command(
+        self, argv: Sequence[str], environment: Mapping[str, str] | None = None
+    ) -> tuple[tuple[str, ...], dict[str, str]] | None:
+        """Fence git the dispatcher runs for ITSELF in this unit's worktree, and its environment.
+
+        What `dispatcher_command` returns keeps the network and the spawn keeps
+        the dispatcher's environment, which a check run for the unit may need.
+        Git the dispatcher runs to read or measure the worktree needs neither,
+        and a program the unit planted for it (`core.fsmonitor`, a filter, a
+        hook) inherits both (#2035). So this command has no network, and the
+        returned environment, which the caller must spawn it with, is
+        `dispatcher_git_environment`: no credential and no other `GIT_*`.
+        `environment` is the caller's own spawn environment; only its
+        `GIT_INDEX_FILE` is carried over. None when no receipt proved the fence
+        or git cannot be located; a caller must not run the command unfenced.
+        """
+        located = self._dispatcher_executable(argv, None)
+        if located is None:
+            return None
+        assert self.child is not None
+        git_environment = dispatcher_git_environment(self.child.work / _FANOUT_TOOLCHAIN_TEMP_DIRECTORY, environment)
+        # The unit's own fence keeps the network for the unit and its checks;
+        # only this command is built without it.
+        return replace(self, allow_network=False)._fenced(located, argv), git_environment
+
+    def _dispatcher_executable(self, argv: Sequence[str], path: str | None) -> str | None:
         if self.receipt.get("enforced") is not True or not argv or self.child is None:
             return None
         name = str(argv[0])
@@ -212,9 +244,7 @@ class FanoutFilesystemConfinement:
                 entry if os.path.isabs(entry) else str(work / entry) for entry in search.split(os.pathsep) if entry
             )
             located = shutil.which(name, path=anchored)
-        if located is None:
-            return None
-        return self._fenced(str(Path(located).resolve()), argv)
+        return None if located is None else str(Path(located).resolve())
 
     def _fenced(self, executable: str, argv: Sequence[str]) -> tuple[str, ...]:
         assert self.child is not None
@@ -223,7 +253,7 @@ class FanoutFilesystemConfinement:
             self.selected,
             self.roots,
             self.child,
-            True,
+            self.allow_network,
             self.environment,
             self.backend_digest,
             allow_broad_process_exec=True,
@@ -253,6 +283,48 @@ class FanoutFilesystemConfinement:
             **selected_environment,
             "TMPDIR": str(self.child.work / _FANOUT_TOOLCHAIN_TEMP_DIRECTORY),
         }
+
+
+# What git the dispatcher runs for itself in a unit worktree keeps of the
+# dispatcher's environment (#2035): where to find programs and the user's git
+# config, the locale, and the temporary directory. Everything else -- tokens,
+# agent sockets, every other `GIT_*` -- is dropped, so a program the unit
+# planted for that git call cannot read it. Windows git also needs its system
+# and profile directories to start and to find the user's config.
+_DISPATCHER_GIT_ENVIRONMENT_KEYS = ("PATH", "HOME", "XDG_CONFIG_HOME", "LANG", "LANGUAGE", "TMPDIR")
+_DISPATCHER_GIT_WINDOWS_ENVIRONMENT_KEYS = (
+    "SYSTEMROOT", "WINDIR", "COMSPEC", "PATHEXT", "USERPROFILE", "HOMEDRIVE", "HOMEPATH", "TEMP", "TMP",
+)
+
+
+def dispatcher_git_environment(
+    temporary_directory: Path | None = None, caller_environment: Mapping[str, str] | None = None
+) -> dict[str, str]:
+    """The whole environment of git the dispatcher runs in a unit's worktree (#2035).
+
+    Fenced or not: a run the operator let go unfenced (`--allow-unconfined`)
+    is still git in a worktree the unit wrote. `temporary_directory` is the
+    fence's scratch directory, since the operator's own is outside every write
+    root; unfenced, the operator's is kept. No lazy fetch: a dispatcher read
+    has no reason to reach a remote, and inside a fence it has no network.
+    Of `caller_environment`, the environment the caller built for this spawn,
+    only `GIT_INDEX_FILE` is carried over: the workspace preflight names its
+    temporary index there.
+    """
+    keys = _DISPATCHER_GIT_ENVIRONMENT_KEYS
+    if os.name == "nt":
+        keys += _DISPATCHER_GIT_WINDOWS_ENVIRONMENT_KEYS
+    environment = {
+        key: value for key, value in os.environ.items()
+        if key.upper() in keys or key.upper().startswith("LC_")
+    }
+    if temporary_directory is not None:
+        environment["TMPDIR"] = str(temporary_directory)
+    environment.update(GIT_OPTIONAL_LOCKS="0", GIT_TERMINAL_PROMPT="0", GIT_NO_LAZY_FETCH="1")
+    index_file = None if caller_environment is None else caller_environment.get("GIT_INDEX_FILE")
+    if index_file:
+        environment["GIT_INDEX_FILE"] = index_file
+    return environment
 
 
 # Diagnostics only (why a unit got no git write root). Never read for a security decision.
@@ -580,9 +652,11 @@ def prepare_dispatcher_git_fence(worktree: Path, *, allow_unconfined: bool = Fal
     # A program name for the preparation to resolve, not an argv: each caller
     # spells its own git subcommand as a literal for the no-remote-mutation gate.
     git_program = "git"
-    return prepare_fanout_filesystem_confinement(
+    fence = prepare_fanout_filesystem_confinement(
         worktree, dict(os.environ), ((git_program,),), allow_unconfined=allow_unconfined,
     )
+    # Only dispatcher git runs in this fence, and it reads local state (#2035).
+    return replace(fence, allow_network=False)
 
 
 def _prepare_fanout_filesystem_confinement(

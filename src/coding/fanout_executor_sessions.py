@@ -426,20 +426,23 @@ def observe_session_workspace(
     unconfined (#1999).
     """
     root = Path(path)
-    environment = {key: value for key, value in os.environ.items() if not key.startswith('GIT_')}
-    environment.update(GIT_OPTIONAL_LOCKS='0', GIT_TERMINAL_PROMPT='0')
+    from .fanout_confinement import dispatcher_git_environment
+
+    # Unfenced too: the worktree is still the unit's (#2035).
+    environment = dispatcher_git_environment()
     fenced = confinement is not None and confinement.receipt.get('enforced') is True
     if confinement is not None and not fenced and not confinement.unconfined_allowed:
         return None
 
     def probe(argv: list[str]) -> tuple[bytes | None, str]:
-        if fenced:
-            assert confinement is not None
-            command = confinement.dispatcher_command(argv)
-            if command is None:
-                return None, 'probe_fence_unavailable'
-            argv = list(command)
-        return bounded_session_probe(argv, cwd=str(root), env=environment)
+        if not fenced:
+            return bounded_session_probe(argv, cwd=str(root), env=environment)
+        assert confinement is not None
+        # No network and only the environment git needs (#2035).
+        command = confinement.dispatcher_git_command(argv)
+        if command is None:
+            return None, 'probe_fence_unavailable'
+        return bounded_session_probe(list(command[0]), cwd=str(root), env=command[1])
 
     try:
         root = root.resolve(strict=True)
