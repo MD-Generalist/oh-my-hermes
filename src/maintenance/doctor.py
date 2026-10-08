@@ -2301,6 +2301,13 @@ def _plugin_omh_home_binding_check(paths: OmhPaths, config_text: str) -> Check:
     the store the install was made at (#1960). A warning, not a blocker:
     Hermes may well be started with `OMH_HOME` exported, which doctor cannot
     see from here.
+
+    Binding the right store with nothing named is only half an answer: a
+    multiplexed process (a gateway serving several profiles, Desktop
+    `serve`) reads neither the process `OMH_HOME` nor `~/.omh`, and refuses
+    to load the plugin for a home that names no store in its setting or its
+    own `.env`. A default-store install set up before #2037 is exactly that,
+    and passed here while no `omh_*` tool registered in any of them.
     """
     config_path = paths.hermes_config_path
     repair = (
@@ -2321,6 +2328,21 @@ def _plugin_omh_home_binding_check(paths: OmhPaths, config_text: str) -> Check:
             severity="warning",
             observed=False,
             next_action=f"Fix `plugins.entries.omh.settings.omh_home` in {config_path}, then rerun `omh doctor`.",
+        )
+    if bound == paths.omh_home and not found and not env_key_names(paths.hermes_home, allowed=("OMH_HOME",)):
+        return Check(
+            "plugin_omh_home_binding",
+            True,
+            (
+                f"the plugin in {paths.hermes_home} names no OMH home: it binds {paths.omh_home} as its own "
+                "Hermes process, but a multiplexed one (a gateway serving several profiles, Desktop `serve`) "
+                "refuses to load it"
+            ),
+            severity="warning",
+            next_action=(
+                f"Run `omh --omh-home {paths.omh_home} --hermes-home {paths.hermes_home} update` to record "
+                f"`plugins.entries.omh.settings.omh_home` in {config_path}, then restart the gateway."
+            ),
         )
     if bound == paths.omh_home:
         return Check(
@@ -2362,11 +2384,12 @@ def _profile_omh_home_binding_checks(paths: OmhPaths) -> list[Check]:
     `_external_dir_ambiguity_checks` does; each a warning with `ok=True`,
     because the primary home does not share it.
 
-    A profile that names no store, under a primary whose store is not
-    `~/.omh`: its managed skills, widget and skin come from the primary's
-    store, but with neither a `settings.omh_home` nor an `.env` `OMH_HOME`
-    its plugin binds `~/.omh` when the profile runs as its own Hermes
-    process, and is refused in a multiplexed one (#1967).
+    A profile that names no store, under any primary: with neither a
+    `settings.omh_home` nor an `.env` `OMH_HOME` its plugin is refused in a
+    multiplexed process (#2037), and under a primary whose store is not
+    `~/.omh` it binds `~/.omh` when the profile runs as its own Hermes
+    process while its managed skills, widget and skin come from the
+    primary's store (#1967).
 
     A profile whose `.env` names `OMH_HOME` beside a `settings.omh_home` OMH
     did not write, under any primary: the setting outranks the `.env` in the
@@ -2408,15 +2431,20 @@ def _profile_omh_home_binding_checks(paths: OmhPaths) -> list[Check]:
                 )
             )
             continue
-        if paths.omh_home == unset or found or env_names_store:
+        if found or env_names_store:
             continue
         checks.append(
             Check(
                 f"plugin_omh_home_binding:{name}",
                 True,
                 (
-                    f"bot profile {name} names no OMH home, so its plugin binds {unset} "
-                    f"while its managed skills come from {paths.omh_home}"
+                    f"bot profile {name} names no OMH home, so a multiplexed Hermes process (a gateway serving "
+                    "several profiles, Desktop `serve`) refuses to load its plugin"
+                    + (
+                        ""
+                        if paths.omh_home == unset
+                        else f", and as its own process it binds {unset} while its managed skills come from {paths.omh_home}"
+                    )
                 ),
                 severity="warning",
                 next_action=(

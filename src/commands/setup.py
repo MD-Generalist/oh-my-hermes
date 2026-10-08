@@ -101,7 +101,6 @@ from ..menubar_app import is_managed_menubar_install, setup_menubar_app, uninsta
 from ..mcp.host_config import install_mcp_host_config
 from ..mcp_bridge import MCP_HOST_CONFIG_RECIPE_HOSTS
 from ..paths import OmhPaths, managed_command_venv_dir, managed_current_workflow_pack_dir, managed_generation_for_executable
-from ..plugin_bundle.omh import runtime_paths
 from ..plugin_bundle.omh.metadata import MEMORY_PROVIDER_NAME
 from ..plugin_bundle.omh.provider_detection import (
     LINKED_SOURCE_CONFIG,
@@ -1981,12 +1980,11 @@ def _apply_result(args: argparse.Namespace, *, bind_omh_home: bool = True) -> di
     says OMH wrote (#1973). A profile that chose through its own
     `settings.omh_home` is kept by the unset-only writer, and one that
     chose neither is given the primary's store, which its managed skills,
-    widget and skin already come from (#1967).
+    widget and skin already come from (#1967). That holds for `~/.omh` too:
+    a single-profile process reaches it with nothing named, but a
+    multiplexed one refuses every profile that names no store (#2037).
     """
     paths = _paths(args)
-    # The store the plugin in this home would bind with nothing naming one.
-    # The default install reaches it already and stays byte-identical.
-    binds_by_default = paths.omh_home == runtime_paths.unset_launch_omh_home(paths.hermes_home)
     memory_mode = str(getattr(args, "memory_mode", "") or "") or "auto-safe"
     # One mutation, run against the text `update_config` just read and run
     # again on a retry, so a route write landing mid-pass makes this pass
@@ -2095,7 +2093,9 @@ def _apply_result(args: argparse.Namespace, *, bind_omh_home: bool = True) -> di
         # Last, and unset-only. Without it the plugin in a home installed at
         # any store but `~/.omh` binds `~/.omh` unless Hermes is started
         # with `OMH_HOME` exported, and reads another install's manifest
-        # (#1960).
+        # (#1960); and at `~/.omh` itself a multiplexed process (a gateway
+        # serving several profiles, Desktop `serve`) refuses to load it,
+        # because there a profile must name its store (#2037).
         if not bind_omh_home:
             plugin_omh_home = reclaim_plugin_omh_home(
                 memory_provider.text, previous_writes, config_path=paths.hermes_config_path
@@ -2104,14 +2104,8 @@ def _apply_result(args: argparse.Namespace, *, bind_omh_home: bool = True) -> di
                 plugin_omh_home = ConfigChange(
                     False, "a bot profile names its own store in its .env OMH_HOME", memory_provider.text
                 )
-        elif not binds_by_default:
-            plugin_omh_home = ensure_plugin_omh_home(memory_provider.text, paths.omh_home)
         else:
-            plugin_omh_home = ConfigChange(
-                False,
-                "the plugin binds this store without a setting",
-                memory_provider.text,
-            )
+            plugin_omh_home = ensure_plugin_omh_home(memory_provider.text, paths.omh_home)
         applied.update(
             {
                 "external_dir": change,

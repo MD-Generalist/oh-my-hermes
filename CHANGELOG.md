@@ -4,6 +4,23 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **A default-store install names `~/.omh` for the plugin, so multiplexed
+  processes load it.** Setup and update recorded
+  `plugins.entries.omh.settings.omh_home` only when the store was not
+  `~/.omh`. A single-profile process reaches `~/.omh` with nothing named, but
+  a multiplexed one (a gateway serving several profiles, Desktop `serve`)
+  refuses a profile that names no store, so on a Hermes home with several
+  profiles the plugin failed to load in every one of them with
+  `OMH home is not configured for this profile`, while `omh doctor` passed
+  (#2037). Setup and update now record the setting for the default store
+  too, in the primary home and in each bot profile that names no store of
+  its own; `omh update` backfills an existing install. The plugin's
+  resolver is unchanged: a profile that names no store, such as a bot
+  created after the last update, is still refused rather than handed
+  `~/.omh`. `omh doctor` now warns under `plugin_omh_home_binding` and
+  `plugin_omh_home_binding:<profile>` when a home names no store and would
+  be refused that way. Behaviour change: as with any other store, the
+  recorded setting outranks an `OMH_HOME` exported to Hermes.
 - **Fenced dispatcher git gets no credentials and no network.** Git the
   dispatcher ran in a unit worktree inside a fence (the unit's own since
   #1995, the narrow one #2034 added for `fanout status`, the claim and reuse

@@ -16,10 +16,12 @@ import json
 import os
 from pathlib import Path
 from tempfile import TemporaryDirectory
+import types
 import unittest
 from unittest.mock import patch
 
 from _cli_harness import run_cli
+from _module_patch import patch_modules
 from omh.config_adapter import ensure_plugin_omh_home, plugin_omh_home_setting, remove_plugin_omh_home
 from omh.plugin_bundle.omh import runtime_paths
 
@@ -62,17 +64,34 @@ class SetupBindsPluginHomeTests(_IsolatedHome):
         self.assertEqual(plugin_omh_home_setting(self.config()), store.as_posix())
         self.assertEqual(self.plugin_binds(), store)
 
-    def test_the_default_store_leaves_the_config_without_a_setting(self) -> None:
+    def test_the_default_store_is_recorded_too(self) -> None:
+        # A single-profile process reaches `~/.omh` with nothing named, but a
+        # multiplexed one (a gateway serving several profiles, Desktop
+        # `serve`) refuses a profile that names no store, so the default
+        # store is named like any other (#2037).
         default = self.root / ".omh"
         self.assertEqual(runtime_paths.unset_launch_omh_home(self.hermes_home), default)
 
         self.setup_at(default)
 
-        # Byte-identical to a default install before #1960: the plugin reaches
-        # this store with nothing named, so nothing is written.
-        self.assertNotIn("entries:", self.config())
-        self.assertNotIn("omh_home", self.config())
+        self.assertEqual(plugin_omh_home_setting(self.config()), default.as_posix())
         self.assertEqual(self.plugin_binds(), default)
+
+    def test_update_records_the_default_store_on_an_install_made_before_it(self) -> None:
+        default = self.root / ".omh"
+        self.setup_at(default)
+        # A default install from before #2037: registered, and no setting.
+        before = remove_plugin_omh_home(self.config(), default.as_posix())
+        self.assertTrue(before.changed, before.message)
+        self.config_path.write_text(before.text, encoding="utf-8")
+
+        status, _stdout, stderr = run_cli(
+            ["--omh-home", str(default), "--hermes-home", str(self.hermes_home), "update", "--json"],
+            output_json=False,
+        )
+
+        self.assertEqual(status, 0, stderr)
+        self.assertEqual(plugin_omh_home_setting(self.config()), default.as_posix())
 
     def test_a_setting_already_in_the_config_is_never_replaced(self) -> None:
         self.hermes_home.mkdir(parents=True)
@@ -192,15 +211,27 @@ class ProfileStoreChoiceTests(_IsolatedHome):
         self.assertNotIn("omh_home", self.profile_config(plain))
         self.assertNotIn("omh_home", self.profile_config(exported))
 
-    def test_a_default_primary_writes_no_profile_setting(self) -> None:
+    def test_a_default_primary_names_its_store_in_a_profile_with_none(self) -> None:
+        # Before #2037 nothing was written here, and every multiplexed
+        # process refused to load the plugin for this profile.
         bare = self.profile("bare", "version: 1\n")
+        default = self.root / ".omh"
 
-        self.setup_at(self.root / ".omh")
+        self.setup_at(default)
 
-        # What setup wrote to a profile before #1967: the registration keys,
-        # and no `plugins.entries` at all.
-        self.assertNotIn("entries:", self.profile_config(bare))
-        self.assertNotIn("omh_home", self.profile_config(bare))
+        self.assertEqual(plugin_omh_home_setting(self.profile_config(bare)), default.as_posix())
+
+    def test_update_records_the_default_store_on_a_profile_synced_before_it(self) -> None:
+        bare = self.profile("bare")
+        default = self.root / ".omh"
+        self.setup_at(default)
+        before = remove_plugin_omh_home(self.profile_config(bare), default.as_posix())
+        self.assertTrue(before.changed, before.message)
+        (bare / "config.yaml").write_text(before.text, encoding="utf-8")
+
+        self.update_at(default)
+
+        self.assertEqual(plugin_omh_home_setting(self.profile_config(bare)), default.as_posix())
 
     def test_update_records_the_setting_on_a_profile_synced_before_it(self) -> None:
         bare = self.profile("bare")
@@ -471,12 +502,129 @@ class DoctorProfileBindingTests(_IsolatedHome):
 
         self.assertEqual(self.doctor_rows(store), {})
 
-    def test_profiles_of_a_default_primary_are_not_reported(self) -> None:
+    def test_profiles_setup_bound_under_a_default_primary_are_not_reported(self) -> None:
         (self.hermes_home / "profiles" / "bare").mkdir(parents=True)
         store = self.root / ".omh"
         self.setup_at(store, "--with-plugin")
 
         self.assertEqual(self.doctor_rows(store), {})
+
+    def test_an_unbound_default_store_install_reports_the_multiplex_refusal(self) -> None:
+        # #2037: a default-store install made before setup named `~/.omh`.
+        # A single-profile process binds it, so every check passed, while a
+        # multiplexed one refused to load the plugin for every profile.
+        bare = self.hermes_home / "profiles" / "bare"
+        bare.mkdir(parents=True)
+        store = self.root / ".omh"
+        self.setup_at(store, "--with-plugin")
+        for config_path in (self.config_path, bare / "config.yaml"):
+            unbound = remove_plugin_omh_home(config_path.read_text(encoding="utf-8"), store.as_posix())
+            self.assertTrue(unbound.changed, unbound.message)
+            config_path.write_text(unbound.text, encoding="utf-8")
+
+        rows = self.doctor_rows(store)
+        _status, stdout, _stderr = run_cli(
+            ["--omh-home", str(store), "--hermes-home", str(self.hermes_home), "doctor", "--json"],
+        )
+        primary = next(row for row in json.loads(stdout)["checks"] if row["name"] == "plugin_omh_home_binding")
+
+        for row in (primary, rows["plugin_omh_home_binding:bare"]):
+            self.assertTrue(row["ok"], row)
+            self.assertEqual(row["severity"], "warning", row)
+            self.assertIn("multiplexed", row["message"])
+            self.assertIn("update", row["next_action"])
+
+
+class MultiplexedDefaultStoreTests(_IsolatedHome):
+    """The plugin's own resolver, inside a process that serves several profiles (#2037).
+
+    A stand-in for the host modules a multiplexed Hermes process (the
+    gateway, Desktop `serve`) gives the plugin: the multiplex flag on, a
+    home override naming the profile being served, and that profile's own
+    secret scope. The resolver is unchanged by #2037; what changed is that
+    setup names the default store in every home it registers, so the
+    profiles the install serves bind it here too.
+    """
+
+    profile = ProfileStoreChoiceTests.profile
+
+    @staticmethod
+    def _config(text: str) -> dict:
+        found, value = runtime_paths.omh_home_setting(text)
+        return {"plugins": {"entries": {"omh": {"settings": {"omh_home": value}}}}} if found else {}
+
+    @staticmethod
+    def _env(home: Path) -> dict[str, str]:
+        path = home / ".env"
+        if not path.is_file():
+            return {}
+        pairs = (line.split("=", 1) for line in path.read_text(encoding="utf-8").splitlines() if "=" in line)
+        return {key.strip(): value.strip() for key, value in pairs}
+
+    def multiplexed_bind(self, home: Path) -> Path:
+        """What the plugin binds while a multiplexed process serves `home`."""
+        def read(path: object) -> dict:
+            config = Path(str(path))
+            return self._config(config.read_text(encoding="utf-8")) if config.is_file() else {}
+
+        def refuse(*_args: object, **_kwargs: object) -> object:
+            raise AssertionError("a multiplexed process never reads the process environment")
+
+        constants = types.ModuleType("hermes_constants")
+        constants.get_hermes_home = lambda: home
+        constants.get_hermes_home_override = lambda: home
+        secrets = types.ModuleType("agent.secret_scope")
+        secrets.is_multiplex_active = lambda: True
+        secrets.current_secret_scope = lambda: self._env(home)
+        secrets.get_secret = refuse
+        secrets.build_profile_secret_scope = self._env
+        config = types.ModuleType("hermes_cli.config")
+        config.require_readable_config_before_write = read
+        config.load_config_readonly = lambda: read(home / "config.yaml")
+        managed = types.ModuleType("hermes_cli.managed_scope")
+        managed.load_managed_config = lambda: {}
+        cwd = types.SimpleNamespace(resolve_context_cwd=lambda: None, resolve_agent_cwd=Path.cwd)
+        modules = {"hermes_constants": constants, "agent.secret_scope": secrets, "hermes_cli.config": config,
+                   "hermes_cli.managed_scope": managed, "agent.runtime_cwd": cwd}
+        with patch_modules(modules), patch.dict(os.environ, {"HERMES_HOME": str(self.hermes_home)}):
+            return runtime_paths.resolve_homes()[0]
+
+    def test_every_profile_of_a_default_store_install_binds_it(self) -> None:
+        bare = self.profile("bare", "version: 1\n")
+        default = self.root / ".omh"
+
+        self.setup_at(default)
+
+        self.assertEqual(self.multiplexed_bind(self.hermes_home), default)
+        self.assertEqual(self.multiplexed_bind(bare), default)
+
+    def test_a_profile_that_chose_a_store_keeps_it_beside_the_default(self) -> None:
+        own_store = self.root / "bot-store"
+        own = self.profile(
+            "own", f"plugins:\n  entries:\n    omh:\n      settings:\n        omh_home: {own_store.as_posix()}\n"
+        )
+        env_store = self.root / "env-store"
+        envbot = self.profile("envbot", "version: 1\n", env=f"OMH_HOME={env_store.as_posix()}\n")
+        default = self.root / ".omh"
+
+        self.setup_at(default)
+
+        self.assertEqual(self.multiplexed_bind(own), own_store)
+        self.assertEqual(self.multiplexed_bind(envbot), env_store)
+        self.assertEqual(self.multiplexed_bind(self.hermes_home), default)
+
+    def test_a_profile_naming_no_store_is_still_refused(self) -> None:
+        # The safety property the refusal protects: a profile that names no
+        # store is never handed one by a multiplexed process, not even the
+        # default store the launch profile and its siblings bind -- here a
+        # bot created after the last setup or update.
+        default = self.root / ".omh"
+        self.setup_at(default)
+        self.assertEqual(self.multiplexed_bind(self.hermes_home), default)
+        late = self.profile("late", "version: 1\n")
+
+        with self.assertRaisesRegex(runtime_paths.RuntimeBindingError, "not configured for this profile"):
+            self.multiplexed_bind(late)
 
 
 class EnsurePluginOmhHomeTests(unittest.TestCase):
